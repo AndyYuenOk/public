@@ -3,7 +3,8 @@
 // @namespace    http://tampermonkey.net/
 // @version      2023.10.27
 // @description  Mobile search engineer switcher
-// @author       You
+// @description:en Mobile search engineer switcher, google bing and baidu
+// @author       Andy Yuen
 // @require      https://cdn.bootcdn.net/ajax/libs/jquery/3.7.1/jquery.slim.min.js
 // @include      *://*.bing.*/search*
 // @include      *://*.google.*/search*
