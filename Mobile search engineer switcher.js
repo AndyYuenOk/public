@@ -1,19 +1,19 @@
 // ==UserScript==
-// @name         Mobile search engineer switcher
-// @namespace    http://tampermonkey.net/
-// @version      2023.10.27
-// @description  Mobile search engineer switcher
-// @description:en Mobile search engineer switcher, google bing and baidu
-// @author       Andy Yuen
-// @require      https://cdn.bootcdn.net/ajax/libs/jquery/3.7.1/jquery.slim.min.js
-// @include      *://*.bing.*/search*
-// @include      *://*.google.*/search*
-// @include      *://*.baidu.*/*word*
-// @include      *://*.baidu.*/*wd*
-// @icon         https://www.google.com/s2/favicons?sz=64&domain=bing.com
-// @noframes
-
-// @grant        none
+// @name              Mobile search engineer switcher
+// @name:zh-CN        移动端搜索引擎切换
+// @namespace         http://tampermonkey.net/
+// @version           2023.10.28
+// @description       mobile search engineer switcher, bing google baidu
+// @description:zh-CN 移动端搜索引擎切换，必应、谷歌、百度
+// @author            Andy Yuen
+// @require           file:C:\Users\Admin\Downloads\Mobile search engineer switcher.js
+// @include           https://*.bing.*/search*
+// @include           https://*.google.*/search*
+// @include           https://*.baidu.*/*wd*
+// @include           https://*.baidu.*/*word*
+// @icon              https://www.google.com/s2/favicons?sz=64&domain=bing.com
+// @license           MIT
+// @grant             none
 // ==/UserScript==
 
 (function () {
@@ -22,7 +22,6 @@
     console.log('mobile search engineer switcher')
 
     if (!/Mobi|Android|iPhone/i.test(navigator.userAgent)) return;
-
 
     // Disable the scroll to top functionality
     if (location.host.includes('bing.com')) {
@@ -36,48 +35,55 @@
         });
     }
 
-    let selector = '';
+    // search engineer
+    let selector, mapCallback;
     if (location.host.includes('bing.com')) {
         selector = '[role="navigation"] ul';
+        mapCallback = ([name, nameCn, url]) => {
+            let element = document.createElement('li');
+            element.className = 'injection-mses';
+            element.innerHTML = `<a>${nameCn}</a>`;
+            element.onclick = () => {
+                location.href = 'https://' + url + new URLSearchParams(location.search).get('q');
+            };
+            return element;
+        };
     } else if (location.host.includes('google.com')) {
         selector = '#hdtb-msb';
+        mapCallback = ([name, nameCn, url]) => {
+            let element = document.createElement('li');
+            element.className = 'injection-mses hdtb-mitem';
+            element.innerHTML = `<a>${nameCn}</a>`;
+            element.onclick = () => {
+                location.href = 'https://' + url + new URLSearchParams(location.search).get('q');
+            };
+            return element;
+        };
     } else if (location.host.includes('baidu.com')) {
         selector = '.se-tab-lists';
+        mapCallback = ([name, nameCn, url]) => {
+            let element = document.createElement('a');
+            element.className = 'injection-mses se-tabitem';
+            element.innerHTML = `<span>${nameCn}</span>`;
+            element.onclick = () => {
+                const params = new URLSearchParams(location.search);
+                location.href = 'https://' + url + (params.get('wd') || params.get('word'));
+            };
+            return element;
+        };
     }
 
-    !function () {
-        if ($(selector).length && !$('.injection-mses').length) {
-            if (location.host.includes('bing.com')) {
-                $(selector).prepend([
-                    ['谷歌', 'google.com/search?q='],
-                    ['百度', 'baidu.com/s?wd=']
-                ].map(([name, url]) => {
-                    return $(`<li class="injection-mses"><a>${name}</a></li>`).click(() => {
-                        location.href = 'https://' + url + new URLSearchParams(location.search).get('q');
-                    });
-                }));
-            } else if (location.host.includes('google.com')) {
-                $(selector).prepend([
-                    ['必应', 'bing.com/search?q='],
-                    ['百度', 'baidu.com/s?wd=']
-                ].map(([name, url]) => {
-                    return $(`<div class="injection-mses hdtb-mitem"><a>${name}</a></div>`).click(() => {
-                        location.href = 'https://' + url + new URLSearchParams(location.search).get('q');
-                    });
-                }));
-            } else if (location.host.includes('baidu.com')) {
-                $(selector).prepend([
-                    ['必应', 'bing.com/search?q='],
-                    ['谷歌', 'google.com/search?q='],
-                ].map(([name, url]) => {
-                    return $(`<a class="injection-mses se-tabitem"><span>${name}</span></a>`).click(() => {
-                        const params = new URLSearchParams(location.search);
-                        location.href = 'https://' + url + (params.get('wd') || params.get('word'));
-                    });
-                }));
-            }
+    function inject() {
+        if (document.querySelector(selector) && !document.querySelector('.injection-mses')) {
+            document.querySelector(selector).prepend(...[
+                ['google', '谷歌', 'google.com/search?q='],
+                ['bing', '必应', 'bing.com/search?q='],
+                ['baidu', '百度', 'baidu.com/s?wd=']
+            ].filter(([name]) => !location.host.includes(name)).map(mapCallback));
         } else {
-            setTimeout(arguments.callee, 100);
+            setTimeout(inject, 10);
         }
-    }();
+    }
+
+    inject();
 })();
