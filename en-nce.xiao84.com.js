@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         巴士英语网
-// @namespace    http://tampermonkey.net/
+// @namespace    https://github.com/AndyYuenOk/common/blob/main/en-nce.xiao84.com.js
 // @version      0.1
 // @description  try to take over the world!
 // @author       You
