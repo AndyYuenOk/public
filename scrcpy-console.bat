@@ -28,6 +28,8 @@ adb devices > nul
         if not defined host echo. & goto main
 
         adb pair %subnet%!host!
+
+        goto main
     )
 
     if %index% == 1 goto addDevice
