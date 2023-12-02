@@ -1,20 +1,25 @@
 @echo off
 
 setlocal EnableDelayedExpansion
+@REM set subnet=
+set subnet=192.168.71.
 
 @REM adb daemon init
 adb devices > nul
 
 @REM find online device
 for /f "delims=" %%i in ('adb devices^|findstr "5555.*device"') do set device=%%i
+@REM echo device=%device% & pause
 
-@REM echo device=%device%
+for /f %%i in ("%device%") do set tcpip=%%i
+@REM echo tcpip=%tcpip% & pause
 
 @REM try to connect
 if not defined device (
-    set /p host=host:192.168.71.
-    set host=192.168.71.!host!
-    @REM echo host=!host!
+    set /p host=host:%subnet%
+    set host=%subnet%!host!
+    set tcpip=!host!
+    @REM echo host=!host! & pause
 
     echo connecting...
     start adb connect !host!
@@ -36,6 +41,6 @@ if not defined device (
     )
 )
 
-scrcpy.exe -m 1000 --max-fps=60 -Sw --raw-key-events --pause-on-exit=if-error %*
+@REM echo tcpip=%tcpip% & pause
 
-@REM pause
+scrcpy.exe --tcpip=%tcpip% -m 1000 --max-fps=60 -Sw --raw-key-events --pause-on-exit=if-error %*
