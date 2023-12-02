@@ -9,6 +9,7 @@ adb devices > nul
 
 :main
     @REM add or select device
+    echo 0: pair device
     echo 1: add device
     set /a count=2
     for /f %%i in ('adb devices^|findstr "5555.*device"') do (
@@ -17,11 +18,17 @@ adb devices > nul
         set /a count += 1
     )
 
-    @REM no devices
-    if not defined devices[2] goto addDevice
-
     set /a index=2
     set /p index=index [deafault 2]:
+
+    @REM pair device
+    if %index% == 0 (
+        set /p host=HOST[:PORT] [PAIRING CODE]:%subnet%
+
+        if not defined host echo. & goto main
+
+        adb pair %subnet%!host!
+    )
 
     if %index% == 1 goto addDevice
 
@@ -56,7 +63,7 @@ adb devices > nul
     for /f "delims=" %%i in ('adb devices^|findstr "%host%:5555.*device"') do set device=%%i
 
     if not defined device (
-        adb kill-server
+        @REM adb kill-server
 
         @REM first time connection port
         set /p port=port:
