@@ -1,5 +1,7 @@
 @echo off
 
+cd /d %~dp0
+
 setlocal EnableDelayedExpansion
 @REM set subnet=
 set subnet=192.168.71.
