@@ -2,22 +2,24 @@
 
 cd /d %~dp0
 
-setlocal EnableDelayedExpansion
 @REM set subnet=
 set subnet=192.168.71.
 
-@REM adb daemon init
-adb devices > nul
-
 :main
+    endlocal & setlocal EnableDelayedExpansion
+
+    @REM adb daemon init
+    adb devices > nul
+
     @REM add or select device
     echo 0: pair device
     echo 1: add device
+
     set /a count=2
     for /f %%i in ('adb devices^|findstr "5555.*device"') do (
         echo !count!: %%i
         set devices[!count!]=%%i
-        set /a count += 1
+        set /a count+=1
     )
 
     set /a index=2
@@ -55,12 +57,12 @@ adb devices > nul
 
     if not defined host echo. & goto main
 
-    set host=%subnet%!host!
-    set tcpip=!host!
-    @REM echo host=!host! & pause
+    set host=%subnet%%host%
+    set tcpip=%host%
+    @REM echo host=%host% & pause
 
     echo connecting...
-    start adb connect !host!
+    start adb connect %host%
     timeout /t 3 /nobreak > nul
 
     @REM check device
@@ -71,10 +73,10 @@ adb devices > nul
 
         @REM first time connection port
         set /p port=port:
-        adb connect !host!:!port!
+        adb connect %host%:!port!
 
         @REM reset port and reconnect
         adb tcpip 5555
-        adb connect !host!
+        adb connect %host%
     )
 goto main
