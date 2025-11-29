@@ -58,6 +58,7 @@ function main(config, profileName) {
   const groupNames = [
     'AdBlock',
     'HTTPDNS',
+    'Netflix',
     'Disney Plus',
     'YouTube',
     'Max',
