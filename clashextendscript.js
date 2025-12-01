@@ -3,6 +3,9 @@
 function main(config, profileName) {
     config.sniffer = {
         enable: true,
+        'force-dns-mapping': false,
+        'parse-pure-ip': true,
+        'override-destination': false,
         sniff: {
             HTTP: { ports: [80, 8080, 8081, 8082, 8083, 8084, 8085, 8086, 8087, 8088] },
             TLS: { ports: [443, 8443] },
