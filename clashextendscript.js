@@ -13,6 +13,8 @@ function main(config, profileName) {
         }
     };
 
+    config.rules.unshift('DOMAIN-SUFFIX,xn--v4q818bf34b.com,DIRECT');
+
     // config['proxy-groups'].splice(
     //   config['proxy-groups'].findIndex(group => group.name === 'AdBlock'),
     //   0,
