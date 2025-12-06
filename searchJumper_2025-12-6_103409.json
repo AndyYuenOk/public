@@ -1,0 +1,183 @@
+{
+    "lastModified": 1764988435248,
+    "prefConfig": {
+        "altKey": false,
+        "altToHighlight": false,
+        "alwaysShow": false,
+        "alwaysShowSiteLists": false,
+        "autoClose": false,
+        "autoDelay": 1000,
+        "autoHide": false,
+        "autoHideAll": true,
+        "batchOpenConfirm": 0,
+        "bgUrl": "",
+        "blacklist": false,
+        "cacheSwitch": true,
+        "callBarAlt": false,
+        "callBarCtrl": false,
+        "callBarMeta": false,
+        "callBarShift": false,
+        "configPage": "https://hoothin.github.io/SearchJumper/",
+        "cssText": "",
+        "ctrlKey": true,
+        "currentTypeFirst": false,
+        "customSize": 100,
+        "defaultFindTab": false,
+        "defaultPicker": false,
+        "disableAddon": {},
+        "disableAutoHighlight": "",
+        "disableAutoOpen": false,
+        "disableInputOnWords": false,
+        "disableTypeOpen": false,
+        "dragAlt": false,
+        "dragCtrl": false,
+        "dragMeta": false,
+        "dragShift": false,
+        "dragToSearch": false,
+        "emptyAfterCloseInput": false,
+        "enableInInput": false,
+        "enableInPage": false,
+        "expandType": false,
+        "expandTypeLength": 12,
+        "firstFiveWordsColor": [
+            "#ffff00",
+            "#e91e63",
+            "#00bcd4",
+            "#008000",
+            "#800080"
+        ],
+        "firstRun": false,
+        "globalSearchNow": false,
+        "hideDragHistory": false,
+        "hideOnSearchEngine": false,
+        "hidePopup": false,
+        "hideTileType": false,
+        "historyLength": 0,
+        "ignoreWords": [
+            "a",
+            "in",
+            "into",
+            "the",
+            "to",
+            "on",
+            "among",
+            "between",
+            "and",
+            "an",
+            "of",
+            "by",
+            "with",
+            "about",
+            "under",
+            "or",
+            "at",
+            "as"
+        ],
+        "inPageRule": {},
+        "inPageWordsStyles": [],
+        "initShow": false,
+        "lang": "zh-CN",
+        "leftMouse": false,
+        "limitInPageLen": 1,
+        "limitPopupLen": 1,
+        "longPressTime": 500,
+        "metaKey": false,
+        "minPopup": 0,
+        "minSizeMode": false,
+        "mouseLeaveToHide": false,
+        "multiline": 2,
+        "multilineGap": 1000,
+        "noAni": false,
+        "noIcons": false,
+        "numPerLine": 7,
+        "offset": {
+            "x": "0",
+            "y": "0"
+        },
+        "openInNewTab": false,
+        "position": {
+            "x": "left",
+            "y": "top"
+        },
+        "quickAddRule": false,
+        "resizePage": false,
+        "rightMouse": true,
+        "selectToShow": true,
+        "shiftKey": false,
+        "shiftLastUsedType": false,
+        "shortcut": 1,
+        "shortcutKey": "Backquote",
+        "showCurrent": false,
+        "showEngineWords": false,
+        "showInSearchEngine": false,
+        "showInSearchJumpPage": false,
+        "showSiteLists": false,
+        "sortSite": false,
+        "sortType": false,
+        "suggestType": "google",
+        "switchSitesAlt": false,
+        "switchSitesCtrl": false,
+        "switchSitesMeta": false,
+        "switchSitesNextKey": "ArrowRight",
+        "switchSitesPreKey": "ArrowLeft",
+        "switchSitesShift": false,
+        "syncBuild": false,
+        "tileOffset": 0,
+        "tilesZoom": 100,
+        "tipsZoom": 50,
+        "typeOpenTime": 250,
+        "zoomDrag": 100
+    },
+    "sitesConfig": [
+        {
+            "icon": "search",
+            "sites": [
+                {
+                    "charset": "utf-8",
+                    "keywords": "textarea[name='q']",
+                    "match": "https://www\\.google\\..*/search((?!udm=2).)*$",
+                    "name": "Google",
+                    "url": "https://www.google.com/search?q=%s&ie=utf-8&oe=utf-8"
+                },
+                {
+                    "match": "^https://(www|cn|global)\\.bing\\.com/search",
+                    "name": "Bing",
+                    "url": "https://www.bing.com/search?q=%s"
+                },
+                {
+                    "keywords": "(?:wd|word)=(.*?)(&|$)",
+                    "match": "https?://(www|m)\\.baidu\\.com/.*(wd|word)=",
+                    "name": "Baidu",
+                    "url": "https://www.baidu.com/s?wd=%s&ie=utf-8"
+                },
+                {
+                    "name": "小红书",
+                    "url": "https://www.xiaohongshu.com/search_result?keyword=%s"
+                },
+                {
+                    "name": "知乎",
+                    "url": "https://www.zhihu.com/search?q=%s"
+                },
+                {
+                    "name": "ChatGPT",
+                    "openInNewTab": 1,
+                    "url": "https://chatgpt.com/?q=%s"
+                },
+                {
+                    "icon": "https://www.gstatic.com/lamda/images/gemini_sparkle_aurora_33f86dc0c0257da337c63.svg",
+                    "match": "gemini\\.google\\.com",
+                    "name": "Gemini",
+                    "openInNewTab": 1,
+                    "url": "https://gemini.google.com#p{wait(.ql-editor)&.ql-editor=%s&click(nosubmit)}"
+                },
+                {
+                    "icon": "https://cdn.deepseek.com/chat/icon.png",
+                    "name": "DeepSeek",
+                    "openInNewTab": 1,
+                    "url": "https://chat.deepseek.com#p{wait(textarea)&textarea=%s&click(nosubmit)}"
+                }
+            ],
+            "type": "Search"
+        }
+    ]
+}
