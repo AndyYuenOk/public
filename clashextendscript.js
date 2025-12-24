@@ -13,7 +13,7 @@ function main(config, profileName) {
     //     }
     // };
 
-    config.rules.unshift('DOMAIN-SUFFIX,xn--v4q818bf34b.com,DIRECT');
+    // config.rules.unshift('DOMAIN-SUFFIX,xn--v4q818bf34b.com,DIRECT');
 
     // config["rule-providers"]['AdBlock'] = {
     //     type: 'http',
@@ -56,6 +56,7 @@ function main(config, profileName) {
         'Google FCM',
         'Crypto',
         'Discord',
+        'Microsoft',
         'AI Suite',
         'PayPal',
         'Scholar',
@@ -66,7 +67,7 @@ function main(config, profileName) {
     ]);
 
     config["proxy-groups"] = config["proxy-groups"].filter(
-        ({name}) => !names.has(name)
+        ({ name }) => !names.has(name)
     );
 
     config.rules = config.rules.filter(rule => {
@@ -81,9 +82,6 @@ function main(config, profileName) {
 
         return true;
     });
-
-    // config.script.code = config.script.code.replace("{\n", "{\n        'AdBlock DNS Lite': 'AdBlock DNS Lite',\n        ");
-    // config.script.code = '';
 
     return config;
 }
