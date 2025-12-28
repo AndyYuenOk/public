@@ -14,6 +14,7 @@ function main(config, profileName) {
     // };
 
     // config.rules.unshift('DOMAIN-SUFFIX,xn--v4q818bf34b.com,DIRECT');
+    config.rules.unshift('DOMAIN-SUFFIX,pairdrop.net,DIRECT');
 
     // config["rule-providers"]['AdBlock'] = {
     //     type: 'http',
