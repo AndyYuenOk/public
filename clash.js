@@ -14,6 +14,7 @@ function main(config, profileName) {
     // };
 
     // config.rules.unshift('DOMAIN-SUFFIX,xn--v4q818bf34b.com,DIRECT');
+    config.rules.unshift('RULE-SET,🛑 广告拦截,🛑 广告拦截');
     config.rules.unshift('DOMAIN-SUFFIX,pairdrop.net,DIRECT');
 
     // config["rule-providers"]['AdBlock'] = {
@@ -32,7 +33,7 @@ function main(config, profileName) {
     //     behavior: 'domain'
     // };
 
-    config["rule-providers"]['AdBlock'] = {
+    config["rule-providers"]['🛑 广告拦截'] = {
         type: 'http',
         url: "https://gcore.jsdelivr.net/gh/217heidai/adblockfilters@main/rules/adblockmihomo.yaml",
         interval: 86400,
@@ -40,48 +41,8 @@ function main(config, profileName) {
         behavior: 'domain'
     };
 
-    const names = new Set([
-        // 'AdBlock',
-        'HTTPDNS',
-        'Netflix',
-        'Disney Plus',
-        'YouTube',
-        'Max',
-        'Spotify',
-        'CN Mainland TV',
-        'Asian TV',
-        'Global TV',
-        'Apple',
-        'Apple TV',
-        'Telegram',
-        'Google FCM',
-        'Crypto',
-        'Discord',
-        'Microsoft',
-        'AI Suite',
-        'PayPal',
-        'Scholar',
-        'Speedtest',
-        'Steam',
-        'TikTok',
-        'miHoYo'
-    ]);
-
-    config["proxy-groups"] = config["proxy-groups"].filter(
-        ({ name }) => !names.has(name)
-    );
-
-    config.rules = config.rules.filter(rule => {
-        const [, ruleName, groupName] = rule.split(',');
-
-        if (names.has(groupName)) {
-            if (config['rule-providers']?.[ruleName]) {
-                delete config['rule-providers'][ruleName];
-            }
-            return false;
-        }
-
-        return true;
+    config["proxy-groups"].push({
+        name: '🛑 广告拦截', type: 'select', proxies: ['REJECT', 'DIRECT', '🚀 节点选择']
     });
 
     return config;
