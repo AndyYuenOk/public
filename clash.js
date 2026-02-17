@@ -33,17 +33,15 @@ function main(config, profileName) {
     //     behavior: 'domain'
     // };
 
-    config["rule-providers"]['🛑 广告拦截'] = {
-        type: 'http',
-        url: "https://gcore.jsdelivr.net/gh/217heidai/adblockfilters@main/rules/adblockmihomo.yaml",
-        interval: 86400,
-        proxy: 'DIRECT',
-        behavior: 'domain'
+    config["rule-providers"] = {
+        '🛑 广告拦截': {
+            type: 'http',
+            url: "https://gcore.jsdelivr.net/gh/217heidai/adblockfilters@main/rules/adblockmihomo.yaml",
+            interval: 86400,
+            proxy: 'DIRECT',
+            behavior: 'domain'
+        }
     };
-
-    config["proxy-groups"].push({
-        name: '🛑 广告拦截', type: 'select', proxies: ['REJECT', 'DIRECT', '🚀 节点选择']
-    });
 
     return config;
 }
