@@ -14,8 +14,8 @@ function main(config, profileName) {
     // };
 
     // config.rules.unshift('DOMAIN-SUFFIX,xn--v4q818bf34b.com,DIRECT');
-    config.rules.unshift('RULE-SET,🛑 广告拦截,🛑 广告拦截');
     config.rules.unshift('DOMAIN-SUFFIX,pairdrop.net,DIRECT');
+    config.rules.unshift('RULE-SET,🛑 全球拦截,🛑 全球拦截');
 
     // config["rule-providers"]['AdBlock'] = {
     //     type: 'http',
@@ -34,7 +34,7 @@ function main(config, profileName) {
     // };
 
     config["rule-providers"] = {
-        '🛑 广告拦截': {
+        '🛑 全球拦截': {
             type: 'http',
             url: "https://gcore.jsdelivr.net/gh/217heidai/adblockfilters@main/rules/adblockmihomo.yaml",
             interval: 86400,
