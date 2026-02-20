@@ -15,7 +15,7 @@ function main(config, profileName) {
 
     // config.rules.unshift('DOMAIN-SUFFIX,xn--v4q818bf34b.com,DIRECT');
     config.rules.unshift('DOMAIN-SUFFIX,pairdrop.net,DIRECT');
-    config.rules.unshift('RULE-SET,🛑 全球拦截,🛑 全球拦截');
+
 
     // config["rule-providers"]['AdBlock'] = {
     //     type: 'http',
@@ -25,23 +25,28 @@ function main(config, profileName) {
     //     behavior: 'domain'
     // };
 
-    // config["rule-providers"]['AdBlock'] = {
-    //     type: 'http',
-    //     url: "https://gcore.jsdelivr.net/gh/217heidai/adblockfilters@main/rules/adblockmihomolite.yaml",
-    //     interval: 86400,
-    //     proxy: 'DIRECT',
-    //     behavior: 'domain'
-    // };
 
-    config["rule-providers"] = {
-        '🛑 全球拦截': {
+
+    const names = new Set([
+        "AdBlock",
+        "🛑 全球拦截"
+    ]);
+
+    const name = config["proxy-groups"].find(({ name }) => names.has(name)).name;
+
+    if (name) {
+        config.rules.unshift(`RULE-SET,${name},${name}`);
+
+        config["rule-providers"] ??= {};
+
+        config["rule-providers"][name] = {
             type: 'http',
-            url: "https://gcore.jsdelivr.net/gh/217heidai/adblockfilters@main/rules/adblockmihomo.yaml",
+            url: "https://gcore.jsdelivr.net/gh/217heidai/adblockfilters@main/rules/adblockmihomolite.yaml",
             interval: 86400,
             proxy: 'DIRECT',
             behavior: 'domain'
-        }
-    };
+        };
+    }
 
     return config;
 }
