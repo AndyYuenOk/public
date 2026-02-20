@@ -25,14 +25,14 @@ function main(config, profileName) {
     //     behavior: 'domain'
     // };
 
-
+    const groups = config["proxy-groups"];
 
     const names = new Set([
         "AdBlock",
         "🛑 全球拦截"
     ]);
 
-    const name = config["proxy-groups"].find(({ name }) => names.has(name)).name;
+    const name = groups.find(({ name }) => names.has(name)).name;
 
     if (name) {
         const rule = `RULE-SET,${name},${name}`;
@@ -47,6 +47,9 @@ function main(config, profileName) {
             behavior: 'domain'
         };
     }
+
+    const index = groups.findIndex(({ name }) => name === "Auto - UrlTest");
+    index > -1 && groups.splice(1, 0, groups.splice(index, 1)[0]);
 
     return config;
 }
