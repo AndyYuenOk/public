@@ -35,13 +35,13 @@ function main(config, profileName) {
     const name = config["proxy-groups"].find(({ name }) => names.has(name)).name;
 
     if (name) {
-        config.rules.unshift(`RULE-SET,${name},${name}`);
+        const rule = `RULE-SET,${name},${name}`;
+        config.rules.includes(rule) || config.rules.unshift(rule);
 
         config["rule-providers"] ??= {};
-
         config["rule-providers"][name] = {
             type: 'http',
-            url: "https://gcore.jsdelivr.net/gh/217heidai/adblockfilters@main/rules/adblockmihomolite.yaml",
+            url: "https://gcore.jsdelivr.net/gh/217heidai/adblockfilters@main/rules/adblockmihomo.yaml",
             interval: 86400,
             proxy: 'DIRECT',
             behavior: 'domain'
