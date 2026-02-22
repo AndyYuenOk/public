@@ -29,7 +29,7 @@ function main(config, profileName) {
 
     const names = new Set([
         "AdBlock",
-        "🛑 全球拦截"
+        "全球拦截"
     ]);
 
     const name = groups.find(({ name }) => names.has(name))?.name;
@@ -48,8 +48,8 @@ function main(config, profileName) {
         };
     }
 
-    const index = groups.findIndex(({ name }) => name === "Auto - UrlTest");
-    index > -1 && groups.splice(1, 0, groups.splice(index, 1)[0]);
+    const index = groups.findIndex(({ name }) => name.includes("自动选择"));
+    index > -1 && groups.splice(0, 0, groups.splice(index, 1)[0]);
 
     return config;
 }
