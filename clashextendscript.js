@@ -16,6 +16,7 @@ function main(config, profileName) {
     // config.rules.unshift('DOMAIN-SUFFIX,xn--v4q818bf34b.com,DIRECT');
     config.rules.unshift('DOMAIN-SUFFIX,pairdrop.net,DIRECT');
 
+
     // config["rule-providers"]['AdBlock'] = {
     //     type: 'http',
     //     url: "https://gh-proxy.org/https://raw.githubusercontent.com/privacy-protection-tools/anti-AD/master/anti-ad-clash.yaml",
@@ -24,65 +25,34 @@ function main(config, profileName) {
     //     behavior: 'domain'
     // };
 
-    // config["rule-providers"]['AdBlock'] = {
-    //     type: 'http',
-    //     url: "https://gcore.jsdelivr.net/gh/217heidai/adblockfilters@main/rules/adblockmihomolite.yaml",
-    //     interval: 86400,
-    //     proxy: 'DIRECT',
-    //     behavior: 'domain'
-    // };
-
-    config["rule-providers"]['AdBlock'] = {
-        type: 'http',
-        url: "https://gcore.jsdelivr.net/gh/217heidai/adblockfilters@main/rules/adblockmihomo.yaml",
-        interval: 86400,
-        proxy: 'DIRECT',
-        behavior: 'domain'
-    };
-
-    const names = new Set([
-        // 'AdBlock',
-        'HTTPDNS',
-        'Netflix',
-        'Disney Plus',
-        'YouTube',
-        'Max',
-        'Spotify',
-        'CN Mainland TV',
-        'Asian TV',
-        'Global TV',
-        'Apple',
-        'Apple TV',
-        'Telegram',
-        'Google FCM',
-        'Crypto',
-        'Discord',
-        'Microsoft',
-        'AI Suite',
-        'PayPal',
-        'Scholar',
-        'Speedtest',
-        'Steam',
-        'TikTok',
-        'miHoYo'
+    let names = new Set([
+        "AdBlock",
+        "全球拦截"
     ]);
 
+    const name = config["proxy-groups"].find(({ name }) => names.has(name))?.name;
+
+    if (name) {
+        const rule = `RULE-SET,${name},${name}`;
+        config.rules.includes(rule) || config.rules.unshift(rule);
+
+        config["rule-providers"] ??= {};
+        config["rule-providers"][name] = {
+            type: 'http',
+            url: "https://gcore.jsdelivr.net/gh/217heidai/adblockfilters@main/rules/adblockmihomo.yaml",
+            interval: 86400,
+            proxy: 'DIRECT',
+            behavior: 'domain'
+        };
+    }
+
+    // let index = config["proxy-groups"].findIndex(({ name }) => name.includes("自动选择"));
+    // index > -1 && config["proxy-groups"].splice(0, 0, config["proxy-groups"].splice(index, 1)[0]);
+
+    names = ["手动切换"];
     config["proxy-groups"] = config["proxy-groups"].filter(
-        ({ name }) => !names.has(name)
+        ({ name }) => !names.some(name2 => name.includes(name2))
     );
-
-    config.rules = config.rules.filter(rule => {
-        const [, ruleName, groupName] = rule.split(',');
-
-        if (names.has(groupName)) {
-            if (config['rule-providers']?.[ruleName]) {
-                delete config['rule-providers'][ruleName];
-            }
-            return false;
-        }
-
-        return true;
-    });
 
     return config;
 }
