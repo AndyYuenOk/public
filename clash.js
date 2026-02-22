@@ -62,7 +62,7 @@ function main(config, profileName) {
     if (profileName) {
         profileName = " | " + profileName;
 
-        names = ["手动切换"];
+        names = ["手动切换", "Ai平台"];
         config["proxy-groups"] = config["proxy-groups"]
             .map(group => ({
                 ...group,
@@ -77,6 +77,13 @@ function main(config, profileName) {
                     )
                 )
             }));
+
+        config.rules = config.rules.map(rule =>
+            names.reduce(
+                (result, name) => result.replace(name, name + profileName),
+                rule
+            )
+        );
     }
 
     return config;
