@@ -59,23 +59,25 @@ function main(config, profileName) {
     //         )
     //     }));
 
-    profileName = " | " + profileName;
+    if (profileName) {
+        profileName = " | " + profileName;
 
-    names = ["手动切换"];
-    config["proxy-groups"] = config["proxy-groups"]
-        .map(group => ({
-            ...group,
-            name: names.reduce(
-                (result, name) => result.replace(name, name + profileName),
-                group.name
-            ),
-            proxies: group.proxies.map(proxy =>
-                names.reduce((result, name) =>
-                    result.replace(name, name + profileName),
-                    proxy
+        names = ["手动切换"];
+        config["proxy-groups"] = config["proxy-groups"]
+            .map(group => ({
+                ...group,
+                name: names.reduce(
+                    (result, name) => result.replace(name, name + profileName),
+                    group.name
+                ),
+                proxies: group.proxies.map(proxy =>
+                    names.reduce((result, name) =>
+                        result.replace(name, name + profileName),
+                        proxy
+                    )
                 )
-            )
-        }));
+            }));
+    }
 
     return config;
 }
