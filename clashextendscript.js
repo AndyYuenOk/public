@@ -49,15 +49,15 @@ function main(config, profileName) {
     // let index = config["proxy-groups"].findIndex(({ name }) => name.includes("自动选择"));
     // index > -1 && config["proxy-groups"].splice(0, 0, config["proxy-groups"].splice(index, 1)[0]);
 
-    names = ["手动切换"];
-    config["proxy-groups"] = config["proxy-groups"]
-        .filter(({ name: name1 }) => !names.some(name2 => name1.includes(name2)))
-        .map(group => ({
-            ...group,
-            proxies: group.proxies.filter(proxy =>
-                !names.some(name => proxy.includes(name))
-            )
-        }));
+    // names = ["手动切换"];
+    // config["proxy-groups"] = config["proxy-groups"]
+    //     .filter(({ name: name1 }) => !names.some(name2 => name1.includes(name2)))
+    //     .map(group => ({
+    //         ...group,
+    //         proxies: group.proxies.filter(proxy =>
+    //             !names.some(name => proxy.includes(name))
+    //         )
+    //     }));
 
     return config;
 }
