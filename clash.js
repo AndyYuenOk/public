@@ -32,7 +32,7 @@ function main(config, profileName) {
         "🛑 全球拦截"
     ]);
 
-    const name = groups.find(({ name }) => names.has(name)).name;
+    const name = groups.find(({ name }) => names.has(name))?.name;
 
     if (name) {
         const rule = `RULE-SET,${name},${name}`;
