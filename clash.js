@@ -25,14 +25,12 @@ function main(config, profileName) {
     //     behavior: 'domain'
     // };
 
-    const groups = config["proxy-groups"];
-
-    const names = new Set([
+    let names = new Set([
         "AdBlock",
         "全球拦截"
     ]);
 
-    const name = groups.find(({ name }) => names.has(name))?.name;
+    const name = config["proxy-groups"].find(({ name }) => names.has(name))?.name;
 
     if (name) {
         const rule = `RULE-SET,${name},${name}`;
@@ -48,8 +46,36 @@ function main(config, profileName) {
         };
     }
 
-    const index = groups.findIndex(({ name }) => name.includes("自动选择"));
-    index > -1 && groups.splice(0, 0, groups.splice(index, 1)[0]);
+    // let index = config["proxy-groups"].findIndex(({ name }) => name.includes("自动选择"));
+    // index > -1 && config["proxy-groups"].splice(0, 0, config["proxy-groups"].splice(index, 1)[0]);
+
+    // names = ["手动切换"];
+    // config["proxy-groups"] = config["proxy-groups"]
+    //     .filter(({ name: name1 }) => !names.some(name2 => name1.includes(name2)))
+    //     .map(group => ({
+    //         ...group,
+    //         proxies: group.proxies.filter(proxy =>
+    //             !names.some(name => proxy.includes(name))
+    //         )
+    //     }));
+
+    profileName = " | " + profileName;
+
+    names = ["手动切换"];
+    config["proxy-groups"] = config["proxy-groups"]
+        .map(group => ({
+            ...group,
+            name: names.reduce(
+                (result, name) => result.replace(name, name + profileName),
+                group.name
+            ),
+            proxies: group.proxies.map(proxy =>
+                names.reduce((result, name) =>
+                    result.replace(name, name + profileName),
+                    proxy
+                )
+            )
+        }));
 
     return config;
 }
