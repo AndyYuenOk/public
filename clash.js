@@ -25,12 +25,16 @@ function main(config, profileName) {
     //     behavior: 'domain'
     // };
 
-    let names = new Set([
+    let names = [
         "AdBlock",
-        "全球拦截"
-    ]);
+        "全球拦截",
+        "广告拦截"
+    ];
 
-    const name = config["proxy-groups"].find(({ name }) => names.has(name))?.name;
+    const name = config["proxy-groups"]
+        .find(group =>
+            names.some(keyword => group.name.includes(keyword))
+        )?.name;
 
     if (name) {
         const rule = `RULE-SET,${name},${name}`;
