@@ -32,9 +32,8 @@ function main(config, profileName) {
     ];
 
     const name = config["proxy-groups"]
-        .find(group =>
-            names.some(keyword => group.name.includes(keyword))
-        )?.name;
+        .find(group => names.some(name => group.name.includes(name)))
+        ?.name;
 
     if (name) {
         const rule = `RULE-SET,${name},${name}`;
@@ -50,8 +49,8 @@ function main(config, profileName) {
         };
     }
 
-    // let index = config["proxy-groups"].findIndex(({ name }) => name.includes("自动选择"));
-    // index > -1 && config["proxy-groups"].splice(0, 0, config["proxy-groups"].splice(index, 1)[0]);
+    // let index = config["proxy-groups"].findIndex(({ name }) => name.includes("Auto - UrlTest"));
+    // index > -1 && config["proxy-groups"].splice(1, 0, config["proxy-groups"].splice(index, 1)[0]);
 
     // names = ["手动切换"];
     // config["proxy-groups"] = config["proxy-groups"]
@@ -67,24 +66,24 @@ function main(config, profileName) {
         profileName = " | " + profileName;
 
         names = ["手动切换", "Ai平台"];
-        config["proxy-groups"] = config["proxy-groups"]
-            .map(group => ({
-                ...group,
-                name: names.reduce(
-                    (result, name) => result.replace(name, name + profileName),
-                    group.name
-                ),
-                proxies: group.proxies.map(proxy =>
-                    names.reduce((result, name) =>
-                        result.replace(name, name + profileName),
-                        proxy
-                    )
+
+        config["proxy-groups"] = config["proxy-groups"].map(group => ({
+            ...group,
+            name: names.reduce(
+                (acc, name) => acc.replace(name, name + profileName),
+                group.name
+            ),
+            proxies: group.proxies.map(proxy =>
+                names.reduce(
+                    (acc, name) => acc.replace(name, name + profileName),
+                    proxy
                 )
-            }));
+            ),
+        }));
 
         config.rules = config.rules.map(rule =>
-            names.reduce(
-                (result, name) => result.replace(name, name + profileName),
+            names.reduce((result, name) =>
+                result.replace(name, name + profileName),
                 rule
             )
         );
