@@ -1,6 +1,4 @@
-// Define main function (script entry)
-
-function main(config, profileName) {
+const main = (config, profileName) => {
     // config.sniffer = {
     //     enable: true,
     //     'force-dns-mapping': false,
