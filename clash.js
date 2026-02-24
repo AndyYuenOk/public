@@ -14,7 +14,7 @@ function main(config, profileName) {
     // };
 
     // config.rules.unshift('DOMAIN-SUFFIX,xn--v4q818bf34b.com,DIRECT');
-    config.rules.unshift('DOMAIN-SUFFIX,pairdrop.net,DIRECT');
+    // config.rules.unshift('DOMAIN-SUFFIX,pairdrop.net,DIRECT');
 
 
     // config["rule-providers"]['AdBlock'] = {
@@ -62,32 +62,32 @@ function main(config, profileName) {
     //         )
     //     }));
 
-    if (profileName) {
-        profileName = " | " + profileName;
+    // if (profileName) {
+    //     profileName = " | " + profileName;
 
-        names = ["手动切换", "Ai平台"];
+    //     names = ["手动切换", "Ai平台"];
 
-        config["proxy-groups"] = config["proxy-groups"].map(group => ({
-            ...group,
-            name: names.reduce(
-                (acc, name) => acc.replace(name, name + profileName),
-                group.name
-            ),
-            proxies: group.proxies.map(proxy =>
-                names.reduce(
-                    (acc, name) => acc.replace(name, name + profileName),
-                    proxy
-                )
-            ),
-        }));
+    //     config["proxy-groups"] = config["proxy-groups"].map(group => ({
+    //         ...group,
+    //         name: names.reduce(
+    //             (acc, name) => acc.replace(name, name + profileName),
+    //             group.name
+    //         ),
+    //         proxies: group.proxies.map(proxy =>
+    //             names.reduce(
+    //                 (acc, name) => acc.replace(name, name + profileName),
+    //                 proxy
+    //             )
+    //         ),
+    //     }));
 
-        config.rules = config.rules.map(rule =>
-            names.reduce((result, name) =>
-                result.replace(name, name + profileName),
-                rule
-            )
-        );
-    }
+    //     config.rules = config.rules.map(rule =>
+    //         names.reduce((result, name) =>
+    //             result.replace(name, name + profileName),
+    //             rule
+    //         )
+    //     );
+    // }
 
     return config;
 }
