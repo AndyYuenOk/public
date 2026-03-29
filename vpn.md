@@ -6,12 +6,12 @@
 | 2023-02 | [自由猫](https://freecat.cloud/console/plan)          | Relay  | [5K](https://t.me/FreeCatCloud)        | [4.1K](https://t.me/FreeCat_Group)      | 30G/M ¥6/M <br> 30G/M ¥72/Y      | 500G/￥50   |
 | 2022-03 | [iKuuu](https://ikuuu.org/user/shop)                  | Relay  | -                                      | 11.6K                                   | 300G/M ¥12/M <br> 300G/M ¥108/Y  | -           |
 | 2025-03 | [良心云](https://良心云.com/#/shop)                   | Direct | [26.2K](https://t.me/liangxin_yun)     | [23.1K](https://t.me/liangxinyun_chat)  | 100G/M ￥2/M <br> 100G/M ￥24/Y  | 1000G/¥21   |
-| 2022-11 | [赔钱机场](https://赔钱机场.com/plan)                 | Direct | [44.1K](https://t.me/peiqianjichangpd) | [23.6K](https://t.me/peiqianjichang1)   | 100G/M ￥1.5 <br> 100G/M ￥18    | 1000G/¥18.9 |
+| 2022-11 | [赔钱机场](https://赔钱机场.com/plan)                 | Direct | [44.1K](https://t.me/peiqianjichangpd) | [23.6K](https://t.me/peiqianjichang1)   | 100G/M ￥1.5/M <br> 100G/M ￥18  | 1000G/¥18.9 |
 | 2023-02 | [一分机场](https://一分机场.com/#/plan)               | Direct | [29.1K](https://t.me/yfjcpindao)       | [25.3K](https://t.me/+6CEphysfeNZlM2Zk) | 100G/M ¥2/M <br> 100G/M ¥23.9/Y  | 1000G/¥19.9 |
 | 2023-11 | [神龙机场](https://shenlong.wiki/#/stage/buysubs)     | Relay  | [0.6K](https://t.me/shenlongjichang)   | [1.9K](https://t.me/shenlongairport)    | 100G/M ¥10/M <br> 100G/M ¥100/Y  | 256G/¥45    |
 | 2022-03 | [次元雲](https://ciyy.cc/#/shop)                      | Relay  | [1.1K](https://t.me/ciyypro)           | -                                       | 128G/M ¥10/M <br> 158G/M ¥108/Y  | 520G/¥90    |
 | 2022-03 | [壹速云](https://www.onesy1.cc/user/shop)             | Relay  | [1.2K](https://t.me/yisuyun)           | [2.9K](https://t.me/+mEqOeAzs5sM0MjE1)  | 150G/M ¥30/M <br> 2000G/Y ¥88/Y  | 200G/¥39    |
-| 2023-07 | [蜂窝云](https://fwcloud.me/user/shop)                | Relay  | [1.2K](https://t.me/DBCLOUDPLUS)       | [4.3K](https://t.me/DBxChat)            | 200G/M ¥20/M <br> 230G/¥210      | 100G/¥22    |
+| 2023-07 | [蜂窝云](https://fwcloud.me/user/shop)                | Relay  | [1.2K](https://t.me/DBCLOUDPLUS)       | [4.3K](https://t.me/DBxChat)            | 200G/M ¥20/M <br> 230G/M ¥210/Y  | 100G/¥22    |
 | 2023-10 | [M78星云](https://m78star.cloud/#/shop)               | Relay  | -                                      | -                                       | 80G/M ¥7.8/M <br> 80G/M ¥88/Y    | 300G/¥99    |
 | 2025-03 | [ofoNET](https://ofotw.org/#/plan)                    | Relay  | [1.3K](https://t.me/ofonet_offcial)    | [1.5K](https://t.me/ofonet_group)       | 200G/M ¥9.9/M <br> 200G/M ¥100/Y | 384G/¥55.9  |
 | 2023-07 | [农夫山泉](https://qqq.nfsq.us/#/plan)                | Relay  | -                                      | -                                       | 200G/M ¥8/M <br> 200G/M ¥80/Y    | 1000G/¥70   |
