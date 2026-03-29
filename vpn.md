@@ -15,3 +15,4 @@
 | 2023-10 | [M78星云](https://m78star.cloud/#/shop)               | Relay  | -                                      | -                                       | 80G/7.8/88          | 300G/99    |
 | 2025-03 | [ofoNET](https://ofotw.org/#/plan)                    | Relay  | [1.3K](https://t.me/ofonet_offcial)    | [1.5K](https://t.me/ofonet_group)       | 200G/9.9/100        | 384G/55.9  |
 | 2023-07 | [农夫山泉](https://qqq.nfsq.us/#/plan)                | Relay  | -                                      | -                                       | 200G/8/80           | 1000G/70   |
+| 2024-07 | [CloudFisher](https://cloudfisher.net/web/#/plan)     | Relay  | [12.1K](https://t.me/CloudFisher)      | [9.3K](https://t.me/CloudFisherGroup)   | 120G/9, 148G/60     | 300G/40    |
