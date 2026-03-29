@@ -1,9 +1,9 @@
 | Date    | Name                                                  | Type   | Channel                                | Group                                   | Periodic                        | Unlimited   |
 | :------ | :---------------------------------------------------- | :----- | :------------------------------------- | :-------------------------------------- | :------------------------------ | :---------- |
 | 2022-03 | [EdNovas云](https://ednovas.org/#/stage/buysubs)      | Relay  | [6.1K](https://t.me/ednovasyun1)       | [8.4K](https://t.me/ednovasyun)         | 25GB/mo-¥55/yr                  | -           |
-| 2022-11 | [夜煞云](https://www.night-furyx.com/index.php#/plan) | Relay  | [8.5K](https://t.me/hiccupport)        | [6K](https://t.me/hiccupPortA)          | 50GB/mo-¥58/yr                 | 400G/106CNY |
-| 2025-03 | [山海](https://shanhai.me/#/shop)                     | Relay  | [11.5K](https://t.me/shanhai_1)        | [3.9K](https://t.me/shanhai_2)          | 128GB/mo-¥6/mo, 128GB/mo-¥60/yr | 256G/15     |
-| 2023-02 | [自由猫](https://freecat.cloud/console/plan)          | Relay  | [5K](https://t.me/FreeCatCloud)        | [4.1K](https://t.me/FreeCat_Group)      | 30G/6/72CNY                     | 500G/50     |
+| 2022-11 | [夜煞云](https://www.night-furyx.com/index.php#/plan) | Relay  | [8.5K](https://t.me/hiccupport)        | [6K](https://t.me/hiccupPortA)          | 50GB/mo-¥58/yr                  | 400GB/￥106 |
+| 2025-03 | [山海](https://shanhai.me/#/shop)                     | Relay  | [11.5K](https://t.me/shanhai_1)        | [3.9K](https://t.me/shanhai_2)          | 128GB/mo-¥6/mo, 128GB/mo-¥60/yr | 256GB/￥15  |
+| 2023-02 | [自由猫](https://freecat.cloud/console/plan)          | Relay  | [5K](https://t.me/FreeCatCloud)        | [4.1K](https://t.me/FreeCat_Group)      | 30GB/mo ¥6/mo, 30GB/mo ¥72/yr   | 500GB/￥50  |
 | 2022-03 | [iKuuu](https://ikuuu.org/user/shop)                  | Relay  | -                                      | 11.6K                                   | 300G/12/108                     | -           |
 | 2025-03 | [良心云](https://良心云.com/#/shop)                   | Direct | [26.2K](https://t.me/liangxin_yun)     | [23.1K](https://t.me/liangxinyun_chat)  | 100G/2/24                       | 1000G/21    |
 | 2022-11 | [赔钱机场](https://赔钱机场.com/plan)                 | Direct | [44.1K](https://t.me/peiqianjichangpd) | [23.6K](https://t.me/peiqianjichang1)   | 100G/1.5/18                     | 1000G/18.9  |
