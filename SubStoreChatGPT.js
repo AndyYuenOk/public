@@ -46,7 +46,7 @@ async function operator(proxies = [], targetPlatform, context) {
   const http_meta_api = `${http_meta_protocol}://${http_meta_host}:${http_meta_port}`
   const http_meta_start_delay = parseFloat($arguments.http_meta_start_delay ?? 3000)
   const http_meta_proxy_timeout = parseFloat($arguments.http_meta_proxy_timeout ?? 10000)
-  const gptPrefix = $arguments.gpt_prefix ?? '[GPT] '
+  const gptPrefix = $arguments.gpt_prefix ?? ' | GPT'
   const method = $arguments.method || 'get'
   const url = $arguments.client === 'Android' ? `https://android.chat.openai.com` : `https://ios.chat.openai.com`
 
@@ -81,7 +81,7 @@ async function operator(proxies = [], targetPlatform, context) {
         const cached = cache.get(id)
         if (cached) {
           if (cached.gpt) {
-            proxies[proxy._proxies_index].name = `${gptPrefix}${proxies[proxy._proxies_index].name}`
+            proxies[proxy._proxies_index].name = `${proxies[proxy._proxies_index].name}${gptPrefix}`
             proxies[proxy._proxies_index]._gpt = true
             proxies[proxy._proxies_index]._gpt_latency = cached.gpt_latency
           } else if (disableFailedCache) {
@@ -180,7 +180,7 @@ async function operator(proxies = [], targetPlatform, context) {
       const cached = cache.get(id)
       if (cacheEnabled && cached) {
         if (cached.gpt) {
-          proxies[proxy._proxies_index].name = `${gptPrefix}${proxies[proxy._proxies_index].name}`
+          proxies[proxy._proxies_index].name = `${proxies[proxy._proxies_index].name}${gptPrefix}`
           proxies[proxy._proxies_index]._gpt = true
           proxies[proxy._proxies_index]._gpt_latency = cached.gpt_latency
           $.info(`[${proxy.name}] 使用成功缓存`)
@@ -217,7 +217,7 @@ async function operator(proxies = [], targetPlatform, context) {
       // https://zset.cc/archives/34/
       // 更新: 403 的时候, 还得看响应
       if (status == 403 && !/unsupported_country/.test(msg)) {
-        proxies[proxy._proxies_index].name = `${gptPrefix}${proxies[proxy._proxies_index].name}`
+        proxies[proxy._proxies_index].name = `${proxies[proxy._proxies_index].name}${gptPrefix}`
         proxies[proxy._proxies_index]._gpt = true
         proxies[proxy._proxies_index]._gpt_latency = latency
         if (cacheEnabled) {
