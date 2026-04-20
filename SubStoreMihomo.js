@@ -73,7 +73,7 @@ let rules = [
   "MATCH,Others"
 ];
 
-const providers = {
+let providers = {
   "LocalAreaNetwork (Domain)": {
     "type": "http",
     "behavior": "domain",
