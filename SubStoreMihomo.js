@@ -275,7 +275,7 @@ function main(config) {
   let proxyNames = config.proxies.map(proxy => proxy.name);
 
   for (const group of groups) {
-    if (["Proxies", 'Microsoft', 'AI', 'Netflix'].includes(group.name)) {
+    if (["Auto", "Proxies", 'Microsoft', 'AI', 'Netflix'].includes(group.name)) {
       group.proxies = group.proxies.concat(proxyNames);
     }
 
