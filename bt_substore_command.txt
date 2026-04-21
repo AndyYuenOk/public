@@ -1,1 +1,0 @@
-sh -c "node /opt/app/http-meta.bundle.js > /opt/app/data/http-meta.log 2>&1 & echo HTTP-META is running...; SUB_STORE_DOCKER=true SUB_STORE_FRONTEND_PATH=/opt/app/frontend SUB_STORE_DATA_BASE_PATH=/opt/app/data node /opt/app/sub-store.bundle.js"
