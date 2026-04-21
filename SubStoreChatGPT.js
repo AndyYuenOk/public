@@ -36,7 +36,7 @@
  */
 
 async function operator(proxies = [], targetPlatform, context) {
-  const cacheEnabled = $arguments.cache
+  const cacheEnabled = $arguments.cache ?? true;
   const disableFailedCache = $arguments.disable_failed_cache || $arguments.ignore_failed_error
   const cache = scriptResourceCache
   const http_meta_host = $arguments.http_meta_host ?? '127.0.0.1'
