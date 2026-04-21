@@ -258,8 +258,9 @@ function main(config) {
   ).proxies;
   let fullNodeGroupNames = ["Proxies", "Microsoft", "AI", "Netflix"];
 
+  let autoSelectGroup;
   if (enableFallback) {
-    let autoSelectGroup = {
+    autoSelectGroup = {
       name: "Fallback",
       type: "fallback",
       url: "http://www.gstatic.com/generate_204",
