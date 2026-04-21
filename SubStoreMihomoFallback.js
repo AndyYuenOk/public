@@ -1,8 +1,6 @@
 "use strict";
 
-console.log($arguments);
-
-let regions = $arguments?.regions?.splice("+") ?? [];
+let regions = $arguments.regions?.split("+") ?? [];
 
 // Rule order is top-down; earlier entries have higher priority.
 let rules = [
