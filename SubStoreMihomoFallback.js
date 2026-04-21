@@ -1,5 +1,6 @@
-'use strict';
+"use strict";
 
+// Rule order is top-down; earlier entries have higher priority.
 let rules = [
   "RULE-SET,LocalAreaNetwork (Domain),Direct",
   "RULE-SET,LocalAreaNetwork (IP-CIDR),Direct,no-resolve",
@@ -70,240 +71,226 @@ let rules = [
   "RULE-SET,ChinaCompanyIp (IP-CIDR),Direct,no-resolve",
   "DOMAIN-SUFFIX,pairdrop.net,Direct",
   "GEOIP,CN,Direct",
-  "MATCH,Others"
+  "MATCH,Others",
 ];
 
 let providers = {
+  // Provider keys must match RULE-SET names used in `rules`.
   "LocalAreaNetwork (Domain)": {
-    "type": "http",
-    "behavior": "domain",
-    "url": "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvTG9jYWxBcmVhTmV0d29yay5saXN0",
-    "interval": 86400
+    type: "http",
+    behavior: "domain",
+    url: "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvTG9jYWxBcmVhTmV0d29yay5saXN0",
+    interval: 86400,
   },
   "LocalAreaNetwork (IP-CIDR)": {
-    "type": "http",
-    "behavior": "ipcidr",
-    "url": "https://url.v1.mk/getruleset?type=4&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvTG9jYWxBcmVhTmV0d29yay5saXN0",
+    type: "http",
+    behavior: "ipcidr",
+    url: "https://url.v1.mk/getruleset?type=4&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvTG9jYWxBcmVhTmV0d29yay5saXN0",
 
-    "interval": 86400
+    interval: 86400,
   },
   "UnBan (Domain)": {
-    "type": "http",
-    "behavior": "domain",
-    "url": "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvVW5CYW4ubGlzdA",
+    type: "http",
+    behavior: "domain",
+    url: "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvVW5CYW4ubGlzdA",
 
-    "interval": 86400
+    interval: 86400,
   },
   "adblockclash (Domain)": {
-    "type": "http",
-    "behavior": "domain",
-    "url": "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tLzIxN2hlaWRhaS9hZGJsb2NrZmlsdGVycy9tYWluL3J1bGVzL2FkYmxvY2tjbGFzaC5saXN0",
+    type: "http",
+    behavior: "domain",
+    url: "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tLzIxN2hlaWRhaS9hZGJsb2NrZmlsdGVycy9tYWluL3J1bGVzL2FkYmxvY2tjbGFzaC5saXN0",
 
-    "interval": 86400
+    interval: 86400,
   },
   "GoogleCN (Domain)": {
-    "type": "http",
-    "behavior": "domain",
-    "url": "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvR29vZ2xlQ04ubGlzdA",
+    type: "http",
+    behavior: "domain",
+    url: "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvR29vZ2xlQ04ubGlzdA",
 
-    "interval": 86400
+    interval: 86400,
   },
   "SteamCN (Domain)": {
-    "type": "http",
-    "behavior": "domain",
-    "url": "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvUnVsZXNldC9TdGVhbUNOLmxpc3Q",
+    type: "http",
+    behavior: "domain",
+    url: "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvUnVsZXNldC9TdGVhbUNOLmxpc3Q",
 
-    "interval": 86400
+    interval: 86400,
   },
   "Microsoft (Domain)": {
-    "type": "http",
-    "behavior": "domain",
-    "url": "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvTWljcm9zb2Z0Lmxpc3Q",
+    type: "http",
+    behavior: "domain",
+    url: "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvTWljcm9zb2Z0Lmxpc3Q",
 
-    "interval": 86400
+    interval: 86400,
   },
   "AI (Domain)": {
-    "type": "http",
-    "behavior": "domain",
-    "url": "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvUnVsZXNldC9BSS5saXN0",
+    type: "http",
+    behavior: "domain",
+    url: "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvUnVsZXNldC9BSS5saXN0",
 
-    "interval": 86400
+    interval: 86400,
   },
   "OpenAi (Domain)": {
-    "type": "http",
-    "behavior": "domain",
-    "url": "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvUnVsZXNldC9PcGVuQWkubGlzdA",
+    type: "http",
+    behavior: "domain",
+    url: "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvUnVsZXNldC9PcGVuQWkubGlzdA",
 
-    "interval": 86400
+    interval: 86400,
   },
   "Netflix (Domain)": {
-    "type": "http",
-    "behavior": "domain",
-    "url": "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvUnVsZXNldC9OZXRmbGl4Lmxpc3Q",
+    type: "http",
+    behavior: "domain",
+    url: "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvUnVsZXNldC9OZXRmbGl4Lmxpc3Q",
 
-    "interval": 86400
+    interval: 86400,
   },
   "Netflix (IP-CIDR)": {
-    "type": "http",
-    "behavior": "ipcidr",
-    "url": "https://url.v1.mk/getruleset?type=4&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvUnVsZXNldC9OZXRmbGl4Lmxpc3Q",
+    type: "http",
+    behavior: "ipcidr",
+    url: "https://url.v1.mk/getruleset?type=4&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvUnVsZXNldC9OZXRmbGl4Lmxpc3Q",
 
-    "interval": 86400
+    interval: 86400,
   },
   "ProxyLite (Domain)": {
-    "type": "http",
-    "behavior": "domain",
-    "url": "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvUHJveHlMaXRlLmxpc3Q",
+    type: "http",
+    behavior: "domain",
+    url: "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvUHJveHlMaXRlLmxpc3Q",
 
-    "interval": 86400
+    interval: 86400,
   },
   "ProxyLite (IP-CIDR)": {
-    "type": "http",
-    "behavior": "ipcidr",
-    "url": "https://url.v1.mk/getruleset?type=4&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvUHJveHlMaXRlLmxpc3Q",
+    type: "http",
+    behavior: "ipcidr",
+    url: "https://url.v1.mk/getruleset?type=4&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvUHJveHlMaXRlLmxpc3Q",
 
-    "interval": 86400
+    interval: 86400,
   },
   "ChinaDomain (Domain)": {
-    "type": "http",
-    "behavior": "domain",
-    "url": "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvQ2hpbmFEb21haW4ubGlzdA",
+    type: "http",
+    behavior: "domain",
+    url: "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvQ2hpbmFEb21haW4ubGlzdA",
 
-    "interval": 86400
+    interval: 86400,
   },
   "ChinaDomain (IP-CIDR)": {
-    "type": "http",
-    "behavior": "ipcidr",
-    "url": "https://url.v1.mk/getruleset?type=4&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvQ2hpbmFEb21haW4ubGlzdA",
+    type: "http",
+    behavior: "ipcidr",
+    url: "https://url.v1.mk/getruleset?type=4&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvQ2hpbmFEb21haW4ubGlzdA",
 
-    "interval": 86400
+    interval: 86400,
   },
   "ChinaCompanyIp (IP-CIDR)": {
-    "type": "http",
-    "behavior": "ipcidr",
-    "url": "https://url.v1.mk/getruleset?type=4&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvQ2hpbmFDb21wYW55SXAubGlzdA",
+    type: "http",
+    behavior: "ipcidr",
+    url: "https://url.v1.mk/getruleset?type=4&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvQ2hpbmFDb21wYW55SXAubGlzdA",
 
-    "interval": 86400
-  }
+    interval: 86400,
+  },
 };
 
 let groups = [
+  // Fallback switches between multiple Auto* groups when failures occur.
   {
-    "name": "Fallback",
-    "type": "fallback",
-    "url": "http://www.gstatic.com/generate_204",
-    "interval": 300,
-    "tolerance": 50,
-    "proxies": [
-
-    ]
+    name: "Fallback",
+    type: "fallback",
+    url: "http://www.gstatic.com/generate_204",
+    interval: 300,
+    tolerance: 50,
+    proxies: [],
   },
 
   {
-    "name": "Proxies",
-    "type": "select",
-    "proxies": [
-      "Fallback"
-    ]
+    name: "Proxies",
+    type: "select",
+    proxies: ["Fallback"],
   },
   {
-    "name": "AI",
-    "type": "select",
-    "proxies": [
-      "AutoAI",
-      "Proxies",
-
-    ]
+    name: "AI",
+    type: "select",
+    proxies: ["AutoAI", "Proxies"],
   },
   {
-    "name": "Netflix",
-    "type": "select",
-    "proxies": [
-      "Proxies",
-
-    ]
+    name: "Netflix",
+    type: "select",
+    proxies: ["Proxies"],
   },
   {
-    "name": "Microsoft",
-    "type": "select",
-    "proxies": [
-      "Proxies",
-      "DIRECT"
-    ]
+    name: "Microsoft",
+    type: "select",
+    proxies: ["Proxies", "DIRECT"],
   },
 
   {
-    "name": "AdBlock",
-    "type": "select",
-    "proxies": [
-      "REJECT",
-      "DIRECT"
-    ]
+    name: "AdBlock",
+    type: "select",
+    proxies: ["REJECT", "DIRECT"],
   },
 
   {
-    "name": "Direct",
-    "type": "select",
-    "proxies": [
-      "DIRECT"
-    ]
+    name: "Direct",
+    type: "select",
+    proxies: ["DIRECT"],
   },
 
   {
-    "name": "Others",
-    "type": "select",
-    "proxies": [
-      "Proxies",
-      "DIRECT"
-    ]
+    name: "Others",
+    type: "select",
+    proxies: ["Proxies", "DIRECT"],
   },
   {
-    "name": "AutoAI",
-    "type": "url-test",
-    "url": "http://www.gstatic.com/generate_204",
-    "interval": 300,
-    "tolerance": 50,
-    "proxies": [
-    ]
-  }
+    name: "AutoAI",
+    type: "url-test",
+    url: "http://www.gstatic.com/generate_204",
+    interval: 300,
+    tolerance: 50,
+    proxies: [],
+  },
 ];
 
-
 function main(config) {
+  // Inject rules and provider definitions.
   config.rules = rules;
-  config['rule-providers'] = providers;
+  config["rule-providers"] = providers;
 
+  // Group proxies by the second token in name, e.g. `HK xxx`, `JP xxx`.
   const airports = config.proxies.reduce((airports, { name }) => {
-    (airports[name.split(' ')[1]] ??= []).push(name);
+    (airports[name.split(" ")[1]] ??= []).push(name);
     return airports;
   }, {});
-  let fallbackProxies = groups.find(group => group.name == 'Fallback').proxies;
-  for (let [airport, proxies] of Object.entries(airports)) {
-    groups.push({
+  // Get Fallback group; each per-airport Auto group will be attached to it.
+  let fallbackProxies = groups.find(
+    (group) => group.name == "Fallback",
+  ).proxies;
+  Object.entries(airports).forEach(([airport, proxies], index) => {
+    // Create one url-test group per airport.
+    groups.splice(index, 0, {
       name: "Auto" + airport,
-      "type": "url-test",
-      "url": "http://www.gstatic.com/generate_204",
-      "interval": 300,
-      "tolerance": 50,
-      proxies
+      type: "url-test",
+      url: "http://www.gstatic.com/generate_204",
+      interval: 300,
+      tolerance: 50,
+      proxies,
     });
     fallbackProxies.push("Auto" + airport);
-  }
+  });
 
-  let proxyNames = config.proxies.map(proxy => proxy.name);
+  let proxyNames = config.proxies.map((proxy) => proxy.name);
 
   for (const group of groups) {
-    if (["Proxies", 'Microsoft', 'AI', 'Netflix'].includes(group.name)) {
+    // Append all nodes to common manual selection groups for fallback use.
+    if (["Proxies", "Microsoft", "AI", "Netflix"].includes(group.name)) {
       group.proxies = group.proxies.concat(proxyNames);
     }
 
     if (group.name == "AutoAI") {
-      group.proxies = proxyNames.filter(name => name.includes('GPT'));
+      // AutoAI prefers nodes containing GPT; otherwise use all nodes.
+      group.proxies = proxyNames.filter((name) => name.includes("GPT"));
       group.proxies = group.proxies.length ? group.proxies : proxyNames;
     }
   }
 
-  config['proxy-groups'] = groups;
+  config["proxy-groups"] = groups;
 
   return config;
 }
