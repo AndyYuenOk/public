@@ -246,16 +246,11 @@ function operator(config) {
   config["rule-providers"] = ruleProviders;
 
   config.proxies = config.proxies.filter((proxy) => {
-    let isMatched = true;
-    if (regionFilters.length) {
-      isMatched = regionFilters.some((regionFilter) =>
-        proxy.name.includes(regionFilter),
-      );
-    }
-    if (nameRegex) {
-      isMatched = RegExp(nameRegex).test(proxy.name);
-    }
-    return isMatched;
+    const matchesRegion =
+      !regionFilters.length ||
+      regionFilters.some((regionFilter) => proxy.name.includes(regionFilter));
+    const matchesRegex = !nameRegex || RegExp(nameRegex).test(proxy.name);
+    return matchesRegion && matchesRegex;
   });
 
   let proxiesGroupMembers = strategyGroups.find(
