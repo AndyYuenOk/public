@@ -240,7 +240,7 @@ let strategyGroups = [
   },
 ];
 
-function operator(config) {
+function main(config) {
   // Inject rules and provider definitions.
   config.rules = routingRules;
   config["rule-providers"] = ruleProviders;
