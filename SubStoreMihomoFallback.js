@@ -1,6 +1,7 @@
 "use strict";
 
 let regions = $arguments.regions?.split("+") ?? [];
+let multiplier = $arguments.multiplier;
 
 // Rule order is top-down; earlier entries have higher priority.
 let rules = [
@@ -253,11 +254,16 @@ function main(config) {
   config.rules = rules;
   config["rule-providers"] = providers;
 
-  if (regions.length) {
-    config.proxies = config.proxies.filter((proxy) =>
-      regions.some((region) => proxy.name.includes(region)),
-    );
-  }
+  config.proxies = config.proxies.filter((proxy) => {
+    let matched = true;
+    if (regions.length) {
+      matched = regions.some((region) => proxy.name.includes(region));
+    }
+    if (multiplier) {
+      matched = RegExp(multiplier).test(proxy.name);
+    }
+    return matched;
+  });
 
   // Group proxies by the second token in name, e.g. `HK xxx`, `JP xxx`.
   const airports = config.proxies.reduce((airports, { name }) => {
