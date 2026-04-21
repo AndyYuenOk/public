@@ -240,7 +240,7 @@ let strategyGroups = [
   },
 ];
 
-function main(config) {
+function operator(config) {
   // Inject rules and provider definitions.
   config.rules = routingRules;
   config["rule-providers"] = ruleProviders;
@@ -263,9 +263,6 @@ function main(config) {
   ).proxies;
   let fullNodeGroupNames = ["Proxies", "Microsoft", "AI", "Netflix"];
 
-  console.log("------------------------------------------");
-  console.log(enableFallback);
-  console.log("------------------------------------------");
   if (enableFallback) {
     let autoSelectGroup = {
       name: "Fallback",
