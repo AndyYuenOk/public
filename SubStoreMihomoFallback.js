@@ -1,5 +1,7 @@
 "use strict";
 
+let regions = $arguments.regions?.splice("+") ?? [];
+
 // Rule order is top-down; earlier entries have higher priority.
 let rules = [
   "RULE-SET,LocalAreaNetwork (Domain),Direct",
@@ -250,6 +252,12 @@ function main(config) {
   // Inject rules and provider definitions.
   config.rules = rules;
   config["rule-providers"] = providers;
+
+  if (regions.length) {
+    config.proxies = config.proxies.filter((proxy) =>
+      regions.some((region) => proxy.name.includes(region)),
+    );
+  }
 
   // Group proxies by the second token in name, e.g. `HK xxx`, `JP xxx`.
   const airports = config.proxies.reduce((airports, { name }) => {
