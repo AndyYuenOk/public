@@ -1,8 +1,8 @@
 "use strict";
 
 let regionFilters = $arguments.regions?.split("+") ?? [];
-let inclusion = $arguments.inclusion;
-let exclusion = $arguments.exclusion;
+let include = $arguments.include;
+let exclude = $arguments.exclude;
 let enableFallback = $arguments.fallback;
 
 // Rule order is top-down; earlier entries have higher priority.
@@ -250,12 +250,12 @@ function main(config) {
     const matchesRegion =
       !regionFilters.length ||
       regionFilters.some((regionFilter) => proxy.name.includes(regionFilter));
-    const matchesRegex = !inclusion || RegExp(inclusion).test(proxy.name);
+    const matchesRegex = !include || RegExp(include).test(proxy.name);
     return matchesRegion && matchesRegex;
   });
 
   config.proxies = config.proxies.filter(
-    ({ name }) => !RegExp(exclusion).test(name),
+    ({ name }) => !RegExp(exclude).test(name),
   );
 
   let proxiesGroupMembers = strategyGroups.find(
