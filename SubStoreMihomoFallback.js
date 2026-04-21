@@ -203,7 +203,7 @@ let groups = [
     "name": "Proxies",
     "type": "select",
     "proxies": [
-
+      "Fallback"
     ]
   },
   {
