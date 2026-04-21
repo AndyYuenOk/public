@@ -263,6 +263,9 @@ function main(config) {
   ).proxies;
   let fullNodeGroupNames = ["Proxies", "Microsoft", "AI", "Netflix"];
 
+  console.log("------------------------------------------");
+  console.log(enableFallback);
+  console.log("------------------------------------------");
   if (enableFallback) {
     let autoSelectGroup = {
       name: "Fallback",
