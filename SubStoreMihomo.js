@@ -281,10 +281,7 @@ function main(config) {
       },
       {},
     );
-    // Get Fallback group; each per-airport Auto group will be attached to it.
-    let fallbackMembers = strategyGroups.find(
-      ({ name }) => name == "Fallback",
-    ).proxies;
+
     Object.entries(airportProxyMap).forEach(
       ([airportCode, airportProxies], groupInsertIndex) => {
         // Create one url-test group per airport.
@@ -296,7 +293,7 @@ function main(config) {
           tolerance: 50,
           proxies: airportProxies,
         });
-        fallbackMembers.push("Auto" + airportCode);
+        autoSelectGroup.proxies.push("Auto" + airportCode);
       },
     );
   } else {
