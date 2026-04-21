@@ -1,6 +1,11 @@
 "use strict";
 
-let rules = [
+let regionFilters = $arguments.regions?.split("+") ?? [];
+let nameRegex = $arguments.multiplier;
+let enableFallback = $arguments.fallback;
+
+// Rule order is top-down; earlier entries have higher priority.
+let routingRules = [
   "RULE-SET,LocalAreaNetwork (Domain),Direct",
   "RULE-SET,LocalAreaNetwork (IP-CIDR),Direct,no-resolve",
   "RULE-SET,UnBan (Domain),Direct",
@@ -71,7 +76,8 @@ let rules = [
   "MATCH,Others",
 ];
 
-let providers = {
+let ruleProviders = {
+  // Provider keys must match RULE-SET names used in `rules`.
   "LocalAreaNetwork (Domain)": {
     type: "http",
     behavior: "domain",
@@ -185,19 +191,11 @@ let providers = {
   },
 };
 
-let groups = [
-  {
-    name: "Auto",
-    type: "url-test",
-    url: "http://www.gstatic.com/generate_204",
-    interval: 300,
-    tolerance: 50,
-    proxies: [],
-  },
+let strategyGroups = [
   {
     name: "Proxies",
     type: "select",
-    proxies: ["Auto"],
+    proxies: [],
   },
   {
     name: "AI",
@@ -243,25 +241,101 @@ let groups = [
 ];
 
 function main(config) {
-  config.rules = rules;
-  config["rule-providers"] = providers;
+  // Inject rules and provider definitions.
+  config.rules = routingRules;
+  config["rule-providers"] = ruleProviders;
 
-  let proxyNames = config.proxies.map((proxy) => proxy.name);
+  config.proxies = config.proxies.filter((proxy) => {
+    let isMatched = true;
+    if (regionFilters.length) {
+      isMatched = regionFilters.some((regionFilter) =>
+        proxy.name.includes(regionFilter),
+      );
+    }
+    if (nameRegex) {
+      isMatched = RegExp(nameRegex).test(proxy.name);
+    }
+    return isMatched;
+  });
 
-  for (const group of groups) {
-    if (
-      ["Auto", "Proxies", "Microsoft", "AI", "Netflix"].includes(group.name)
-    ) {
-      group.proxies = group.proxies.concat(proxyNames);
+  let proxiesGroupMembers = strategyGroups.find(
+    ({ name }) => name == "Proxies",
+  ).proxies;
+  let fullNodeGroupNames = ["Proxies", "Microsoft", "AI", "Netflix"];
+
+  if (enableFallback) {
+    let autoSelectGroup = {
+      name: "Fallback",
+      type: "fallback",
+      url: "http://www.gstatic.com/generate_204",
+      interval: 300,
+      tolerance: 50,
+      proxies: [],
+    };
+
+    // Group proxies by the second token in name, e.g. `HK xxx`, `JP xxx`.
+    const airportProxyMap = config.proxies.reduce(
+      (airportProxyMap, { name }) => {
+        (airportProxyMap[name.split(" ")[1]] ??= []).push(name);
+        return airportProxyMap;
+      },
+      {},
+    );
+    // Get Fallback group; each per-airport Auto group will be attached to it.
+    let fallbackMembers = strategyGroups.find(
+      ({ name }) => name == "Fallback",
+    ).proxies;
+    Object.entries(airportProxyMap).forEach(
+      ([airportCode, airportProxies], groupInsertIndex) => {
+        // Create one url-test group per airport.
+        strategyGroups.splice(groupInsertIndex, 0, {
+          name: "Auto" + airportCode,
+          type: "url-test",
+          url: "http://www.gstatic.com/generate_204",
+          interval: 300,
+          tolerance: 50,
+          proxies: airportProxies,
+        });
+        fallbackMembers.push("Auto" + airportCode);
+      },
+    );
+  } else {
+    autoSelectGroup = {
+      name: "Auto",
+      type: "url-test",
+      url: "http://www.gstatic.com/generate_204",
+      interval: 300,
+      tolerance: 50,
+      proxies: [],
+    };
+
+    fullNodeGroupNames.unshift("Auto");
+  }
+
+  strategyGroups.unshift(autoSelectGroup);
+
+  proxiesGroupMembers.push(autoSelectGroup.name);
+
+  let allProxyNames = config.proxies.map((proxy) => proxy.name);
+
+  for (const strategyGroup of strategyGroups) {
+    // Append all nodes to common manual selection groups for fallback use.
+    if (fullNodeGroupNames.includes(strategyGroup.name)) {
+      strategyGroup.proxies = strategyGroup.proxies.concat(allProxyNames);
     }
 
-    if (group.name == "AutoAI") {
-      group.proxies = proxyNames.filter((name) => name.includes("GPT"));
-      group.proxies = group.proxies.length ? group.proxies : proxyNames;
+    if (strategyGroup.name == "AutoAI") {
+      // AutoAI prefers nodes containing GPT; otherwise use all nodes.
+      strategyGroup.proxies = allProxyNames.filter((name) =>
+        name.includes("GPT"),
+      );
+      strategyGroup.proxies = strategyGroup.proxies.length
+        ? strategyGroup.proxies
+        : allProxyNames;
     }
   }
 
-  config["proxy-groups"] = groups;
+  config["proxy-groups"] = strategyGroups;
 
   return config;
 }
