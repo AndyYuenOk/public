@@ -273,14 +273,13 @@ function main(config) {
   config.rules = rules;
   config['rule-providers'] = providers;
 
-  let airports = {};
-  config.proxies.forEach(proxy => {
-    airports[proxy.name.split(' ')[1]] ??= [];
-    airports[proxy.name.split(' ')[1]].push(proxy.name);
-  });
-  let fallbackProxies = group.find(group => group.name == 'Fallback').proxies;
+  const airports = config.proxies.reduce((airports, { name }) => {
+    (airports[name.split(' ')[1]] ??= []).push(name);
+    return airports;
+  }, {});
+  let fallbackProxies = groups.find(group => group.name == 'Fallback').proxies;
   for (let [airport, proxies] of Object.entries(airports)) {
-    group.proxies.push({
+    groups.push({
       name: "Auto" + airport,
       "type": "url-test",
       "url": "http://www.gstatic.com/generate_204",
