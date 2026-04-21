@@ -1,5 +1,9 @@
 "use strict";
 
+console.log($arguments);
+
+let regions = $arguments?.regions?.splice("+") ?? [];
+
 // Rule order is top-down; earlier entries have higher priority.
 let rules = [
   "RULE-SET,LocalAreaNetwork (Domain),Direct",
@@ -247,8 +251,6 @@ let groups = [
 ];
 
 function main(config) {
-  let regions = $arguments?.regions?.splice("+") ?? [];
-
   // Inject rules and provider definitions.
   config.rules = rules;
   config["rule-providers"] = providers;
