@@ -1,7 +1,7 @@
 "use strict";
 
 let enableFallback = $arguments.fallback;
-let regions, allowPatterns, blockPatterns;
+let regions, allowPatterns, blockPatterns, ai;
 
 try {
   regions = JSON.parse($arguments.regions ?? "[]");
@@ -19,6 +19,12 @@ try {
   blockPatterns = JSON.parse($arguments.block ?? "[]");
 } catch {
   blockPatterns = [$arguments.block];
+}
+
+try {
+  aiPatterns = JSON.parse($arguments.ai ?? '["GPT"]');
+} catch {
+  aiPatterns = [$arguments.ai];
 }
 
 // Rule order is top-down; earlier entries have higher priority.
@@ -294,20 +300,20 @@ function main(config) {
 
   let allProxyNames = config.proxies.map((proxy) => proxy.name);
 
-  for (const strategyGroup of strategyGroups) {
+  for (const group of strategyGroups) {
     // Append all nodes to common manual selection groups for fallback use.
-    if (fullNodeGroupNames.includes(strategyGroup.name)) {
-      strategyGroup.proxies = strategyGroup.proxies.concat(allProxyNames);
+    if (fullNodeGroupNames.includes(group.name)) {
+      group.proxies = group.proxies.concat(allProxyNames);
     }
 
-    if (strategyGroup.name == "AutoAI") {
-      // AutoAI prefers nodes containing GPT; otherwise use all nodes.
-      strategyGroup.proxies = allProxyNames.filter((name) =>
-        name.includes("GPT"),
-      );
-      strategyGroup.proxies = strategyGroup.proxies.length
-        ? strategyGroup.proxies
-        : allProxyNames;
+    if (group.name == "AutoAI") {
+      if (aiPatterns.length) {
+        group.proxies = allProxyNames.filter((name) =>
+          aiPatterns.every((pattern) => RegExp(pattern).test(name)),
+        );
+      }
+
+      group.proxies = group.proxies.length ? group.proxies : allProxyNames;
     }
   }
 
