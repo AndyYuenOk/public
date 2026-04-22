@@ -96,117 +96,75 @@ let routingRules = [
 let ruleProviders = {
   // Provider keys must match RULE-SET names used in `rules`.
   "LocalAreaNetwork (Domain)": {
-    type: "http",
     behavior: "domain",
     url: "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvTG9jYWxBcmVhTmV0d29yay5saXN0",
-    interval: 86400,
   },
   "LocalAreaNetwork (IP-CIDR)": {
-    type: "http",
     behavior: "ipcidr",
     url: "https://url.v1.mk/getruleset?type=4&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvTG9jYWxBcmVhTmV0d29yay5saXN0",
-
-    interval: 86400,
   },
   "UnBan (Domain)": {
-    type: "http",
     behavior: "domain",
     url: "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvVW5CYW4ubGlzdA",
-
-    interval: 86400,
   },
   "adblockclash (Domain)": {
-    type: "http",
     behavior: "domain",
     url: "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tLzIxN2hlaWRhaS9hZGJsb2NrZmlsdGVycy9tYWluL3J1bGVzL2FkYmxvY2tjbGFzaC5saXN0",
-
-    interval: 86400,
   },
   "GoogleCN (Domain)": {
-    type: "http",
     behavior: "domain",
     url: "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvR29vZ2xlQ04ubGlzdA",
-
-    interval: 86400,
   },
   "SteamCN (Domain)": {
-    type: "http",
     behavior: "domain",
     url: "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvUnVsZXNldC9TdGVhbUNOLmxpc3Q",
-
-    interval: 86400,
   },
   "Microsoft (Domain)": {
-    type: "http",
     behavior: "domain",
     url: "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvTWljcm9zb2Z0Lmxpc3Q",
-
-    interval: 86400,
   },
   "AI (Domain)": {
-    type: "http",
     behavior: "domain",
     url: "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvUnVsZXNldC9BSS5saXN0",
-
-    interval: 86400,
   },
   "OpenAi (Domain)": {
-    type: "http",
     behavior: "domain",
     url: "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvUnVsZXNldC9PcGVuQWkubGlzdA",
-
-    interval: 86400,
   },
   "Netflix (Domain)": {
-    type: "http",
     behavior: "domain",
     url: "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvUnVsZXNldC9OZXRmbGl4Lmxpc3Q",
-
-    interval: 86400,
   },
   "Netflix (IP-CIDR)": {
-    type: "http",
     behavior: "ipcidr",
     url: "https://url.v1.mk/getruleset?type=4&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvUnVsZXNldC9OZXRmbGl4Lmxpc3Q",
-
-    interval: 86400,
   },
   "ProxyLite (Domain)": {
-    type: "http",
     behavior: "domain",
     url: "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvUHJveHlMaXRlLmxpc3Q",
-
-    interval: 86400,
   },
   "ProxyLite (IP-CIDR)": {
-    type: "http",
     behavior: "ipcidr",
     url: "https://url.v1.mk/getruleset?type=4&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvUHJveHlMaXRlLmxpc3Q",
-
-    interval: 86400,
   },
   "ChinaDomain (Domain)": {
-    type: "http",
     behavior: "domain",
     url: "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvQ2hpbmFEb21haW4ubGlzdA",
-
-    interval: 86400,
   },
   "ChinaDomain (IP-CIDR)": {
-    type: "http",
     behavior: "ipcidr",
     url: "https://url.v1.mk/getruleset?type=4&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvQ2hpbmFEb21haW4ubGlzdA",
-
-    interval: 86400,
   },
   "ChinaCompanyIp (IP-CIDR)": {
-    type: "http",
     behavior: "ipcidr",
     url: "https://url.v1.mk/getruleset?type=4&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvQ2hpbmFDb21wYW55SXAubGlzdA",
-
-    interval: 86400,
   },
 };
+
+Object.values(ruleProviders).forEach((provider) => {
+  provider.type = "http";
+  provider.interval = 86400;
+});
 
 let strategyGroups = [
   {
