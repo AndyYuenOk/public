@@ -11,7 +11,7 @@ let includePatterns = $arguments.allow?.split("\n") ?? [];
 let excludePatterns = $arguments.block?.split("\n") ?? [];
 let enableFallback = $arguments.fallback;
 console.log($arguments.regions);
-console.log(typeof $arguments.test);
+console.log(typeof $arguments.regions);
 
 // Rule order is top-down; earlier entries have higher priority.
 let routingRules = [
