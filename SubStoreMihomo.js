@@ -261,7 +261,7 @@ function main(config) {
     // Group proxies by the second token in name, e.g. `HK xxx`, `JP xxx`.
     const airportProxyMap = config.proxies.reduce(
       (airportProxyMap, { name }) => {
-        (airportProxyMap[name.split(" ")[0]] ??= []).push(name);
+        (airportProxyMap[name.split(" ")[1]] ??= []).push(name);
         return airportProxyMap;
       },
       {},
