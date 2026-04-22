@@ -42,33 +42,33 @@ let routingRules = [
   "DOMAIN-KEYWORD,netflixdnstest,Netflix",
   "RULE-SET,Netflix (Domain),Netflix",
   "RULE-SET,Netflix (IP-CIDR),Netflix,no-resolve",
-  "DOMAIN-KEYWORD,1e100,Proxies",
-  "DOMAIN-KEYWORD,abema,Proxies",
-  "DOMAIN-KEYWORD,appledaily,Proxies",
-  "DOMAIN-KEYWORD,avtb,Proxies",
-  "DOMAIN-KEYWORD,beetalk,Proxies",
-  "DOMAIN-KEYWORD,blogspot,Proxies",
-  "DOMAIN-KEYWORD,dropbox,Proxies",
-  "DOMAIN-KEYWORD,facebook,Proxies",
-  "DOMAIN-KEYWORD,fbcdn,Proxies",
-  "DOMAIN-KEYWORD,github,Proxies",
-  "DOMAIN-KEYWORD,gmail,Proxies",
-  "DOMAIN-KEYWORD,google,Proxies",
-  "DOMAIN-KEYWORD,instagram,Proxies",
-  "DOMAIN-KEYWORD,porn,Proxies",
-  "DOMAIN-KEYWORD,sci-hub,Proxies",
-  "DOMAIN-KEYWORD,spotify,Proxies",
-  "DOMAIN-KEYWORD,telegram,Proxies",
-  "DOMAIN-KEYWORD,twitter,Proxies",
-  "DOMAIN-KEYWORD,whatsapp,Proxies",
-  "DOMAIN-KEYWORD,youtube,Proxies",
-  "DOMAIN-KEYWORD,uk-live,Proxies",
-  "DOMAIN-KEYWORD,onedrive,Proxies",
-  "DOMAIN-KEYWORD,skydrive,Proxies",
-  "DOMAIN-KEYWORD,porn,Proxies",
-  "DOMAIN-KEYWORD,ttvnw,Proxies",
-  "RULE-SET,ProxyLite (Domain),Proxies",
-  "RULE-SET,ProxyLite (IP-CIDR),Proxies,no-resolve",
+  "DOMAIN-KEYWORD,1e100,Manual",
+  "DOMAIN-KEYWORD,abema,Manual",
+  "DOMAIN-KEYWORD,appledaily,Manual",
+  "DOMAIN-KEYWORD,avtb,Manual",
+  "DOMAIN-KEYWORD,beetalk,Manual",
+  "DOMAIN-KEYWORD,blogspot,Manual",
+  "DOMAIN-KEYWORD,dropbox,Manual",
+  "DOMAIN-KEYWORD,facebook,Manual",
+  "DOMAIN-KEYWORD,fbcdn,Manual",
+  "DOMAIN-KEYWORD,github,Manual",
+  "DOMAIN-KEYWORD,gmail,Manual",
+  "DOMAIN-KEYWORD,google,Manual",
+  "DOMAIN-KEYWORD,instagram,Manual",
+  "DOMAIN-KEYWORD,porn,Manual",
+  "DOMAIN-KEYWORD,sci-hub,Manual",
+  "DOMAIN-KEYWORD,spotify,Manual",
+  "DOMAIN-KEYWORD,telegram,Manual",
+  "DOMAIN-KEYWORD,twitter,Manual",
+  "DOMAIN-KEYWORD,whatsapp,Manual",
+  "DOMAIN-KEYWORD,youtube,Manual",
+  "DOMAIN-KEYWORD,uk-live,Manual",
+  "DOMAIN-KEYWORD,onedrive,Manual",
+  "DOMAIN-KEYWORD,skydrive,Manual",
+  "DOMAIN-KEYWORD,porn,Manual",
+  "DOMAIN-KEYWORD,ttvnw,Manual",
+  "RULE-SET,ProxyLite (Domain),Manual",
+  "RULE-SET,ProxyLite (IP-CIDR),Manual,no-resolve",
   "DOMAIN-KEYWORD,360buy,Direct",
   "DOMAIN-KEYWORD,alicdn,Direct",
   "DOMAIN-KEYWORD,alimama,Direct",
@@ -176,24 +176,24 @@ let strategyGroups = [
     proxies: [],
   },
   {
-    name: "Proxies",
+    name: "Manual",
     type: "select",
     proxies: [],
   },
   {
     name: "AI",
     type: "select",
-    proxies: ["AutoAI", "Proxies"],
+    proxies: ["AutoAI", "Manual"],
   },
   {
     name: "Netflix",
     type: "select",
-    proxies: ["Proxies"],
+    proxies: ["Manual"],
   },
   {
     name: "Microsoft",
     type: "select",
-    proxies: ["Proxies", "DIRECT"],
+    proxies: ["Manual", "DIRECT"],
   },
 
   {
@@ -211,7 +211,7 @@ let strategyGroups = [
   {
     name: "Others",
     type: "select",
-    proxies: ["Proxies", "DIRECT"],
+    proxies: ["Manual", "DIRECT"],
   },
 ];
 
@@ -239,10 +239,10 @@ function main(config) {
     );
   }
 
-  let proxiesGroupMembers = strategyGroups.find(
-    ({ name }) => name == "Proxies",
+  let ManualProxies = strategyGroups.find(
+    ({ name }) => name == "Manual",
   ).proxies;
-  let fullNodeGroupNames = ["Proxies", "Microsoft", "AI", "Netflix"];
+  let fullNodeGroupNames = ["Manual", "Netflix"];
 
   let autoSelectGroup,
     healthCheck = {
@@ -290,7 +290,7 @@ function main(config) {
 
   strategyGroups.unshift({ ...autoSelectGroup, ...healthCheck });
 
-  proxiesGroupMembers.push(autoSelectGroup.name);
+  ManualProxies.push(autoSelectGroup.name);
 
   let allProxyNames = config.proxies.map((proxy) => proxy.name);
 
