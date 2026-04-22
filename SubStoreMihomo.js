@@ -1,8 +1,7 @@
 "use strict";
 
-let regionFilters = $arguments.regions?.split("+") ?? [];
-let include = $arguments.include;
-let exclude = $arguments.exclude;
+let includePatterns = $arguments.allow?.split("\n") ?? [];
+let excludePatterns = $arguments.block?.split("\n") ?? [];
 let enableFallback = $arguments.fallback;
 
 // Rule order is top-down; earlier entries have higher priority.
@@ -194,6 +193,14 @@ let ruleProviders = {
 
 let strategyGroups = [
   {
+    name: "AutoAI",
+    type: "url-test",
+    url: "http://www.gstatic.com/generate_204",
+    interval: 300,
+    tolerance: 50,
+    proxies: [],
+  },
+  {
     name: "Proxies",
     type: "select",
     proxies: [],
@@ -231,14 +238,6 @@ let strategyGroups = [
     type: "select",
     proxies: ["Proxies", "DIRECT"],
   },
-  {
-    name: "AutoAI",
-    type: "url-test",
-    url: "http://www.gstatic.com/generate_204",
-    interval: 300,
-    tolerance: 50,
-    proxies: [],
-  },
 ];
 
 function main(config) {
@@ -246,31 +245,35 @@ function main(config) {
   config.rules = routingRules;
   config["rule-providers"] = ruleProviders;
 
-  config.proxies = config.proxies.filter((proxy) => {
-    const matchesRegion =
-      !regionFilters.length ||
-      regionFilters.some((regionFilter) => proxy.name.includes(regionFilter));
-    const matchesRegex = !include || RegExp(include).test(proxy.name);
-    return matchesRegion && matchesRegex;
-  });
+  if (includePatterns.length) {
+    config.proxies = config.proxies.filter(({ name }) =>
+      includePatterns.some((pattern) => RegExp(pattern).test(name)),
+    );
+  }
 
-  config.proxies = config.proxies.filter(
-    ({ name }) => !RegExp(exclude).test(name),
-  );
+  if (excludePatterns.length) {
+    config.proxies = config.proxies.filter(
+      ({ name }) =>
+        !excludePatterns.some((pattern) => RegExp(pattern).test(name)),
+    );
+  }
 
   let proxiesGroupMembers = strategyGroups.find(
     ({ name }) => name == "Proxies",
   ).proxies;
   let fullNodeGroupNames = ["Proxies", "Microsoft", "AI", "Netflix"];
 
-  let autoSelectGroup;
+  let autoSelectGroup,
+    healthCheck = {
+      url: "http://www.gstatic.com/generate_204",
+      interval: 300,
+      tolerance: 50,
+    };
+
   if (enableFallback) {
     autoSelectGroup = {
       name: "Fallback",
       type: "fallback",
-      url: "http://www.gstatic.com/generate_204",
-      interval: 300,
-      tolerance: 50,
       proxies: [],
     };
 
@@ -289,9 +292,6 @@ function main(config) {
         strategyGroups.splice(groupInsertIndex, 0, {
           name: "Auto" + airportCode,
           type: "url-test",
-          url: "http://www.gstatic.com/generate_204",
-          interval: 300,
-          tolerance: 50,
           proxies: airportProxies,
         });
         autoSelectGroup.proxies.push("Auto" + airportCode);
@@ -301,16 +301,13 @@ function main(config) {
     autoSelectGroup = {
       name: "Auto",
       type: "url-test",
-      url: "http://www.gstatic.com/generate_204",
-      interval: 300,
-      tolerance: 50,
       proxies: [],
     };
 
     fullNodeGroupNames.unshift("Auto");
   }
 
-  strategyGroups.unshift(autoSelectGroup);
+  strategyGroups.unshift({ ...autoSelectGroup, ...healthCheck });
 
   proxiesGroupMembers.push(autoSelectGroup.name);
 
