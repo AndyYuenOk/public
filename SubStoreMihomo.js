@@ -1,6 +1,12 @@
 "use strict";
 
-let regions = [].concat($arguments.regions ?? []);
+let regions;
+try {
+  regions = JSON.parse($arguments.regions ?? "[]");
+} catch {
+  regions = [$arguments.regions];
+}
+
 let includePatterns = $arguments.allow?.split("\n") ?? [];
 let excludePatterns = $arguments.block?.split("\n") ?? [];
 let enableFallback = $arguments.fallback;
