@@ -1,17 +1,25 @@
 "use strict";
 
-let regions;
+let enableFallback = $arguments.fallback;
+let regions, allowPatterns, blockPatterns;
+
 try {
   regions = JSON.parse($arguments.regions ?? "[]");
 } catch {
   regions = [$arguments.regions];
 }
 
-let includePatterns = $arguments.allow?.split("\n") ?? [];
-let excludePatterns = $arguments.block?.split("\n") ?? [];
-let enableFallback = $arguments.fallback;
-console.log($arguments.regions);
-console.log(typeof $arguments.regions);
+try {
+  allowPatterns = JSON.parse($arguments.allow ?? "[]");
+} catch {
+  allowPatterns = [$arguments.allow];
+}
+
+try {
+  blockPatterns = JSON.parse($arguments.block ?? "[]");
+} catch {
+  blockPatterns = [$arguments.block];
+}
 
 // Rule order is top-down; earlier entries have higher priority.
 let routingRules = [
@@ -254,16 +262,16 @@ function main(config) {
   config.rules = routingRules;
   config["rule-providers"] = ruleProviders;
 
-  if (includePatterns.length) {
+  if (allowPatterns.length) {
     config.proxies = config.proxies.filter(({ name }) =>
-      includePatterns.some((pattern) => RegExp(pattern).test(name)),
+      allowPatterns.some((pattern) => RegExp(pattern).test(name)),
     );
   }
 
-  if (excludePatterns.length) {
+  if (blockPatterns.length) {
     config.proxies = config.proxies.filter(
       ({ name }) =>
-        !excludePatterns.some((pattern) => RegExp(pattern).test(name)),
+        !blockPatterns.some((pattern) => RegExp(pattern).test(name)),
     );
   }
 
