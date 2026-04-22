@@ -262,6 +262,12 @@ function main(config) {
   config.rules = routingRules;
   config["rule-providers"] = ruleProviders;
 
+  if (regions.length) {
+    config.proxies = config.proxies.filter(({ name }) =>
+      regions.some((pattern) => RegExp(pattern).test(name)),
+    );
+  }
+
   if (allowPatterns.length) {
     config.proxies = config.proxies.filter(({ name }) =>
       allowPatterns.some((pattern) => RegExp(pattern).test(name)),
