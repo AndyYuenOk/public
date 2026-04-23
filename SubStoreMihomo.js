@@ -29,6 +29,11 @@ try {
 
 // Rule order is top-down; earlier entries have higher priority.
 let routingRules = [
+  "DOMAIN-SUFFIX,pairdrop.net,Direct",
+  "DOMAIN-SUFFIX,gh-proxy.com,Direct",
+  "DOMAIN-SUFFIX,ghfast.top,Direct",
+  "IP-CIDR,23.94.183.182/32,Direct,no-resolve",
+
   "RULE-SET,LocalAreaNetwork (Domain),Direct",
   "RULE-SET,LocalAreaNetwork (IP-CIDR),Direct,no-resolve",
   "RULE-SET,UnBan (Domain),Direct",
@@ -94,7 +99,6 @@ let routingRules = [
   "RULE-SET,ChinaDomain (Domain),Direct",
   "RULE-SET,ChinaDomain (IP-CIDR),Direct,no-resolve",
   "RULE-SET,ChinaCompanyIp (IP-CIDR),Direct,no-resolve",
-  "DOMAIN-SUFFIX,pairdrop.net,Direct",
   "GEOIP,CN,Direct",
   "MATCH,Others",
 ];
