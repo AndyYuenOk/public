@@ -268,7 +268,7 @@ function main(config) {
   if (enableFallback) {
     autoSelectGroup = {
       name: "Fallback",
-      icon: "Available.png",
+      icon: "Auto.png",
       type: "fallback",
       proxies: [],
     };
