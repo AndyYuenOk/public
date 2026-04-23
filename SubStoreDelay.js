@@ -69,7 +69,7 @@ async function operator(proxies = [], targetPlatform, env) {
         if (cached.latency) {
           validProxies.push({
             ...proxy,
-            name: `${proxy.name}${delimiter}${$arguments.show_latency ? `[${cached.latency}] ` : ""}`,
+            name: `${proxy.name}${delimiter}${$arguments.show_latency ? `${cached.latency}ms` : ""}`,
             _latency: cached.latency,
           });
         }
@@ -80,7 +80,7 @@ async function operator(proxies = [], targetPlatform, env) {
       $.info(`[${proxy.name}] latency: ${latency}`);
       validProxies.push({
         ...proxy,
-        name: `${proxy.name}${delimiter}${$arguments.show_latency ? `[${latency}] ` : ""}`,
+        name: `${proxy.name}${delimiter}${$arguments.show_latency ? `${latency}ms` : ""}`,
         _latency: latency,
       });
       if (cacheEnabled) {
