@@ -175,6 +175,7 @@ Object.values(ruleProviders).forEach((provider) => {
 let strategyGroups = [
   {
     name: "AutoAI",
+    icon: "Urltest.png",
     type: "url-test",
     url: "http://www.gstatic.com/generate_204",
     interval: 300,
@@ -183,39 +184,46 @@ let strategyGroups = [
   },
   {
     name: "Manual",
+    icon: "Static.png",
     type: "select",
     proxies: [],
   },
   {
     name: "AI",
+    icon: "OpenAI.png",
     type: "select",
     proxies: ["AutoAI", "Manual"],
   },
   {
     name: "Netflix",
+    icon: "Netflix.png",
     type: "select",
     proxies: ["Manual"],
   },
   {
     name: "Microsoft",
+    icon: "Microsoft.png",
     type: "select",
     proxies: ["Manual", "DIRECT"],
   },
 
   {
     name: "AdBlock",
+    icon: "Adblock.png",
     type: "select",
     proxies: ["REJECT", "DIRECT"],
   },
 
   {
     name: "Direct",
+    icon: "China.png",
     type: "select",
     proxies: ["DIRECT"],
   },
 
   {
     name: "Others",
+    icon: "Final.png",
     type: "select",
     proxies: ["Manual", "DIRECT"],
   },
@@ -260,6 +268,7 @@ function main(config) {
   if (enableFallback) {
     autoSelectGroup = {
       name: "Fallback",
+      icon: "Available.png",
       type: "fallback",
       proxies: [],
     };
@@ -278,6 +287,7 @@ function main(config) {
         // Create one url-test group per airport.
         strategyGroups.splice(groupInsertIndex, 0, {
           name: "Auto" + airportCode,
+          icon: "Urltest.png",
           type: "url-test",
           proxies: airportProxies,
         });
@@ -287,6 +297,7 @@ function main(config) {
   } else {
     autoSelectGroup = {
       name: "Auto",
+      icon: "Auto.png",
       type: "url-test",
       proxies: [],
     };
@@ -301,6 +312,9 @@ function main(config) {
   let allProxyNames = config.proxies.map((proxy) => proxy.name);
 
   for (const group of strategyGroups) {
+    group.icon =
+      "https://raw.githubusercontent.com/Orz-3/mini/master/Color/" + group.icon;
+
     // Append all nodes to common manual selection groups for fallback use.
     if (fullNodeGroupNames.includes(group.name)) {
       group.proxies = group.proxies.concat(allProxyNames);
