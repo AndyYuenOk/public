@@ -1,4 +1,4 @@
-/**
+﻿/**
  *
  * GPT 检测(适配 Sub-Store Node.js 版)
  *
@@ -62,7 +62,6 @@ async function operator(proxies = [], targetPlatform, context) {
   const method = $arguments.method || "get";
   // `client` is kept for backward compatibility, but GPT check now always uses iOS session endpoint.
   const gptUrl = `https://ios.chat.openai.com/public-api/auth/session`;
-  const cacheKeyVersion = "v7";
   const networkTransientFailureRegex =
     /exceeds the timeout|timed out|timeout|client network socket disconnected before secure tls connection was established|socket hang up|econnreset/i;
   const policyTransientFailureRegex =
@@ -357,9 +356,10 @@ async function operator(proxies = [], targetPlatform, context) {
           unsupported_latency: latency,
         });
       } else if (outcome === "transient_failure") {
-        $.info(
-          `[${proxy.name}] [${detection.name}] transient failure, skip failed cache and retry next request`,
-        );
+        if (cacheEnabled) {
+          $.info(`[${proxy.name}] [${detection.name}] 写入失败结果缓存(transient)`);
+          cache.set(id, {});
+        }
       } else if (cacheEnabled) {
         $.info(`[${proxy.name}] [${detection.name}] 写入失败结果缓存`);
         cache.set(id, {});
@@ -373,9 +373,10 @@ async function operator(proxies = [], targetPlatform, context) {
           detectionKey: detection.key,
         })
       ) {
-        $.info(
-          `[${proxy.name}] [${detection.name}] transient error, skip failed cache and retry next request`,
-        );
+        if (cacheEnabled) {
+          $.info(`[${proxy.name}] [${detection.name}] 写入失败结果缓存(transient error)`);
+          cache.set(id, {});
+        }
       } else if (cacheEnabled) {
         $.info(`[${proxy.name}] [${detection.name}] 写入失败结果缓存`);
         cache.set(id, {});
@@ -460,7 +461,10 @@ async function operator(proxies = [], targetPlatform, context) {
     if (networkTransientFailureRegex.test(`${text}`)) {
       return true;
     }
-    if (detectionKey === "gemini" && policyTransientFailureRegex.test(`${text}`)) {
+    if (
+      detectionKey === "gemini" &&
+      policyTransientFailureRegex.test(`${text}`)
+    ) {
       return true;
     }
     return false;
@@ -500,9 +504,7 @@ async function operator(proxies = [], targetPlatform, context) {
     return await fn();
   }
   function getCacheId({ proxy = {}, detection }) {
-    return `http-meta:${cacheKeyVersion}:${detection.key}:${
-      detection.url
-    }:${JSON.stringify(
+    return `http-meta:${detection.key}:${detection.url}:${JSON.stringify(
       Object.fromEntries(
         Object.entries(proxy).filter(
           ([key]) => !/^(name|collectionName|subName|id|_.*)$/i.test(key),
