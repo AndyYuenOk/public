@@ -1,7 +1,20 @@
 /**
  * 节点信息(入口版)
  *
- * ⚠️ 默认不进行域名解析 如有需要 可通过参数开启本地 DNS 解析
+ * 用途:
+ * - 查询节点入口 IP 所在地区/ASN 信息
+ * - 按自定义格式重命名节点
+ * - 可选附加 _entrance 字段, 便于后续脚本继续使用查询结果
+ *
+ * 当前默认行为:
+ * - [internal] 默认开启, 优先使用内部 GeoIP/MMDB 方法查询
+ * - [resolve_domain] 默认开启, 在 Node.js 环境下会先用本地 DNS 解析域名再查询
+ *
+ * ⚠️ 注意
+ * - 当 [internal] 开启时, 查询目标最终必须是 IP
+ * - 当 [resolve_domain] 开启时, 仅支持 Node.js 环境
+ * - 域名解析失败时不会回退原域名, 会按失败节点处理
+ * - 脚本不会修改原始 proxy.server, 解析得到的 IP 仅用于查询和缓存
  *
  * 查看说明: https://t.me/zhetengsha/1358
  *
@@ -13,12 +26,12 @@
  * - [retries] 重试次数 默认 1
  * - [retry_delay] 重试延时(单位: 毫秒) 默认 1000
  * - [concurrency] 并发数 默认 10
- * - [internal] 使用内部方法获取 IP 信息. 默认 false
+ * - [internal] 使用内部方法获取 IP 信息. 默认 true
  *              支持以下几种运行环境:
  *              1. Surge/Loon(build >= 692) 等有 $utils.ipaso 和 $utils.geoip API 的 App
  *              2. Node.js 版 Sub-Store, 设置环境变量 SUB_STORE_MMDB_COUNTRY_PATH 和 SUB_STORE_MMDB_ASN_PATH, 或 传入 mmdb_country_path 和 mmdb_asn_path 参数(分别为 MaxMind GeoLite2 Country 和 GeoLite2 ASN 数据库 的路径)
  *              数据来自 GeoIP 数据库
- *              ⚠️ 默认要求节点服务器为 IP. 若节点服务器为域名, 可开启 resolve_domain 使用本地 DNS 解析后再查询
+ *              ⚠️ 若节点服务器为域名, 请配合 resolve_domain 使用
  * - [method] 请求方法. 默认 get
  * - [timeout] 请求超时(单位: 毫秒) 默认 5000
  * - [api] 测入口的 API . 默认为 http://ip-api.com/json/{{proxy.server}}?lang=zh-CN
@@ -32,10 +45,20 @@
  * - [remove_failed] 移除失败的节点. 默认不移除.
  * - [mmdb_country_path] 见 internal
  * - [mmdb_asn_path] 见 internal
- * - [resolve_domain] 使用本地 DNS 解析节点域名后再查询. 默认 false
- *                    仅支持 Node.js 环境, 优先使用 IPv4, 解析失败时按失败节点处理
+ * - [resolve_domain] 使用本地 DNS 解析节点域名后再查询. 默认 true
+ *                    仅支持 Node.js 环境, 优先使用 IPv4, 若无 IPv4 则回退到系统返回的首个可用地址
+ *                    解析失败时按失败节点处理, 不回退原域名
  * - [cache] 使用缓存, 默认不使用缓存
  * - [disable_failed_cache/ignore_failed_error] 禁用失败缓存. 即不缓存失败结果
+ *
+ * 示例
+ * - 内部查询 + 本地 DNS 解析:
+ *   SubStoreEntrance.js#internal=true&resolve_domain=true&cache=true
+ * - 关闭本地 DNS 解析, 直接使用节点 server 查询:
+ *   SubStoreEntrance.js#resolve_domain=false
+ * - 使用 HTTP API 查询入口地区:
+ *   SubStoreEntrance.js#internal=false&api=http://ip-api.com/json/{{proxy.server}}?lang=zh-CN
+ *
  * 关于缓存时长
  * 当使用相关脚本时, 若在对应的脚本中使用参数(⚠ 别忘了这个, 一般为 cache, 值设为 true 即可)开启缓存
  * 可在前端(>=2.16.0) 配置各项缓存的默认时长
@@ -49,12 +72,10 @@
 async function operator(proxies = [], targetPlatform, context) {
   const $ = $substore;
   const { isNode } = $.env;
-  const internal = $arguments.internal;
+  const internal = /true|1/.test($arguments.internal ?? 1);
   const mmdb_country_path = $arguments.mmdb_country_path;
   const mmdb_asn_path = $arguments.mmdb_asn_path;
-  const resolveDomain = String($arguments.resolve_domain ?? "").toLowerCase() === "true" ||
-    $arguments.resolve_domain === 1 ||
-    $arguments.resolve_domain === "1";
+  const resolveDomain = /true|1/.test($arguments.resolve_domain ?? 1);
   const regex = $arguments.regex;
   let valid = $arguments.valid || `ProxyUtils.isIP('{{api.ip || api.query}}')`;
   let format =
