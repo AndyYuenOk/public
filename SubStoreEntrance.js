@@ -1,7 +1,7 @@
 /**
  * 节点信息(入口版)
  *
- * ⚠️ 本脚本不进行域名解析 如有需要 可在节点操作中添加域名解析
+ * ⚠️ 默认不进行域名解析 如有需要 可通过参数开启本地 DNS 解析
  *
  * 查看说明: https://t.me/zhetengsha/1358
  *
@@ -18,7 +18,7 @@
  *              1. Surge/Loon(build >= 692) 等有 $utils.ipaso 和 $utils.geoip API 的 App
  *              2. Node.js 版 Sub-Store, 设置环境变量 SUB_STORE_MMDB_COUNTRY_PATH 和 SUB_STORE_MMDB_ASN_PATH, 或 传入 mmdb_country_path 和 mmdb_asn_path 参数(分别为 MaxMind GeoLite2 Country 和 GeoLite2 ASN 数据库 的路径)
  *              数据来自 GeoIP 数据库
- *              ⚠️ 要求节点服务器为 IP. 本脚本不进行域名解析 可在节点操作中添加域名解析
+ *              ⚠️ 默认要求节点服务器为 IP. 若节点服务器为域名, 可开启 resolve_domain 使用本地 DNS 解析后再查询
  * - [method] 请求方法. 默认 get
  * - [timeout] 请求超时(单位: 毫秒) 默认 5000
  * - [api] 测入口的 API . 默认为 http://ip-api.com/json/{{proxy.server}}?lang=zh-CN
@@ -32,6 +32,8 @@
  * - [remove_failed] 移除失败的节点. 默认不移除.
  * - [mmdb_country_path] 见 internal
  * - [mmdb_asn_path] 见 internal
+ * - [resolve_domain] 使用本地 DNS 解析节点域名后再查询. 默认 false
+ *                    仅支持 Node.js 环境, 优先使用 IPv4, 解析失败时按失败节点处理
  * - [cache] 使用缓存, 默认不使用缓存
  * - [disable_failed_cache/ignore_failed_error] 禁用失败缓存. 即不缓存失败结果
  * 关于缓存时长
@@ -50,11 +52,21 @@ async function operator(proxies = [], targetPlatform, context) {
   const internal = $arguments.internal;
   const mmdb_country_path = $arguments.mmdb_country_path;
   const mmdb_asn_path = $arguments.mmdb_asn_path;
+  const resolveDomain = String($arguments.resolve_domain ?? "").toLowerCase() === "true" ||
+    $arguments.resolve_domain === 1 ||
+    $arguments.resolve_domain === "1";
   const regex = $arguments.regex;
   let valid = $arguments.valid || `ProxyUtils.isIP('{{api.ip || api.query}}')`;
   let format =
     $arguments.format || `{{api.country}} {{api.isp}} - {{proxy.name}}`;
   let utils;
+  let dns;
+  if (resolveDomain) {
+    if (!isNode) {
+      throw new Error("resolve_domain 仅支持 Node.js 环境");
+    }
+    dns = require("dns").promises;
+  }
   if (internal) {
     if (isNode) {
       utils = new ProxyUtils.MMDB({
@@ -62,10 +74,10 @@ async function operator(proxies = [], targetPlatform, context) {
         asn: mmdb_asn_path,
       });
       $.info(
-        `[MMDB] GeoLite2 Country 数据库文件路径: ${mmdb_country_path || eval("process.env.SUB_STORE_MMDB_ASN_PATH")}`,
+        `[MMDB] GeoLite2 Country 数据库文件路径: ${mmdb_country_path || eval("process.env.SUB_STORE_MMDB_COUNTRY_PATH")}`,
       );
       $.info(
-        `[MMDB] GeoLite2 ASN 数据库文件路径: ${mmdb_asn_path || eval("process.env.SUB_STORE_MMDB_COUNTRY_PATH")}`,
+        `[MMDB] GeoLite2 ASN 数据库文件路径: ${mmdb_asn_path || eval("process.env.SUB_STORE_MMDB_ASN_PATH")}`,
       );
     } else {
       // if (isSurge) {
@@ -140,18 +152,12 @@ async function operator(proxies = [], targetPlatform, context) {
   async function check(proxy) {
     // $.info(`[${proxy.name}] 检测`)
     // $.info(`检测 ${JSON.stringify(proxy, null, 2)}`)
-    const id = cacheEnabled
-      ? `entrance:${url}:${format}:${regex}:${internal}:${JSON.stringify(
-          Object.fromEntries(
-            Object.entries(proxy).filter(([key]) => {
-              const re = new RegExp(uniq_key);
-              return re.test(key);
-            }),
-          ),
-        )}`
-      : undefined;
+    let queryServer = String(proxy.server || "").trim();
+    let id = cacheEnabled ? getCacheId(proxy, queryServer) : undefined;
     // $.info(`检测 ${id}`)
     try {
+      queryServer = await getQueryServer(proxy);
+      id = cacheEnabled ? getCacheId(proxy, queryServer) : undefined;
       const cached = cache.get(id);
       if (cacheEnabled && cached) {
         if (cached.api) {
@@ -174,11 +180,11 @@ async function operator(proxies = [], targetPlatform, context) {
       let api = {};
       if (internal) {
         api = {
-          countryCode: utils.geoip(proxy.server) || "",
-          aso: utils.ipaso(proxy.server) || "",
+          countryCode: utils.geoip(queryServer) || "",
+          aso: utils.ipaso(queryServer) || "",
         };
         $.info(
-          `[${proxy.name}] countryCode: ${api.countryCode}, aso: ${api.aso}`,
+          `[${proxy.name}] queryServer: ${queryServer}, countryCode: ${api.countryCode}, aso: ${api.aso}`,
         );
         if (
           (api.countryCode || api.aso) &&
@@ -203,7 +209,10 @@ async function operator(proxies = [], targetPlatform, context) {
             "User-Agent":
               "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Mobile/15E148 Safari/604.1",
           },
-          url: formatter({ proxy, format: url }),
+          url: formatter({
+            proxy: { ...proxy, server: queryServer },
+            format: url,
+          }),
         });
         api = String(lodash_get(res, "body"));
         try {
@@ -212,7 +221,9 @@ async function operator(proxies = [], targetPlatform, context) {
         const status = parseInt(res.status || res.statusCode || 200);
         let latency = "";
         latency = `${Date.now() - startedAt}`;
-        $.info(`[${proxy.name}] status: ${status}, latency: ${latency}`);
+        $.info(
+          `[${proxy.name}] queryServer: ${queryServer}, status: ${status}, latency: ${latency}`,
+        );
         if (status == 200 && eval(formatter({ api, format: valid, regex }))) {
           proxy.name = formatter({ proxy, api, format, regex });
           proxy._entrance = api;
@@ -263,6 +274,40 @@ async function operator(proxies = [], targetPlatform, context) {
       }
     };
     return await fn();
+  }
+  function getCacheId(proxy, queryServer) {
+    return `entrance:${url}:${format}:${regex}:${internal}:${resolveDomain}:${queryServer}:${JSON.stringify(
+      Object.fromEntries(
+        Object.entries(proxy).filter(([key]) => {
+          const re = new RegExp(uniq_key);
+          return re.test(key);
+        }),
+      ),
+    )}`;
+  }
+  async function getQueryServer(proxy) {
+    const server = String(proxy.server || "").trim();
+    if (!resolveDomain || !server || ProxyUtils.isIP(server)) {
+      return server;
+    }
+    const resolved = await resolveServer(server);
+    $.info(`[${proxy.name}] 本地 DNS 解析: ${server} -> ${resolved}`);
+    return resolved;
+  }
+  async function resolveServer(server) {
+    try {
+      const records = await dns.lookup(server, { all: true, verbatim: true });
+      const addresses = Array.isArray(records) ? records : [records];
+      const ipv4 = addresses.find((item) => item?.family === 4)?.address;
+      const fallback = addresses.find((item) => item?.address)?.address;
+      const resolved = ipv4 || fallback;
+      if (!resolved) {
+        throw new Error("未返回可用 IP");
+      }
+      return resolved;
+    } catch (e) {
+      throw new Error(`本地 DNS 解析失败: ${server} (${e.message ?? e})`);
+    }
   }
   function lodash_get(source, path, defaultValue = undefined) {
     const paths = path.replace(/\[(\d+)\]/g, ".$1").split(".");
