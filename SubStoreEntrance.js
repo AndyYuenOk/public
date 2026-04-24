@@ -37,6 +37,7 @@
  * - [api] 测入口的 API . 默认为 http://ip-api.com/json/{{proxy.server}}?lang=zh-CN
  * - [format] 自定义格式, 从 节点(proxy) 和 入口(api)中取数据. 默认为: {{api.country}} {{api.isp}} - {{proxy.name}}
  *            当使用 internal 时, 默认为 {{api.countryCode}} {{api.aso}} - {{proxy.name}}
+ *            当 api.country 或 api.countryCode 为空时, 格式化输出会自动使用 ?? 作为占位符
  * - [regex] 使用正则表达式从落地 API 响应(api)中取数据. 格式为 a:x;b:y 此时将使用正则表达式 x 和 y 来从 api 中取数据, 赋值给 a 和 b. 然后可在 format 中使用 {{api.a}} 和 {{api.b}}
  * - [valid] 验证 api 请求是否合法. 默认: ProxyUtils.isIP('{{api.ip || api.query}}')
  *           当使用 internal 时, 默认为 "{{api.countryCode || api.aso}}".length > 0
@@ -363,8 +364,27 @@ async function operator(proxies = [], targetPlatform, context) {
       api = { ...api, ...extracted };
     }
 
+    api = normalizeCountryPlaceholders(api);
+
     let f = format.replace(/\{\{(.*?)\}\}/g, "${$1}");
     return eval(`\`${f}\``);
+  }
+  function normalizeCountryPlaceholders(api) {
+    if (!api || typeof api !== "object" || Array.isArray(api)) {
+      return api;
+    }
+
+    const normalized = { ...api };
+    for (const key of ["countryCode", "country"]) {
+      if (
+        normalized[key] === undefined ||
+        normalized[key] === null ||
+        String(normalized[key]).trim() === ""
+      ) {
+        normalized[key] = "??";
+      }
+    }
+    return normalized;
   }
   function executeAsyncTasks(tasks, { wrap, result, concurrency = 1 } = {}) {
     return new Promise(async (resolve, reject) => {
