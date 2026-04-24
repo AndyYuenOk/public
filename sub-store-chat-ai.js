@@ -28,6 +28,7 @@
  * - 节点上会按需添加 _gemini 和 _gemini_latency 字段, 指 Gemini 检测结果与响应延迟
  * - [cache] 使用缓存, 默认不使用缓存
  * - [disable_failed_cache/ignore_failed_error] 禁用失败缓存. 即不缓存失败结果
+ * - 不支持地区等明确失败结果会单独缓存, 便于后续直接复用
  * 关于缓存时长
  * 当使用相关脚本时, 若在对应的脚本中使用参数(⚠ 别忘了这个, 一般为 cache, 值设为 true 即可)开启缓存
  * 可在前端(>=2.16.0) 配置各项缓存的默认时长
@@ -262,12 +263,17 @@ async function operator(proxies = [], targetPlatform, context) {
             detection,
             latency: cached[detection.cacheLatencyKey],
           });
-          $.info(`[${proxy.name}] [${detection.name}] 使用成功缓存`);
+          $.info(`[${proxy.name}] [${detection.name}] 使用成功结果缓存`);
+          return;
+        } else if (cached.unsupported) {
+          $.info(
+            `[${proxy.name}] [${detection.name}] 使用不支持地区结果缓存: ${cached.unsupported_message || ""}`,
+          );
           return;
         } else if (disableFailedCache) {
-          $.info(`[${proxy.name}] [${detection.name}] 不使用失败缓存`);
+          $.info(`[${proxy.name}] [${detection.name}] 跳过失败结果缓存`);
         } else {
-          $.info(`[${proxy.name}] [${detection.name}] 使用失败缓存`);
+          $.info(`[${proxy.name}] [${detection.name}] 使用失败结果缓存`);
           return;
         }
       }
@@ -308,20 +314,27 @@ async function operator(proxies = [], targetPlatform, context) {
           latency,
         });
         if (cacheEnabled) {
-          $.info(`[${proxy.name}] [${detection.name}] 设置成功缓存`);
+          $.info(`[${proxy.name}] [${detection.name}] 写入成功结果缓存`);
           cache.set(id, {
             [detection.cacheKey]: true,
             [detection.cacheLatencyKey]: latency,
           });
         }
+      } else if (cacheEnabled && isUnsupportedResult({ message: msg, bodyText })) {
+        $.info(`[${proxy.name}] [${detection.name}] 写入不支持地区结果缓存`);
+        cache.set(id, {
+          unsupported: true,
+          unsupported_message: msg || getUnsupportedMessage(bodyText),
+          unsupported_latency: latency,
+        });
       } else if (cacheEnabled) {
-        $.info(`[${proxy.name}] [${detection.name}] 设置失败缓存`);
+        $.info(`[${proxy.name}] [${detection.name}] 写入失败结果缓存`);
         cache.set(id, {});
       }
     } catch (e) {
       $.error(`[${proxy.name}] [${detection.name}] ${e.message ?? e}`);
       if (cacheEnabled) {
-        $.info(`[${proxy.name}] [${detection.name}] 设置失败缓存`);
+        $.info(`[${proxy.name}] [${detection.name}] 写入失败结果缓存`);
         cache.set(id, {});
       }
     }
@@ -330,6 +343,17 @@ async function operator(proxies = [], targetPlatform, context) {
     proxies[proxyIndex].name = `${proxies[proxyIndex].name}${detection.prefix}`;
     proxies[proxyIndex][detection.flagKey] = true;
     proxies[proxyIndex][detection.latencyKey] = latency;
+  }
+  function isUnsupportedResult({ message = "", bodyText = "" }) {
+    return /unsupported_country|unsupported_country_region_territory|not available in your country|not available in your region|isn't available in your country|location is not supported/i.test(
+      `${message}\n${bodyText}`,
+    );
+  }
+  function getUnsupportedMessage(bodyText = "") {
+    const matched = `${bodyText}`.match(
+      /unsupported_country_region_territory|unsupported_country|not available in your country|not available in your region|isn't available in your country|location is not supported/i,
+    );
+    return matched?.[0] || "";
   }
   // 请求
   async function http(opt = {}) {

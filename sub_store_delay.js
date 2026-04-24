@@ -65,7 +65,7 @@ async function operator(proxies = [], targetPlatform, env) {
     try {
       const cached = cache.get(id);
       if (cacheEnabled && cached) {
-        $.info(`[${proxy.name}] 使用缓存`);
+        $.info(`[${proxy.name}] 使用缓存结果`);
         if (cached.latency) {
           validProxies.push({
             ...proxy,
@@ -84,13 +84,13 @@ async function operator(proxies = [], targetPlatform, env) {
         _latency: latency,
       });
       if (cacheEnabled) {
-        $.info(`[${proxy.name}] 设置成功缓存`);
+        $.info(`[${proxy.name}] 写入成功结果缓存`);
         cache.set(id, { latency });
       }
     } catch (e) {
       $.error(`[${proxy.name}] ${e.message ?? e}`);
       if (cacheEnabled) {
-        $.info(`[${proxy.name}] 设置失败缓存`);
+        $.info(`[${proxy.name}] 写入失败结果缓存`);
         cache.set(id, {});
       }
     }
