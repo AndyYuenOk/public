@@ -32,6 +32,7 @@ let routingRules = [
   "DOMAIN-SUFFIX,pairdrop.net,Direct",
   "DOMAIN-SUFFIX,gh-proxy.com,Direct",
   "DOMAIN-SUFFIX,ghfast.top,Direct",
+  "DOMAIN-SUFFIX,host.docker.internal,Direct",
 
   "RULE-SET,LocalAreaNetwork (Domain),Direct",
   "RULE-SET,LocalAreaNetwork (IP-CIDR),Direct,no-resolve",
