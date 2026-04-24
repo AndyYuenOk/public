@@ -39,168 +39,181 @@
  */
 
 async function operator(proxies = [], targetPlatform, context) {
-  const $ = $substore
-  const cacheEnabled = $arguments.cache;
-  const disableFailedCache = $arguments.disable_failed_cache || $arguments.ignore_failed_error
-  const cache = scriptResourceCache
-  const http_meta_host = $arguments.http_meta_host ?? '127.0.0.1'
-  const http_meta_port = $arguments.http_meta_port ?? 9876
-  const http_meta_protocol = $arguments.http_meta_protocol ?? 'http'
-  const http_meta_authorization = $arguments.http_meta_authorization ?? ''
-  const http_meta_api = `${http_meta_protocol}://${http_meta_host}:${http_meta_port}`
-  const http_meta_start_delay = parseFloat($arguments.http_meta_start_delay ?? 3000)
-  const http_meta_proxy_timeout = parseFloat($arguments.http_meta_proxy_timeout ?? 10000)
-  const gptPrefix = $arguments.gpt_prefix ?? ' GPT'
-  const gmPrefix = $arguments.gm_prefix ?? ' GM'
-  const method = $arguments.method || 'get'
-  const gptUrl = $arguments.client === 'Android' ? `https://android.chat.openai.com` : `https://ios.chat.openai.com`
+  const $ = $substore;
+  const cacheEnabled = /true|1/.test($arguments.cache ?? 1);
+  const disableFailedCache =
+    $arguments.disable_failed_cache || $arguments.ignore_failed_error;
+  const cache = scriptResourceCache;
+  const http_meta_host = $arguments.http_meta_host ?? "127.0.0.1";
+  const http_meta_port = $arguments.http_meta_port ?? 9876;
+  const http_meta_protocol = $arguments.http_meta_protocol ?? "http";
+  const http_meta_authorization = $arguments.http_meta_authorization ?? "";
+  const http_meta_api = `${http_meta_protocol}://${http_meta_host}:${http_meta_port}`;
+  const http_meta_start_delay = parseFloat(
+    $arguments.http_meta_start_delay ?? 3000,
+  );
+  const http_meta_proxy_timeout = parseFloat(
+    $arguments.http_meta_proxy_timeout ?? 10000,
+  );
+  const gptPrefix = $arguments.gpt_prefix ?? " GPT";
+  const gmPrefix = $arguments.gm_prefix ?? " GM";
+  const method = $arguments.method || "get";
+  const gptUrl =
+    $arguments.client === "Android"
+      ? `https://android.chat.openai.com`
+      : `https://ios.chat.openai.com`;
   const detectionConfigs = [
     {
-      key: 'gpt',
-      name: 'GPT',
+      key: "gpt",
+      name: "GPT",
       url: gptUrl,
       prefix: gptPrefix,
-      flagKey: '_gpt',
-      latencyKey: '_gpt_latency',
-      cacheKey: 'gpt',
-      cacheLatencyKey: 'gpt_latency',
+      flagKey: "_gpt",
+      latencyKey: "_gpt_latency",
+      cacheKey: "gpt",
+      cacheLatencyKey: "gpt_latency",
       userAgent:
-        'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Mobile/15E148 Safari/604.1',
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Mobile/15E148 Safari/604.1",
       isSuccess({ status, message }) {
-        return status == 403 && !/unsupported_country/i.test(message)
+        return status == 403 && !/unsupported_country/i.test(message);
       },
     },
     {
-      key: 'gemini',
-      name: 'Gemini',
-      url: 'https://gemini.google.com/app',
+      key: "gemini",
+      name: "Gemini",
+      url: "https://gemini.google.com/app",
       prefix: gmPrefix,
-      flagKey: '_gemini',
-      latencyKey: '_gemini_latency',
-      cacheKey: 'gemini',
-      cacheLatencyKey: 'gemini_latency',
+      flagKey: "_gemini",
+      latencyKey: "_gemini_latency",
+      cacheKey: "gemini",
+      cacheLatencyKey: "gemini_latency",
       userAgent:
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36',
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
       isSuccess({ status, message, bodyText }) {
-        const text = `${message}\n${bodyText}`
+        const text = `${message}\n${bodyText}`;
         if (
           /unsupported_country|not available in your country|not available in your region|isn't available in your country|location is not supported|unusual traffic|recaptcha|captcha|attention required|access denied|forbidden/i.test(
-            text
+            text,
           )
         ) {
-          return false
+          return false;
         }
         if (status >= 200 && status < 400) {
-          return true
+          return true;
         }
-        return [401, 403].includes(status)
+        return [401, 403].includes(status);
       },
     },
-  ]
+  ];
 
-  const internalProxies = []
+  const internalProxies = [];
   proxies.map((proxy, index) => {
     try {
-      const node = ProxyUtils.produce([{ ...proxy }], 'ClashMeta', 'internal')?.[0]
+      const node = ProxyUtils.produce(
+        [{ ...proxy }],
+        "ClashMeta",
+        "internal",
+      )?.[0];
       if (node) {
         for (const key in proxy) {
           if (/^_/i.test(key)) {
-            node[key] = proxy[key]
+            node[key] = proxy[key];
           }
         }
         // $.info(JSON.stringify(node, null, 2))
-        internalProxies.push({ ...node, _proxies_index: index })
+        internalProxies.push({ ...node, _proxies_index: index });
       }
     } catch (e) {
-      $.error(e)
+      $.error(e);
     }
-  })
-  $.info(`核心支持节点数: ${internalProxies.length}/${proxies.length}`)
-  if (!internalProxies.length) return proxies
+  });
+  $.info(`核心支持节点数: ${internalProxies.length}/${proxies.length}`);
+  if (!internalProxies.length) return proxies;
 
   if (cacheEnabled) {
     try {
-      let allCached = true
+      let allCached = true;
       for (let i = 0; i < internalProxies.length; i++) {
-        const proxy = internalProxies[i]
+        const proxy = internalProxies[i];
         for (const detection of detectionConfigs) {
-          const id = getCacheId({ proxy, detection })
-          const cached = cache.get(id)
+          const id = getCacheId({ proxy, detection });
+          const cached = cache.get(id);
           if (cached) {
             if (!cached[detection.cacheKey] && disableFailedCache) {
-              allCached = false
-              break
+              allCached = false;
+              break;
             }
           } else {
-            allCached = false
-            break
+            allCached = false;
+            break;
           }
         }
         if (!allCached) {
-          break
+          break;
         }
       }
       if (allCached) {
         for (const proxy of internalProxies) {
           for (const detection of detectionConfigs) {
-            const cached = cache.get(getCacheId({ proxy, detection }))
+            const cached = cache.get(getCacheId({ proxy, detection }));
             if (cached?.[detection.cacheKey]) {
               applyDetectionSuccess({
                 proxyIndex: proxy._proxies_index,
                 detection,
                 latency: cached[detection.cacheLatencyKey],
-              })
+              });
             }
           }
         }
-        $.info('所有节点都有有效缓存 完成')
-        return proxies
+        $.info("所有节点都有有效缓存 完成");
+        return proxies;
       }
     } catch (e) {}
   }
 
   const http_meta_timeout =
-    http_meta_start_delay + internalProxies.length * http_meta_proxy_timeout * detectionConfigs.length
+    http_meta_start_delay +
+    internalProxies.length * http_meta_proxy_timeout * detectionConfigs.length;
 
-  let http_meta_pid
-  let http_meta_ports = []
+  let http_meta_pid;
+  let http_meta_ports = [];
   // 启动 HTTP META
   const res = await http({
     retries: 0,
-    method: 'post',
+    method: "post",
     url: `${http_meta_api}/start`,
     headers: {
-      'Content-type': 'application/json',
+      "Content-type": "application/json",
       Authorization: http_meta_authorization,
     },
     body: JSON.stringify({
       proxies: internalProxies,
       timeout: http_meta_timeout,
     }),
-  })
-  let body = res.body
+  });
+  let body = res.body;
   try {
-    body = JSON.parse(body)
+    body = JSON.parse(body);
   } catch (e) {}
-  const { ports, pid } = body
+  const { ports, pid } = body;
   if (!pid || !ports) {
-    throw new Error(`======== HTTP META 启动失败 ====\n${body}`)
+    throw new Error(`======== HTTP META 启动失败 ====\n${body}`);
   }
-  http_meta_pid = pid
-  http_meta_ports = ports
+  http_meta_pid = pid;
+  http_meta_ports = ports;
   $.info(
     `\n======== HTTP META 启动 ====\n[端口] ${ports}\n[PID] ${pid}\n[超时] 若未手动关闭 ${
       Math.round(http_meta_timeout / 60 / 10) / 100
-    } 分钟后自动关闭\n`
-  )
-  $.info(`等待 ${http_meta_start_delay / 1000} 秒后开始检测`)
-  await $.wait(http_meta_start_delay)
+    } 分钟后自动关闭\n`,
+  );
+  $.info(`等待 ${http_meta_start_delay / 1000} 秒后开始检测`);
+  await $.wait(http_meta_start_delay);
 
-  const concurrency = parseInt($arguments.concurrency || 10) // 一组并发数
+  const concurrency = parseInt($arguments.concurrency || 10); // 一组并发数
   await executeAsyncTasks(
-    internalProxies.map(proxy => () => check(proxy)),
-    { concurrency }
-  )
+    internalProxies.map((proxy) => () => check(proxy)),
+    { concurrency },
+  );
 
   // const batches = []
   // for (let i = 0; i < internalProxies.length; i += concurrency) {
@@ -214,179 +227,187 @@ async function operator(proxies = [], targetPlatform, context) {
   // stop http meta
   try {
     const res = await http({
-      method: 'post',
+      method: "post",
       url: `${http_meta_api}/stop`,
       headers: {
-        'Content-type': 'application/json',
+        "Content-type": "application/json",
         Authorization: http_meta_authorization,
       },
       body: JSON.stringify({
         pid: [http_meta_pid],
       }),
-    })
-    $.info(`\n======== HTTP META 关闭 ====\n${JSON.stringify(res, null, 2)}`)
+    });
+    $.info(`\n======== HTTP META 关闭 ====\n${JSON.stringify(res, null, 2)}`);
   } catch (e) {
-    $.error(e)
+    $.error(e);
   }
 
-  return proxies
+  return proxies;
 
   async function check(proxy) {
     // $.info(`[${proxy.name}] 检测`)
     // $.info(`检测 ${JSON.stringify(proxy, null, 2)}`)
     for (const detection of detectionConfigs) {
-      await runDetection({ proxy, detection })
+      await runDetection({ proxy, detection });
     }
   }
   async function runDetection({ proxy, detection }) {
-    const id = cacheEnabled ? getCacheId({ proxy, detection }) : undefined
+    const id = cacheEnabled ? getCacheId({ proxy, detection }) : undefined;
     try {
-      const cached = cacheEnabled ? cache.get(id) : undefined
+      const cached = cacheEnabled ? cache.get(id) : undefined;
       if (cacheEnabled && cached) {
         if (cached[detection.cacheKey]) {
           applyDetectionSuccess({
             proxyIndex: proxy._proxies_index,
             detection,
             latency: cached[detection.cacheLatencyKey],
-          })
-          $.info(`[${proxy.name}] [${detection.name}] 使用成功缓存`)
-          return
+          });
+          $.info(`[${proxy.name}] [${detection.name}] 使用成功缓存`);
+          return;
         } else if (disableFailedCache) {
-          $.info(`[${proxy.name}] [${detection.name}] 不使用失败缓存`)
+          $.info(`[${proxy.name}] [${detection.name}] 不使用失败缓存`);
         } else {
-          $.info(`[${proxy.name}] [${detection.name}] 使用失败缓存`)
-          return
+          $.info(`[${proxy.name}] [${detection.name}] 使用失败缓存`);
+          return;
         }
       }
 
-      const index = internalProxies.indexOf(proxy)
-      const startedAt = Date.now()
+      const index = internalProxies.indexOf(proxy);
+      const startedAt = Date.now();
       const res = await http({
         proxy: `http://${http_meta_host}:${http_meta_ports[index]}`,
         method,
         headers: {
-          'User-Agent': detection.userAgent,
+          "User-Agent": detection.userAgent,
         },
         url: detection.url,
-      })
-      const status = parseInt(res.status || res.statusCode || 200)
-      const rawBody = String(res.body ?? res.rawBody ?? '')
-      let body = rawBody
+      });
+      const status = parseInt(res.status || res.statusCode || 200);
+      const rawBody = String(res.body ?? res.rawBody ?? "");
+      let body = rawBody;
       try {
-        body = JSON.parse(rawBody)
+        body = JSON.parse(rawBody);
       } catch (e) {}
       const msg = String(
         body?.error?.code ||
           body?.error?.error_type ||
           body?.cf_details ||
           body?.message ||
-          ''
-      )
-      const bodyText = typeof body === 'string' ? body : rawBody
-      const latency = Date.now() - startedAt
-      $.info(`[${proxy.name}] [${detection.name}] status: ${status}, msg: ${msg}, latency: ${latency}`)
+          "",
+      );
+      const bodyText = typeof body === "string" ? body : rawBody;
+      const latency = Date.now() - startedAt;
+      $.info(
+        `[${proxy.name}] [${detection.name}] status: ${status}, msg: ${msg}, latency: ${latency}`,
+      );
 
       if (detection.isSuccess({ status, message: msg, bodyText, body })) {
         applyDetectionSuccess({
           proxyIndex: proxy._proxies_index,
           detection,
           latency,
-        })
+        });
         if (cacheEnabled) {
-          $.info(`[${proxy.name}] [${detection.name}] 设置成功缓存`)
+          $.info(`[${proxy.name}] [${detection.name}] 设置成功缓存`);
           cache.set(id, {
             [detection.cacheKey]: true,
             [detection.cacheLatencyKey]: latency,
-          })
+          });
         }
       } else if (cacheEnabled) {
-        $.info(`[${proxy.name}] [${detection.name}] 设置失败缓存`)
-        cache.set(id, {})
+        $.info(`[${proxy.name}] [${detection.name}] 设置失败缓存`);
+        cache.set(id, {});
       }
     } catch (e) {
-      $.error(`[${proxy.name}] [${detection.name}] ${e.message ?? e}`)
+      $.error(`[${proxy.name}] [${detection.name}] ${e.message ?? e}`);
       if (cacheEnabled) {
-        $.info(`[${proxy.name}] [${detection.name}] 设置失败缓存`)
-        cache.set(id, {})
+        $.info(`[${proxy.name}] [${detection.name}] 设置失败缓存`);
+        cache.set(id, {});
       }
     }
   }
   function applyDetectionSuccess({ proxyIndex, detection, latency }) {
-    proxies[proxyIndex].name = `${proxies[proxyIndex].name}${detection.prefix}`
-    proxies[proxyIndex][detection.flagKey] = true
-    proxies[proxyIndex][detection.latencyKey] = latency
+    proxies[proxyIndex].name = `${proxies[proxyIndex].name}${detection.prefix}`;
+    proxies[proxyIndex][detection.flagKey] = true;
+    proxies[proxyIndex][detection.latencyKey] = latency;
   }
   // 请求
   async function http(opt = {}) {
-    const METHOD = opt.method || $arguments.method || 'get'
-    const TIMEOUT = parseFloat(opt.timeout || $arguments.timeout || 5000)
-    const RETRIES = parseFloat(opt.retries ?? $arguments.retries ?? 1)
-    const RETRY_DELAY = parseFloat(opt.retry_delay ?? $arguments.retry_delay ?? 1000)
+    const METHOD = opt.method || $arguments.method || "get";
+    const TIMEOUT = parseFloat(opt.timeout || $arguments.timeout || 5000);
+    const RETRIES = parseFloat(opt.retries ?? $arguments.retries ?? 1);
+    const RETRY_DELAY = parseFloat(
+      opt.retry_delay ?? $arguments.retry_delay ?? 1000,
+    );
 
-    let count = 0
+    let count = 0;
     const fn = async () => {
       try {
-        return await $.http[METHOD]({ ...opt, timeout: TIMEOUT })
+        return await $.http[METHOD]({ ...opt, timeout: TIMEOUT });
       } catch (e) {
         // $.error(e)
         if (count < RETRIES) {
-          count++
-          const delay = RETRY_DELAY * count
+          count++;
+          const delay = RETRY_DELAY * count;
           // $.info(`第 ${count} 次请求失败: ${e.message || e}, 等待 ${delay / 1000}s 后重试`)
-          await $.wait(delay)
-          return await fn()
+          await $.wait(delay);
+          return await fn();
         } else {
-          throw e
+          throw e;
         }
       }
-    }
-    return await fn()
+    };
+    return await fn();
   }
   function getCacheId({ proxy = {}, detection }) {
     return `http-meta:${detection.key}:${detection.url}:${JSON.stringify(
-      Object.fromEntries(Object.entries(proxy).filter(([key]) => !/^(name|collectionName|subName|id|_.*)$/i.test(key)))
-    )}`
+      Object.fromEntries(
+        Object.entries(proxy).filter(
+          ([key]) => !/^(name|collectionName|subName|id|_.*)$/i.test(key),
+        ),
+      ),
+    )}`;
   }
   function executeAsyncTasks(tasks, { wrap, result, concurrency = 1 } = {}) {
     return new Promise(async (resolve, reject) => {
       try {
-        let running = 0
-        const results = []
+        let running = 0;
+        const results = [];
 
-        let index = 0
+        let index = 0;
 
         function executeNextTask() {
           while (index < tasks.length && running < concurrency) {
-            const taskIndex = index++
-            const currentTask = tasks[taskIndex]
-            running++
+            const taskIndex = index++;
+            const currentTask = tasks[taskIndex];
+            running++;
 
             currentTask()
-              .then(data => {
+              .then((data) => {
                 if (result) {
-                  results[taskIndex] = wrap ? { data } : data
+                  results[taskIndex] = wrap ? { data } : data;
                 }
               })
-              .catch(error => {
+              .catch((error) => {
                 if (result) {
-                  results[taskIndex] = wrap ? { error } : error
+                  results[taskIndex] = wrap ? { error } : error;
                 }
               })
               .finally(() => {
-                running--
-                executeNextTask()
-              })
+                running--;
+                executeNextTask();
+              });
           }
 
           if (running === 0) {
-            return resolve(result ? results : undefined)
+            return resolve(result ? results : undefined);
           }
         }
 
-        await executeNextTask()
+        await executeNextTask();
       } catch (e) {
-        reject(e)
+        reject(e);
       }
-    })
+    });
   }
 }
