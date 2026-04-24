@@ -48,7 +48,7 @@
  * - [resolve_domain] 使用本地 DNS 解析节点域名后再查询. 默认 true
  *                    仅支持 Node.js 环境, 优先使用 IPv4, 若无 IPv4 则回退到系统返回的首个可用地址
  *                    解析失败时按失败节点处理, 不回退原域名
- * - [cache] 使用缓存, 默认不使用缓存
+ * - [cache] 使用缓存, 默认使用缓存
  * - [disable_failed_cache/ignore_failed_error] 禁用失败缓存. 即不缓存失败结果
  *
  * 示例
@@ -129,7 +129,7 @@ async function operator(proxies = [], targetPlatform, context) {
     $arguments.disable_failed_cache || $arguments.ignore_failed_error;
   const remove_failed = $arguments.remove_failed;
   const entranceEnabled = $arguments.entrance;
-  const cacheEnabled = Number($arguments.cache);
+  const cacheEnabled = /true|1/.test($arguments.cache ?? 1);
   const uniq_key = $arguments.uniq_key || "^server$";
   const cache = scriptResourceCache;
   const method = $arguments.method || "get";
