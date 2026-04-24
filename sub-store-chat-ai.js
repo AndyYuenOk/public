@@ -28,8 +28,7 @@
  * - 节点上总是会添加一个 _gpt 字段, 可用于脚本筛选. 新增 _gpt_latency 字段, 指响应延迟
  * - 节点上会按需添加 _gemini 和 _gemini_latency 字段, 指 Gemini 检测结果与响应延迟
  * - [cache] 使用缓存, 默认不使用缓存
- * - [disable_failed_cache/ignore_failed_error] 禁用失败缓存. 即不缓存失败结果
- * - 不支持地区等明确失败结果会单独缓存, 便于后续直接复用
+ * - 失败结果和不支持地区结果也会缓存, 便于后续直接复用
  * 关于缓存时长
  * 当使用相关脚本时, 若在对应的脚本中使用参数(⚠ 别忘了这个, 一般为 cache, 值设为 true 即可)开启缓存
  * 可在前端(>=2.16.0) 配置各项缓存的默认时长
@@ -43,8 +42,6 @@
 async function operator(proxies = [], targetPlatform, context) {
   const $ = $substore;
   const cacheEnabled = /true|1/.test($arguments.cache ?? 1);
-  const disableFailedCache =
-    $arguments.disable_failed_cache || $arguments.ignore_failed_error;
   const cache = scriptResourceCache;
   const http_meta_host = $arguments.http_meta_host ?? "127.0.0.1";
   const http_meta_port = $arguments.http_meta_port ?? 9876;
@@ -142,12 +139,7 @@ async function operator(proxies = [], targetPlatform, context) {
         for (const detection of detectionConfigs) {
           const id = getCacheId({ proxy, detection });
           const cached = cache.get(id);
-          if (cached) {
-            if (!cached[detection.cacheKey] && disableFailedCache) {
-              allCached = false;
-              break;
-            }
-          } else {
+          if (!cached) {
             allCached = false;
             break;
           }
@@ -273,8 +265,6 @@ async function operator(proxies = [], targetPlatform, context) {
             `[${proxy.name}] [${detection.name}] 使用不支持地区结果缓存: ${cached.unsupported_message || ""}`,
           );
           return;
-        } else if (disableFailedCache) {
-          $.info(`[${proxy.name}] [${detection.name}] 跳过失败结果缓存`);
         } else {
           $.info(`[${proxy.name}] [${detection.name}] 使用失败结果缓存`);
           return;

@@ -32,7 +32,6 @@ let routingRules = [
   "DOMAIN-SUFFIX,pairdrop.net,Direct",
   "DOMAIN-SUFFIX,gh-proxy.com,Direct",
   "DOMAIN-SUFFIX,ghfast.top,Direct",
-  "IP-CIDR,23.94.183.182/32,Direct,no-resolve",
 
   "RULE-SET,LocalAreaNetwork (Domain),Direct",
   "RULE-SET,LocalAreaNetwork (IP-CIDR),Direct,no-resolve",
