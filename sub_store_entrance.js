@@ -183,16 +183,16 @@ async function operator(proxies = [], targetPlatform, context) {
       const cached = cache.get(id);
       if (cacheEnabled && cached) {
         if (cached.api) {
-          $.info(`[${proxy.name}] 使用成功缓存`);
+          $.info(`[${proxy.name}] 使用成功结果缓存`);
           $.log(`[${proxy.name}] api: ${JSON.stringify(cached.api, null, 2)}`);
           proxy.name = formatter({ proxy, api: cached.api, format, regex });
           proxy._entrance = cached.api;
           return;
         } else {
           if (disableFailedCache) {
-            $.info(`[${proxy.name}] 不使用失败缓存`);
+            $.info(`[${proxy.name}] 跳过失败结果缓存`);
           } else {
-            $.info(`[${proxy.name}] 使用失败缓存`);
+            $.info(`[${proxy.name}] 使用失败结果缓存`);
             return;
           }
         }
@@ -215,12 +215,12 @@ async function operator(proxies = [], targetPlatform, context) {
           proxy.name = formatter({ proxy, api, format, regex });
           proxy._entrance = api;
           if (cacheEnabled) {
-            $.info(`[${proxy.name}] 设置成功缓存`);
+            $.info(`[${proxy.name}] 写入成功结果缓存`);
             cache.set(id, { api });
           }
         } else {
           if (cacheEnabled) {
-            $.info(`[${proxy.name}] 设置失败缓存`);
+            $.info(`[${proxy.name}] 写入失败结果缓存`);
             cache.set(id, {});
           }
         }
@@ -250,12 +250,12 @@ async function operator(proxies = [], targetPlatform, context) {
           proxy.name = formatter({ proxy, api, format, regex });
           proxy._entrance = api;
           if (cacheEnabled) {
-            $.info(`[${proxy.name}] 设置成功缓存`);
+            $.info(`[${proxy.name}] 写入成功结果缓存`);
             cache.set(id, { api });
           }
         } else {
           if (cacheEnabled) {
-            $.info(`[${proxy.name}] 设置失败缓存`);
+            $.info(`[${proxy.name}] 写入失败结果缓存`);
             cache.set(id, {});
           }
         }
@@ -264,7 +264,7 @@ async function operator(proxies = [], targetPlatform, context) {
     } catch (e) {
       $.error(`[${proxy.name}] ${e.message ?? e}`);
       if (cacheEnabled) {
-        $.info(`[${proxy.name}] 设置失败缓存`);
+        $.info(`[${proxy.name}] 写入失败结果缓存`);
         cache.set(id, {});
       }
     }
