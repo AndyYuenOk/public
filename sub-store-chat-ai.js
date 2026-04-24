@@ -19,9 +19,10 @@
  * - [retries] 重试次数 默认 1
  * - [retry_delay] 重试延时(单位: 毫秒) 默认 1000
  * - [concurrency] 并发数 默认 10
- * - [client] GPT 检测的客户端类型. 默认 iOS
+ * - [client] GPT 检测的客户端类型(兼容保留). 不再影响 GPT URL
  * - [method] 请求方法. 默认 get
  * - [gpt_prefix] GPT 显示前缀. 默认为 " GPT"
+ * - GPT 当前检测端点为 https://ios.chat.openai.com/public-api/auth/session, 规则为 404 成功
  * - [gm_prefix] Gemini 显示前缀. 默认为 " GM"
  * 注:
  * - 节点上总是会添加一个 _gpt 字段, 可用于脚本筛选. 新增 _gpt_latency 字段, 指响应延迟
@@ -59,10 +60,13 @@ async function operator(proxies = [], targetPlatform, context) {
   const gptPrefix = $arguments.gpt_prefix ?? " GPT";
   const gmPrefix = $arguments.gm_prefix ?? " GM";
   const method = $arguments.method || "get";
-  const gptUrl =
-    $arguments.client === "Android"
-      ? `https://android.chat.openai.com`
-      : `https://ios.chat.openai.com`;
+  // `client` is kept for backward compatibility, but GPT check now always uses iOS session endpoint.
+  const gptUrl = `https://ios.chat.openai.com/public-api/auth/session`;
+  const cacheKeyVersion = "v7";
+  const networkTransientFailureRegex =
+    /exceeds the timeout|timed out|timeout|client network socket disconnected before secure tls connection was established|socket hang up|econnreset/i;
+  const policyTransientFailureRegex =
+    /request is not allowed[\s\S]*try again later|try again later|temporarily unavailable|too many requests|rate limit|unusual traffic|recaptcha|captcha/i;
   const detectionConfigs = [
     {
       key: "gpt",
@@ -75,8 +79,8 @@ async function operator(proxies = [], targetPlatform, context) {
       cacheLatencyKey: "gpt_latency",
       userAgent:
         "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Mobile/15E148 Safari/604.1",
-      isSuccess({ status, message }) {
-        return status == 403 && !/unsupported_country/i.test(message);
+      isSuccess({ status }) {
+        return status === 404;
       },
     },
     {
@@ -280,34 +284,59 @@ async function operator(proxies = [], targetPlatform, context) {
 
       const index = internalProxies.indexOf(proxy);
       const startedAt = Date.now();
+      const requestMethod =
+        detection.key === "gemini" && $.http?.head ? "head" : method;
       const res = await http({
         proxy: `http://${http_meta_host}:${http_meta_ports[index]}`,
-        method,
+        method: requestMethod,
         headers: {
           "User-Agent": detection.userAgent,
         },
         url: detection.url,
+        ...(detection.key === "gemini"
+          ? {
+              followRedirect: false,
+              maxRedirects: 0,
+              redirection: false,
+            }
+          : {}),
       });
       const status = parseInt(res.status || res.statusCode || 200);
-      const rawBody = String(res.body ?? res.rawBody ?? "");
-      let body = rawBody;
-      try {
-        body = JSON.parse(rawBody);
-      } catch (e) {}
-      const msg = String(
-        body?.error?.code ||
-          body?.error?.error_type ||
-          body?.cf_details ||
-          body?.message ||
-          "",
-      );
-      const bodyText = typeof body === "string" ? body : rawBody;
+      let msg = "";
+      let bodyText = "";
+      let body;
+      if (detection.key === "gemini") {
+        const locationHeader = getHeaderValue(res.headers, "location");
+        msg = locationHeader ? `location: ${locationHeader}` : "";
+      } else {
+        const rawBody = String(res.body ?? res.rawBody ?? "");
+        body = rawBody;
+        try {
+          body = JSON.parse(rawBody);
+        } catch (e) {}
+        msg = String(
+          body?.error?.code ||
+            body?.error?.error_type ||
+            body?.cf_details ||
+            body?.message ||
+            "",
+        );
+        bodyText = typeof body === "string" ? body : rawBody;
+      }
       const latency = Date.now() - startedAt;
       $.info(
         `[${proxy.name}] [${detection.name}] status: ${status}, msg: ${msg}, latency: ${latency}`,
       );
+      const outcome = classifyDetectionResult({
+        detection,
+        status,
+        message: msg,
+        bodyText,
+        body,
+        headers: res.headers,
+      });
 
-      if (detection.isSuccess({ status, message: msg, bodyText, body })) {
+      if (outcome === "success") {
         applyDetectionSuccess({
           proxyIndex: proxy._proxies_index,
           detection,
@@ -320,20 +349,34 @@ async function operator(proxies = [], targetPlatform, context) {
             [detection.cacheLatencyKey]: latency,
           });
         }
-      } else if (cacheEnabled && isUnsupportedResult({ message: msg, bodyText })) {
+      } else if (cacheEnabled && outcome === "unsupported") {
         $.info(`[${proxy.name}] [${detection.name}] 写入不支持地区结果缓存`);
         cache.set(id, {
           unsupported: true,
           unsupported_message: msg || getUnsupportedMessage(bodyText),
           unsupported_latency: latency,
         });
+      } else if (outcome === "transient_failure") {
+        $.info(
+          `[${proxy.name}] [${detection.name}] transient failure, skip failed cache and retry next request`,
+        );
       } else if (cacheEnabled) {
         $.info(`[${proxy.name}] [${detection.name}] 写入失败结果缓存`);
         cache.set(id, {});
       }
     } catch (e) {
-      $.error(`[${proxy.name}] [${detection.name}] ${e.message ?? e}`);
-      if (cacheEnabled) {
+      const errorMessage = String(e?.message ?? e ?? "");
+      $.error(`[${proxy.name}] [${detection.name}] ${errorMessage}`);
+      if (
+        isTransientTextForDetection({
+          text: errorMessage,
+          detectionKey: detection.key,
+        })
+      ) {
+        $.info(
+          `[${proxy.name}] [${detection.name}] transient error, skip failed cache and retry next request`,
+        );
+      } else if (cacheEnabled) {
         $.info(`[${proxy.name}] [${detection.name}] 写入失败结果缓存`);
         cache.set(id, {});
       }
@@ -348,6 +391,79 @@ async function operator(proxies = [], targetPlatform, context) {
     return /unsupported_country|unsupported_country_region_territory|not available in your country|not available in your region|isn't available in your country|location is not supported/i.test(
       `${message}\n${bodyText}`,
     );
+  }
+  function classifyDetectionResult({
+    detection,
+    status,
+    message = "",
+    bodyText = "",
+    body,
+    headers = {},
+  }) {
+    if (detection.key === "gpt") {
+      return status === 404 ? "success" : "hard_failure";
+    }
+    if (detection.key === "gemini") {
+      return classifyGeminiHeaderResult({ status, headers });
+    }
+    if (isUnsupportedResult({ message, bodyText })) {
+      return "unsupported";
+    }
+    if (
+      isTransientFailure({
+        status,
+        message,
+        bodyText,
+        detectionKey: detection.key,
+      })
+    ) {
+      return "transient_failure";
+    }
+    if (detection.isSuccess({ status, message, bodyText, body })) {
+      return "success";
+    }
+    return "hard_failure";
+  }
+  function isTransientFailure({
+    status,
+    message = "",
+    bodyText = "",
+    detectionKey = "",
+  }) {
+    if (status === 429) {
+      return true;
+    }
+    return isTransientTextForDetection({
+      text: `${message}\n${bodyText}`,
+      detectionKey,
+    });
+  }
+  function classifyGeminiHeaderResult({ status }) {
+    if (status === 302) {
+      return "unsupported";
+    }
+    if (status === 200) {
+      return "success";
+    }
+    return "transient_failure";
+  }
+  function getHeaderValue(headers = {}, key = "") {
+    const lowered = String(key).toLowerCase();
+    for (const headerKey in headers || {}) {
+      if (String(headerKey).toLowerCase() === lowered) {
+        return headers[headerKey];
+      }
+    }
+    return "";
+  }
+  function isTransientTextForDetection({ text = "", detectionKey = "" }) {
+    if (networkTransientFailureRegex.test(`${text}`)) {
+      return true;
+    }
+    if (detectionKey === "gemini" && policyTransientFailureRegex.test(`${text}`)) {
+      return true;
+    }
+    return false;
   }
   function getUnsupportedMessage(bodyText = "") {
     const matched = `${bodyText}`.match(
@@ -384,7 +500,9 @@ async function operator(proxies = [], targetPlatform, context) {
     return await fn();
   }
   function getCacheId({ proxy = {}, detection }) {
-    return `http-meta:${detection.key}:${detection.url}:${JSON.stringify(
+    return `http-meta:${cacheKeyVersion}:${detection.key}:${
+      detection.url
+    }:${JSON.stringify(
       Object.fromEntries(
         Object.entries(proxy).filter(
           ([key]) => !/^(name|collectionName|subName|id|_.*)$/i.test(key),
