@@ -39,7 +39,10 @@ $content = ProxyUtils.yaml.dump(config);
 
 async function _main(proxies) {
   function parseSpeedToBytes(name) {
-    const speedText = String(name ?? "").split("|")[1]?.trim() ?? "";
+    const speedText =
+      String(name ?? "")
+        .split("|")[1]
+        ?.trim() ?? "";
     const match = speedText.match(/^(\d+(?:\.\d+)?)\s*([KMGT])B\/S$/i);
     if (!match) return -1;
 
@@ -72,7 +75,7 @@ async function _main(proxies) {
   const cacheTTL = 5 * 60 * 1000;
   const now = () => Date.now();
 
-  const takeRaw = parseInt($arguments.take ?? 9, 10);
+  const takeRaw = parseInt($arguments.take ?? 10, 10);
   const take = Number.isFinite(takeRaw) ? takeRaw : 9;
   if (take <= 0) {
     throw new Error("[take] must be greater than 0");
@@ -132,7 +135,9 @@ async function _main(proxies) {
 
   $.info(`核心支持节点数: ${internalProxies.length}/${proxies.length}`);
   if (!internalProxies.length) return [];
-  $.info(`[batch] take=${take}, batch_scale=${batchScale}, batch_size=${batchSize}`);
+  $.info(
+    `[batch] take=${take}, batch_scale=${batchScale}, batch_size=${batchSize}`,
+  );
 
   for (
     let cursor = 0;
