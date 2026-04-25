@@ -45,9 +45,10 @@ async function _main(proxies) {
   );
 
   const $ = $substore;
-  const cacheEnabled = /true|1/.test($arguments.cache ?? 0);
-  const disableFailedCache =
-    $arguments.disable_failed_cache || $arguments.ignore_failed_error;
+  const cacheEnabled = /true|1/.test($arguments.cache ?? 1);
+  const disableFailedCache = /true|1/.test(
+    $arguments.disable_failed_cache ?? $arguments.ignore_failed_error ?? 0,
+  );
   const cache = scriptResourceCache;
   const cacheTTL = 5 * 60 * 1000;
   const now = () => Date.now();
@@ -128,9 +129,12 @@ async function _main(proxies) {
       const cacheResult = getCacheResult(proxy);
       if (cacheResult.type === "success") {
         batchSuccessMap.set(proxy._sorted_index, cacheResult.latency);
-      } else {
-        proxiesToCheck.push(proxy);
+        continue;
       }
+      if (cacheResult.type === "failed") {
+        continue;
+      }
+      proxiesToCheck.push(proxy);
     }
 
     if (proxiesToCheck.length) {
@@ -307,12 +311,13 @@ async function _main(proxies) {
   }
 
   function getCacheId(proxy) {
+    const cacheProxy = Object.fromEntries(
+      Object.entries(proxy)
+        .filter(([key]) => !/^(name|collectionName|subName|id|_.*)$/i.test(key))
+        .sort(([a], [b]) => a.localeCompare(b)),
+    );
     return `http-meta:availability:v2:${url}:${method}:${validStatusRaw}:${JSON.stringify(
-      Object.fromEntries(
-        Object.entries(proxy).filter(
-          ([key]) => !/^(name|collectionName|subName|id|_.*)$/i.test(key),
-        ),
-      ),
+      cacheProxy,
     )}`;
   }
 
