@@ -340,4 +340,6 @@ function main(config) {
   return config;
 }
 
-$content = ProxyUtils.yaml.dump(main(ProxyUtils.yaml.load($content)));
+if ($content) {
+  $content = ProxyUtils.yaml.dump(main(ProxyUtils.yaml.load($content)));
+}
