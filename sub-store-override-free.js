@@ -38,11 +38,30 @@ config.proxies = await _main(config.proxies);
 $content = ProxyUtils.yaml.dump(config);
 
 async function _main(proxies) {
-  proxies.sort(
-    (a, b) =>
-      parseFloat(String(b.name).split("|")[1]) -
-      parseFloat(String(a.name).split("|")[1]),
-  );
+  function parseSpeedToBytes(name) {
+    const speedText = String(name ?? "").split("|")[1]?.trim() ?? "";
+    const match = speedText.match(/^(\d+(?:\.\d+)?)\s*([KMGT])B\/S$/i);
+    if (!match) return -1;
+
+    const value = Number(match[1]);
+    const unit = match[2].toUpperCase();
+    const unitScale = {
+      K: 1024,
+      M: 1024 ** 2,
+      G: 1024 ** 3,
+      T: 1024 ** 4,
+    };
+    return Number.isFinite(value) ? value * (unitScale[unit] || 1) : -1;
+  }
+
+  proxies = proxies
+    .map((proxy, index) => ({
+      proxy,
+      index,
+      speed: parseSpeedToBytes(proxy?.name),
+    }))
+    .sort((a, b) => b.speed - a.speed || a.index - b.index)
+    .map(({ proxy }) => proxy);
 
   const $ = $substore;
   const cacheEnabled = /true|1/.test($arguments.cache ?? 1);
