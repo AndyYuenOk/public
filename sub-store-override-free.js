@@ -73,6 +73,10 @@ async function _main(proxies) {
   const now = () => Date.now();
 
   const take = Math.max(1, parseInt($arguments.take ?? 10, 10) || 10);
+  const batchScaleRaw = parseFloat($arguments.batch_scale ?? 1.8);
+  const batchScale =
+    Number.isFinite(batchScaleRaw) && batchScaleRaw > 0 ? batchScaleRaw : 1.8;
+  const batchSize = Math.max(take, Math.ceil(take * batchScale));
 
   const http_meta_host = $arguments.http_meta_host ?? "127.0.0.1";
   const http_meta_port = $arguments.http_meta_port ?? 9876;
@@ -126,13 +130,14 @@ async function _main(proxies) {
 
   $.info(`核心支持节点数: ${internalProxies.length}/${proxies.length}`);
   if (!internalProxies.length) return [];
+  $.info(`[batch] take=${take}, batch_scale=${batchScale}, batch_size=${batchSize}`);
 
   for (
     let cursor = 0;
     cursor < internalProxies.length && validProxies.length < take;
-    cursor += take
+    cursor += batchSize
   ) {
-    const batch = internalProxies.slice(cursor, cursor + take);
+    const batch = internalProxies.slice(cursor, cursor + batchSize);
     await processBatch(batch);
   }
 
