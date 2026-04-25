@@ -33,8 +33,8 @@
  * - 失败缓存: { ts }
  */
 
-async function operator(proxies = [], targetPlatform, env) {
-  proxies = proxies.sort(
+async function main(config) {
+  proxies = config.proxies.sort(
     (a, b) =>
       parseFloat(String(b.name).split("|")[1]) -
       parseFloat(String(a.name).split("|")[1]),
@@ -112,7 +112,9 @@ async function operator(proxies = [], targetPlatform, env) {
     await processBatch(batch);
   }
 
-  return validProxies.slice(0, take);
+  config.proxies = validProxies.slice(0, take);
+
+  return config;
 
   async function processBatch(batch = []) {
     if (!batch.length || validProxies.length >= take) return;
