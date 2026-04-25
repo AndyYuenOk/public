@@ -34,7 +34,7 @@
  */
 
 let config = ProxyUtils.yaml.load($content ?? $files[0]);
-await _main(config.proxies);
+config.proxies = await _main(config.proxies);
 $content = ProxyUtils.yaml.dump(config);
 
 async function _main(proxies) {
