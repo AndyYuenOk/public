@@ -33,15 +33,19 @@
  * - 失败缓存: { ts }
  */
 
-async function main(config) {
-  proxies = config.proxies.sort(
+let config = ProxyUtils.yaml.load($content ?? $files[0]);
+await _main(config.proxies);
+$content = ProxyUtils.yaml.dump(config);
+
+async function _main(proxies) {
+  proxies.sort(
     (a, b) =>
       parseFloat(String(b.name).split("|")[1]) -
       parseFloat(String(a.name).split("|")[1]),
   );
 
   const $ = $substore;
-  const cacheEnabled = /true|1/.test($arguments.cache ?? 1);
+  const cacheEnabled = /true|1/.test($arguments.cache ?? 0);
   const disableFailedCache =
     $arguments.disable_failed_cache || $arguments.ignore_failed_error;
   const cache = scriptResourceCache;
@@ -112,9 +116,7 @@ async function main(config) {
     await processBatch(batch);
   }
 
-  config.proxies = validProxies.slice(0, take);
-
-  return config;
+  return validProxies.slice(0, take);
 
   async function processBatch(batch = []) {
     if (!batch.length || validProxies.length >= take) return;
