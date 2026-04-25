@@ -72,11 +72,15 @@ async function _main(proxies) {
   const cacheTTL = 5 * 60 * 1000;
   const now = () => Date.now();
 
-  const take = Math.max(1, parseInt($arguments.take ?? 10, 10) || 10);
+  const takeRaw = parseInt($arguments.take ?? 9, 10);
+  const take = Number.isFinite(takeRaw) ? takeRaw : 9;
+  if (take <= 0) {
+    throw new Error("[take] must be greater than 0");
+  }
   const batchScaleRaw = parseFloat($arguments.batch_scale ?? 1.8);
   const batchScale =
     Number.isFinite(batchScaleRaw) && batchScaleRaw > 0 ? batchScaleRaw : 1.8;
-  const batchSize = Math.max(take, Math.ceil(take * batchScale));
+  const batchSize = Math.ceil(take * batchScale);
 
   const http_meta_host = $arguments.http_meta_host ?? "127.0.0.1";
   const http_meta_port = $arguments.http_meta_port ?? 9876;
@@ -134,7 +138,7 @@ async function _main(proxies) {
 
   for (
     let cursor = 0;
-    cursor < internalProxies.length && validProxies.length < take;
+    cursor < internalProxies.length;
     cursor += batchSize
   ) {
     const batch = internalProxies.slice(cursor, cursor + batchSize);
@@ -144,7 +148,7 @@ async function _main(proxies) {
   return validProxies.slice(0, take);
 
   async function processBatch(batch = []) {
-    if (!batch.length || validProxies.length >= take) return;
+    if (!batch.length) return;
 
     const batchSuccessMap = new Map();
     const proxiesToCheck = [];
@@ -243,9 +247,6 @@ async function _main(proxies) {
 
   function flushBatchSuccess(batch, successMap) {
     for (const proxy of batch) {
-      if (validProxies.length >= take) {
-        return;
-      }
       const latency = successMap.get(proxy._sorted_index);
       if (latency === undefined) continue;
       validProxies.push(toProxyOutput(proxy, latency));
