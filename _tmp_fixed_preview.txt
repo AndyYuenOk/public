@@ -1,35 +1,37 @@
 ﻿/**
  *
- * Node availability check (Sub-Store Node.js)
+ * 閼哄倻鍋i崣顖滄暏閹勵梾濞?闁倿鍘?Sub-Store Node.js 閻?
  *
- * Docs: https://t.me/zhetengsha/1210
+ * 鐠囧瓨妲? https://t.me/zhetengsha/1210
  *
- * HTTP META (https://github.com/xream/http-meta) arguments
- * - [http_meta_protocol] protocol, default: http
- * - [http_meta_host] host, default: 127.0.0.1
- * - [http_meta_port] port, default: 9876
- * - [http_meta_authorization] Authorization header, default: empty
- * - [http_meta_start_delay] startup delay in ms, default: 1000
- * - [http_meta_proxy_timeout] timeout per proxy in ms, default: 5000
+ * 濞嗐垼绻嬮崝鐘插弳 Telegram 缂囥倗绮?https://t.me/zhetengsha
  *
- * Other arguments
- * - [take] target available node count, default: 10
- * - [timeout] request timeout in ms, default: 5000
- * - [retries] retry count, default: 1
- * - [retry_delay] retry delay in ms, default: 1000
- * - [url] test URL, needs encodeURIComponent
- * - [ua] User-Agent header, needs encodeURIComponent
- * - [status] valid status regex, needs encodeURIComponent, default: 204
- * - [method] request method, default: head
- * - [show_latency] show latency prefix in node name
- * - [ai_patterns] AI match regex patterns (JSON array or single pattern string)
- * - [cache] use cache, default: enabled
- * - [disable_failed_cache/ignore_failed_error] disable failed-cache reuse
+ * HTTP META(https://github.com/xream/http-meta) 閸欏倹鏆?
+ * - [http_meta_protocol] 閸楀繗顔?姒涙顓? http
+ * - [http_meta_host] 閺堝秴濮熼崷鏉挎絻 姒涙顓? 127.0.0.1
+ * - [http_meta_port] 缁旑垰褰涢崣?姒涙顓? 9876
+ * - [http_meta_authorization] Authorization 姒涙顓婚弮? * - [http_meta_start_delay] 閸掓繂顫愰崥顖氬З瀵よ埖妞?閸楁洑缍? 濮n偆顫? 姒涙顓? 1000
+ * - [http_meta_proxy_timeout] 濮e繋閲滈懞鍌滃仯閼版妞?閸楁洑缍? 濮n偆顫? 姒涙顓? 5000
  *
- * Cache
- * - fixed TTL: 5 minutes (300000ms)
- * - success cache: { latency, ts }
- * - failed cache: { ts }
+ * 閸忚泛鐣犻崣鍌涙殶
+ * - [take] 閻╊喗鐖i崣顖滄暏閼哄倻鍋i弫?閸氬本妞傛担婊€璐熷В蹇斿濡偓濞村鏆?. 姒涙顓?10
+ * - [timeout] 鐠囬攱鐪扮搾鍛(閸楁洑缍? 濮n偆顫? 姒涙顓?5000
+ * - [retries] 闁插秷鐦▎鈩冩殶 姒涙顓?1
+ * - [retry_delay] 闁插秷鐦鑸垫(閸楁洑缍? 濮n偆顫? 姒涙顓?1000
+ * - [url] 濡偓濞?URL. 闂団偓鐟?encodeURIComponent
+ * - [ua] 鐠囬攱鐪版径?User-Agent. 闂団偓鐟?encodeURIComponent
+ * - [status] 閸氬牊纭堕悩鑸碘偓浣虹垳濮濓絽鍨? 闂団偓鐟?encodeURIComponent. 姒涙顓?204
+ * - [method] 鐠囬攱鐪伴弬瑙勭《. 姒涙顓?head
+ * - [show_latency] 閺勫墽銇氬鎯扮箿
+ * - [include_gpt] 閸氼垳鏁?GPT 濞e嘲鎮庡Ο鈥崇础(姒涙顓?true)
+ * - [gpt_regex] GPT 閼哄倻鍋i崠褰掑帳濮濓絽鍨?姒涙顓?GPT)
+ * - [cache] 娴h法鏁ょ紓鎾崇摠(姒涙顓诲鈧崥?
+ * - [disable_failed_cache/ignore_failed_error] 缁備胶鏁ゆ径杈Е缂傛挸鐡?閸涙垝鑵戞径杈Е缂傛挸鐡ㄩ弮鍫曞櫢濞?
+ *
+ * 缂傛挸鐡ㄧ拠瀛樻
+ * - 缂傛挸鐡ㄩ崶鍝勭暰 TTL 娑?5 閸掑棝鎸?300000ms)
+ * - 閹存劕濮涚紓鎾崇摠: { latency, ts }
+ * - 婢惰精瑙︾紓鎾崇摠: { ts }
  */
 
 let config = ProxyUtils.yaml.load($content ?? $files[0]);
@@ -37,21 +39,33 @@ config.proxies = await _main(config.proxies);
 $content = ProxyUtils.yaml.dump(config);
 
 async function _main(proxies) {
-  // AI-LOCK-BEGIN
-  function parseSpeedToKb(name) {
-    const speed = name.split("|")[1];
-    if (speed.includes("MB/s")) {
-      return parseFloat(speed) * 1024;
-    } else if (speed.includes("KB/s")) {
-      return parseFloat(speed);
-    } else {
-      return -1;
-    }
-  }
-  // AI-LOCK-END
+  function parseSpeedToBytes(name) {
+    const speedText =
+      String(name ?? "")
+        .split("|")[1]
+        ?.trim() ?? "";
+    const match = speedText.match(/^(\d+(?:\.\d+)?)\s*([KMGT])B\/S$/i);
+    if (!match) return -1;
 
-  // AI-LOCK: KEEP-UNCHANGED
-  proxies.sort((a, b) => parseSpeedToKb(b.name) - parseSpeedToKb(a.name));
+    const value = Number(match[1]);
+    const unit = match[2].toUpperCase();
+    const unitScale = {
+      K: 1024,
+      M: 1024 ** 2,
+      G: 1024 ** 3,
+      T: 1024 ** 4,
+    };
+    return Number.isFinite(value) ? value * (unitScale[unit] || 1) : -1;
+  }
+
+  proxies = proxies
+    .map((proxy, index) => ({
+      proxy,
+      index,
+      speed: parseSpeedToBytes(proxy?.name),
+    }))
+    .sort((a, b) => b.speed - a.speed || a.index - b.index)
+    .map(({ proxy }) => proxy);
 
   const $ = $substore;
   const cacheEnabled = /true|1/.test($arguments.cache ?? 1);
@@ -60,23 +74,17 @@ async function _main(proxies) {
   );
   const cache = scriptResourceCache;
   const cacheTTL = 5 * 60 * 1000;
+  const now = () => Date.now();
 
-  const take = parseInt($arguments.take ?? 10, 10);
-
-  // AI-LOCK-BEGIN
-  let aiPatterns = $arguments.ai_patterns;
-  try {
-    aiPatterns = JSON.parse(aiPatterns);
-  } catch {
-    aiPatterns = ["GPT"];
+  const takeRaw = parseInt($arguments.take ?? 10, 10);
+  const take = Number.isFinite(takeRaw) ? takeRaw : 10;
+  if (take <= 0) {
+    throw new Error("[take] must be greater than 0");
   }
-  console.log(aiPatterns);
-
-  // AI-LOCK-END
-
-  const hasAiPatterns = aiPatterns.length;
+  const includeGpt = /true|1/.test($arguments.include_gpt ?? 1);
+  const gptRegex = parseGptRegex($arguments.gpt_regex ?? "GPT");
   const speedQuota = Math.ceil(take / 2);
-  const aiQuota = Math.floor(take / 2);
+  const gptQuota = Math.floor(take / 2);
   const batchScale = 1.8;
   const batchSize = Math.ceil(take * batchScale);
 
@@ -85,16 +93,16 @@ async function _main(proxies) {
   const http_meta_protocol = $arguments.http_meta_protocol ?? "http";
   const http_meta_authorization = $arguments.http_meta_authorization ?? "";
   const http_meta_api = `${http_meta_protocol}://${http_meta_host}:${http_meta_port}`;
-  const http_meta_start_delay = parseInt(
-    $arguments.http_meta_start_delay ?? 100,
+  const http_meta_start_delay = parseFloat(
+    $arguments.http_meta_start_delay ?? 1000,
   );
-  const http_meta_proxy_timeout = parseInt(
+  const http_meta_proxy_timeout = parseFloat(
     $arguments.http_meta_proxy_timeout ?? 5000,
   );
 
   const concurrency = take;
   const method = $arguments.method || "head";
-  const validStatusRaw = $arguments.status || "204";
+  const validStatusRaw = String($arguments.status || "204");
   const validStatus = new RegExp(validStatusRaw);
   const url = decodeURIComponent(
     $arguments.url || "http://www.gstatic.com/generate_204",
@@ -106,8 +114,8 @@ async function _main(proxies) {
 
   const validProxies = [];
   const speedProxies = [];
-  const speedFallbackProxies = [];
-  const aiProxies = [];
+  const speedExtraProxies = [];
+  const gptProxies = [];
   const internalProxies = [];
 
   proxies.forEach((proxy, index) => {
@@ -133,10 +141,10 @@ async function _main(proxies) {
     }
   });
 
-  $.info(`Core supported nodes: ${internalProxies.length}/${proxies.length}`);
+  $.info(`閺嶇绺鹃弨顖涘瘮閼哄倻鍋i弫? ${internalProxies.length}/${proxies.length}`);
   if (!internalProxies.length) return [];
   $.info(
-    `[batch] take=${take}, batch_scale=${batchScale}, batch_size=${batchSize}, has_ai_patterns=${hasAiPatterns}, ai_pattern_count=${aiPatterns.length}`,
+    `[batch] take=${take}, batch_scale=${batchScale}, batch_size=${batchSize}, include_gpt=${includeGpt}`,
   );
   const httpMetaTotalTimeout =
     http_meta_start_delay + internalProxies.length * http_meta_proxy_timeout;
@@ -154,15 +162,19 @@ async function _main(proxies) {
       await processBatch(batch);
     }
 
-    if (!hasAiPatterns) {
+    if (!includeGpt) {
       return validProxies.slice(0, take);
     }
 
-    const aiShortage = Math.max(0, aiQuota - aiProxies.length);
+    const gptShortage = Math.max(0, gptQuota - gptProxies.length);
     const mixed = speedProxies
-      .concat(aiProxies)
-      .concat(speedFallbackProxies.slice(0, aiShortage))
-      .sort((a, b) => parseSpeedToKb(b.name) - parseSpeedToKb(a.name));
+      .concat(gptProxies)
+      .concat(speedExtraProxies.slice(0, gptShortage))
+      .sort(
+        (a, b) =>
+          parseSpeedToBytes(b.name) - parseSpeedToBytes(a.name) ||
+          String(a.name).localeCompare(String(b.name)),
+      );
     return mixed.slice(0, take);
   } finally {
     await stopHttpMetaOnce();
@@ -249,24 +261,18 @@ async function _main(proxies) {
       portBySortedIndex.set(proxy._sorted_index, ports[index]);
     });
 
-    const timeoutMinutes =
-      Math.round((httpMetaTotalTimeout / 60000) * 100) / 100;
-    const startDelaySeconds = http_meta_start_delay / 1000;
-    const startLogLines = [
-      "======== HTTP META STARTED ====",
-      `[pid] ${pid}`,
-      `[ports] ${ports.length}`,
-      `[timeout] ${timeoutMinutes} min`,
-      `[start_delay] ${startDelaySeconds}s`,
-    ];
-    $.info(`\n${startLogLines.join("\n")}`);
+    $.info(
+      `\n======== HTTP META STARTED ====\n[ports] ${ports}\n[PID] ${pid}\n[timeout] ${
+        Math.round(httpMetaTotalTimeout / 60 / 10) / 100
+      } min\n`,
+    );
+    $.info(`wait ${http_meta_start_delay / 1000}s before checking`);
     await $.wait(http_meta_start_delay);
   }
 
   async function stopHttpMetaOnce() {
     if (!httpMetaStarted || !httpMetaPid) return;
     try {
-      const requestPid = httpMetaPid;
       const stopRes = await http({
         method: "post",
         url: `${http_meta_api}/stop`,
@@ -278,40 +284,9 @@ async function _main(proxies) {
           pid: [httpMetaPid],
         }),
       });
-
-      const status = parseInt(stopRes?.status || stopRes?.statusCode, 10);
-      const is2xx = Number.isFinite(status) && status >= 200 && status < 300;
-
-      let body = stopRes?.body;
-      let bodyParseFailed = false;
-      if (typeof body === "string") {
-        try {
-          body = JSON.parse(body);
-        } catch (e) {
-          bodyParseFailed = true;
-        }
-      }
-
-      const hasPidArray = Array.isArray(body?.pid);
-      if (is2xx && hasPidArray) {
-        const stopLogLines = [
-          "======== HTTP META STOPPED ====",
-          `[status] ${status}`,
-          `[request_pid] ${requestPid}`,
-          `[response_pid_count] ${body.pid.length}`,
-        ];
-        $.info(`\n${stopLogLines.join("\n")}`);
-      } else {
-        const statusText = Number.isNaN(status) ? "unknown" : status;
-        const detailLogLines = [
-          "======== HTTP META STOPPED (DETAIL) ====",
-          `[status] ${statusText}`,
-          `[request_pid] ${requestPid}`,
-          `[body_parse_failed] ${bodyParseFailed}`,
-          JSON.stringify(stopRes, null, 2),
-        ];
-        $.info(`\n${detailLogLines.join("\n")}`);
-      }
+      $.info(
+        `\n======== HTTP META STOPPED ====\n${JSON.stringify(stopRes, null, 2)}`,
+      );
     } catch (e) {
       $.error(e);
     } finally {
@@ -329,14 +304,14 @@ async function _main(proxies) {
       if (latency === undefined) continue;
 
       const output = toProxyOutput(proxy, latency);
-      if (!hasAiPatterns) {
+      if (!includeGpt) {
         validProxies.push(output);
         continue;
       }
 
-      if (aiPatterns.some((pattern) => RegExp(pattern).test(proxy.name))) {
-        if (aiProxies.length < aiQuota) {
-          aiProxies.push(output);
+      if (isGptProxy(proxy)) {
+        if (gptProxies.length < gptQuota) {
+          gptProxies.push(output);
         }
         continue;
       }
@@ -346,17 +321,22 @@ async function _main(proxies) {
         continue;
       }
 
-      if (aiProxies.length < aiQuota) {
-        speedFallbackProxies.push(output);
+      if (gptProxies.length < gptQuota) {
+        speedExtraProxies.push(output);
       }
     }
   }
 
   function shouldStopProbe() {
-    if (!hasAiPatterns) {
+    if (!includeGpt) {
       return validProxies.length >= take;
     }
-    return speedProxies.length >= speedQuota && aiProxies.length >= aiQuota;
+    return speedProxies.length >= speedQuota && gptProxies.length >= gptQuota;
+  }
+
+  function isGptProxy(proxy) {
+    gptRegex.lastIndex = 0;
+    return gptRegex.test(String(proxy?.name ?? ""));
   }
 
   function getCacheResult(proxy) {
@@ -367,12 +347,12 @@ async function _main(proxies) {
     if (!cached) return { type: "miss", id };
 
     const ts = Number(cached.ts ?? 0);
-    if (!ts || Date.now() - ts > cacheTTL) {
+    if (!ts || now() - ts > cacheTTL) {
       return { type: "miss", id };
     }
 
     if (cached.latency !== undefined && cached.latency !== null) {
-      $.info(`[${proxy.name}] use success cache`);
+      $.info(`[${proxy.name}] 娴h法鏁ら幋鎰缂傛挸鐡╜);
       return {
         type: "success",
         id,
@@ -381,18 +361,18 @@ async function _main(proxies) {
     }
 
     if (disableFailedCache) {
-      $.info(`[${proxy.name}] skip failed cache and re-check`);
+      $.info(`[${proxy.name}] 鐠哄疇绻冩径杈Е缂傛挸鐡ㄩ獮鍫曞櫢濞村獖);
       return { type: "miss", id };
     }
 
-    $.info(`[${proxy.name}] use failed cache`);
+    $.info(`[${proxy.name}] 娴h法鏁ゆ径杈Е缂傛挸鐡╜);
     return { type: "failed", id };
   }
 
   async function checkWithHttpMeta(proxy, port) {
     const id = getCacheId(proxy);
     try {
-      const startedAt = Date.now();
+      const startedAt = now();
       const res = await http({
         proxy: `http://${http_meta_host}:${port}`,
         method,
@@ -402,12 +382,12 @@ async function _main(proxies) {
         url,
       });
       const status = parseInt(res.status || res.statusCode || 200, 10);
-      const latency = Date.now() - startedAt;
+      const latency = now() - startedAt;
       $.info(`[${proxy.name}] status: ${status}, latency: ${latency}`);
 
       if (validStatus.test(status)) {
         if (cacheEnabled) {
-          cache.set(id, { latency, ts: Date.now() });
+          cache.set(id, { latency, ts: now() });
         }
         return {
           ok: true,
@@ -417,7 +397,7 @@ async function _main(proxies) {
       }
 
       if (cacheEnabled) {
-        cache.set(id, { ts: Date.now() });
+        cache.set(id, { ts: now() });
       }
       return {
         ok: false,
@@ -425,7 +405,7 @@ async function _main(proxies) {
     } catch (e) {
       $.error(`[${proxy.name}] ${e.message ?? e}`);
       if (cacheEnabled) {
-        cache.set(id, { ts: Date.now() });
+        cache.set(id, { ts: now() });
       }
       return {
         ok: false,
@@ -450,6 +430,27 @@ async function _main(proxies) {
     return `http-meta:availability:v2:${url}:${method}:${validStatusRaw}:${JSON.stringify(
       cacheProxy,
     )}`;
+  }
+
+  function parseGptRegex(source) {
+    const fallbackPattern = "GPT";
+    const normalized =
+      typeof source === "string" && source.length ? source : fallbackPattern;
+    let decoded = normalized;
+    try {
+      decoded = decodeURIComponent(normalized);
+    } catch (e) {}
+
+    try {
+      const slashWrapped = decoded.match(/^\/(.+)\/([a-z]*)$/i);
+      if (slashWrapped) {
+        return new RegExp(slashWrapped[1], slashWrapped[2]);
+      }
+      return new RegExp(decoded, "i");
+    } catch (e) {
+      $.error(`[gpt_regex] invalid regex "${decoded}", fallback to /GPT/i`);
+      return /GPT/i;
+    }
   }
 
   async function http(opt = {}) {
