@@ -27,149 +27,77 @@ try {
   aiPatterns = [$arguments.ai];
 }
 
+// 使用 reduce 将数组转换为单个对象
+let ruleProviders = [
+  "reject",
+  "icloud",
+  "apple",
+  "google",
+  "proxy",
+  "direct",
+  "private",
+  // "gfw",
+  // "tld-not-cn",
+  "telegramcidr",
+  "cncidr",
+  "lancidr",
+  // "applications",
+  {
+    adblockfilters: {
+      url: "https://raw.githubusercontent.com/217heidai/adblockfilters/main/rules/adblockmihomo.yaml",
+    },
+  },
+].reduce((providers, provider) => {
+  if (typeof provider === "string") {
+    providers[provider] = {
+      type: "http",
+      behavior: provider.includes("idr") ? "ipcidr" : "domain",
+      url: `https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/${provider}.txt`, // 修复：这里应该是 provider 而不是 name
+      interval: 86400,
+      path: `./ruleset/${provider}.yaml`, // 建议加上路径
+    };
+  } else {
+    // 处理已经定义的特殊对象 (如 adblockfilters)
+    const key = Object.keys(provider)[0];
+    providers[key] = {
+      ...provider[key],
+      type: "http",
+      behavior: provider[key].behavior ?? "domain",
+      interval: 86400,
+      path: `./ruleset/${key}.yaml`,
+    };
+  }
+  return providers;
+}, {});
+
 // Rule order is top-down; earlier entries have higher priority.
 let routingRules = [
-  "DOMAIN-SUFFIX,pairdrop.net,Direct",
-  "DOMAIN-SUFFIX,gh-proxy.com,Direct",
-  "DOMAIN-SUFFIX,ghfast.top,Direct",
-  "DOMAIN-SUFFIX,host.docker.internal,Direct",
+  "RULE-SET,private,DIRECT",
+  "RULE-SET,reject,Reject",
+  "RULE-SET,adblockfilters,Reject",
 
-  "RULE-SET,LocalAreaNetwork (Domain),Direct",
-  "RULE-SET,LocalAreaNetwork (IP-CIDR),Direct,no-resolve",
-  "RULE-SET,UnBan (Domain),Direct",
-  "RULE-SET,adblockclash (Domain),AdBlock",
-  "RULE-SET,GoogleCN (Domain),Direct",
-  "RULE-SET,SteamCN (Domain),Direct",
-  "DOMAIN-KEYWORD,1drv,Microsoft",
-  "DOMAIN-KEYWORD,microsoft,Microsoft",
-  "RULE-SET,Microsoft (Domain),Microsoft",
-  "DOMAIN-KEYWORD,anthropic,AI",
-  "DOMAIN-KEYWORD,claude,AI",
-  "DOMAIN-KEYWORD,openai,AI",
-  "RULE-SET,AI (Domain),AI",
-  "RULE-SET,OpenAi (Domain),AI",
-  "DOMAIN-KEYWORD,apiproxy-device-prod-nlb-,Netflix",
-  "DOMAIN-KEYWORD,dualstack.apiproxy-,Netflix",
-  "DOMAIN-KEYWORD,netflixdnstest,Netflix",
-  "RULE-SET,Netflix (Domain),Netflix",
-  "RULE-SET,Netflix (IP-CIDR),Netflix,no-resolve",
-  "DOMAIN-KEYWORD,1e100,Manual",
-  "DOMAIN-KEYWORD,abema,Manual",
-  "DOMAIN-KEYWORD,appledaily,Manual",
-  "DOMAIN-KEYWORD,avtb,Manual",
-  "DOMAIN-KEYWORD,beetalk,Manual",
-  "DOMAIN-KEYWORD,blogspot,Manual",
-  "DOMAIN-KEYWORD,dropbox,Manual",
-  "DOMAIN-KEYWORD,facebook,Manual",
-  "DOMAIN-KEYWORD,fbcdn,Manual",
-  "DOMAIN-KEYWORD,github,Manual",
-  "DOMAIN-KEYWORD,gmail,Manual",
-  "DOMAIN-KEYWORD,google,Manual",
-  "DOMAIN-KEYWORD,instagram,Manual",
-  "DOMAIN-KEYWORD,porn,Manual",
-  "DOMAIN-KEYWORD,sci-hub,Manual",
-  "DOMAIN-KEYWORD,spotify,Manual",
-  "DOMAIN-KEYWORD,telegram,Manual",
-  "DOMAIN-KEYWORD,twitter,Manual",
-  "DOMAIN-KEYWORD,whatsapp,Manual",
-  "DOMAIN-KEYWORD,youtube,Manual",
-  "DOMAIN-KEYWORD,uk-live,Manual",
-  "DOMAIN-KEYWORD,onedrive,Manual",
-  "DOMAIN-KEYWORD,skydrive,Manual",
-  "DOMAIN-KEYWORD,porn,Manual",
-  "DOMAIN-KEYWORD,ttvnw,Manual",
-  "RULE-SET,ProxyLite (Domain),Manual",
-  "RULE-SET,ProxyLite (IP-CIDR),Manual,no-resolve",
-  "DOMAIN-KEYWORD,360buy,Direct",
-  "DOMAIN-KEYWORD,alicdn,Direct",
-  "DOMAIN-KEYWORD,alimama,Direct",
-  "DOMAIN-KEYWORD,alipay,Direct",
-  "DOMAIN-KEYWORD,appzapp,Direct",
-  "DOMAIN-KEYWORD,baidupcs,Direct",
-  "DOMAIN-KEYWORD,bilibili,Direct",
-  "DOMAIN-KEYWORD,ccgslb,Direct",
-  "DOMAIN-KEYWORD,chinacache,Direct",
-  "DOMAIN-KEYWORD,duobao,Direct",
-  "DOMAIN-KEYWORD,jdpay,Direct",
-  "DOMAIN-KEYWORD,moke,Direct",
-  "DOMAIN-KEYWORD,qhimg,Direct",
-  "DOMAIN-KEYWORD,vpimg,Direct",
-  "DOMAIN-KEYWORD,xiami,Direct",
-  "DOMAIN-KEYWORD,xiaomi,Direct",
-  "RULE-SET,ChinaDomain (Domain),Direct",
-  "RULE-SET,ChinaDomain (IP-CIDR),Direct,no-resolve",
-  "RULE-SET,ChinaCompanyIp (IP-CIDR),Direct,no-resolve",
-  "GEOIP,CN,Direct",
-  "MATCH,Others",
+  "DOMAIN-SUFFIX,pairdrop.net,DIRECT",
+  "DOMAIN-SUFFIX,gh-proxy.com,DIRECT",
+  "DOMAIN-SUFFIX,ghfast.top,DIRECT",
+  "DOMAIN-SUFFIX,host.docker.internal,DIRECT",
+
+  "GEOSITE,category-ai-!cn,AI",
+  "GEOSITE,microsoft,Microsoft",
+  "GEOSITE,netflix,Netflix",
+
+  "RULE-SET,icloud,DIRECT",
+  "RULE-SET,apple,DIRECT",
+  "RULE-SET,google,Manual",
+  "RULE-SET,proxy,Manual",
+  "RULE-SET,direct,DIRECT",
+  "RULE-SET,lancidr,DIRECT",
+  "RULE-SET,cncidr,DIRECT",
+  "RULE-SET,telegramcidr,Manual",
+
+  "GEOIP,LAN,DIRECT",
+  "GEOIP,CN,DIRECT",
+  "MATCH,Final",
 ];
-
-let ruleProviders = {
-  // Provider keys must match RULE-SET names used in `rules`.
-  "LocalAreaNetwork (Domain)": {
-    behavior: "domain",
-    url: "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvTG9jYWxBcmVhTmV0d29yay5saXN0",
-  },
-  "LocalAreaNetwork (IP-CIDR)": {
-    behavior: "ipcidr",
-    url: "https://url.v1.mk/getruleset?type=4&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvTG9jYWxBcmVhTmV0d29yay5saXN0",
-  },
-  "UnBan (Domain)": {
-    behavior: "domain",
-    url: "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvVW5CYW4ubGlzdA",
-  },
-  "adblockclash (Domain)": {
-    behavior: "domain",
-    url: "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tLzIxN2hlaWRhaS9hZGJsb2NrZmlsdGVycy9tYWluL3J1bGVzL2FkYmxvY2tjbGFzaC5saXN0",
-  },
-  "GoogleCN (Domain)": {
-    behavior: "domain",
-    url: "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvR29vZ2xlQ04ubGlzdA",
-  },
-  "SteamCN (Domain)": {
-    behavior: "domain",
-    url: "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvUnVsZXNldC9TdGVhbUNOLmxpc3Q",
-  },
-  "Microsoft (Domain)": {
-    behavior: "domain",
-    url: "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvTWljcm9zb2Z0Lmxpc3Q",
-  },
-  "AI (Domain)": {
-    behavior: "domain",
-    url: "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvUnVsZXNldC9BSS5saXN0",
-  },
-  "OpenAi (Domain)": {
-    behavior: "domain",
-    url: "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvUnVsZXNldC9PcGVuQWkubGlzdA",
-  },
-  "Netflix (Domain)": {
-    behavior: "domain",
-    url: "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvUnVsZXNldC9OZXRmbGl4Lmxpc3Q",
-  },
-  "Netflix (IP-CIDR)": {
-    behavior: "ipcidr",
-    url: "https://url.v1.mk/getruleset?type=4&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvUnVsZXNldC9OZXRmbGl4Lmxpc3Q",
-  },
-  "ProxyLite (Domain)": {
-    behavior: "domain",
-    url: "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvUHJveHlMaXRlLmxpc3Q",
-  },
-  "ProxyLite (IP-CIDR)": {
-    behavior: "ipcidr",
-    url: "https://url.v1.mk/getruleset?type=4&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvUHJveHlMaXRlLmxpc3Q",
-  },
-  "ChinaDomain (Domain)": {
-    behavior: "domain",
-    url: "https://url.v1.mk/getruleset?type=3&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvQ2hpbmFEb21haW4ubGlzdA",
-  },
-  "ChinaDomain (IP-CIDR)": {
-    behavior: "ipcidr",
-    url: "https://url.v1.mk/getruleset?type=4&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvQ2hpbmFEb21haW4ubGlzdA",
-  },
-  "ChinaCompanyIp (IP-CIDR)": {
-    behavior: "ipcidr",
-    url: "https://url.v1.mk/getruleset?type=4&url=aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL0FDTDRTU1IvQUNMNFNTUi9tYXN0ZXIvQ2xhc2gvQ2hpbmFDb21wYW55SXAubGlzdA",
-  },
-};
 
 Object.values(ruleProviders).forEach((provider) => {
   provider.type = "http";
@@ -212,21 +140,21 @@ let strategyGroups = [
   },
 
   {
-    name: "AdBlock",
+    name: "Reject",
     icon: "Adblock.png",
     type: "select",
     proxies: ["REJECT", "DIRECT"],
   },
 
-  {
-    name: "Direct",
-    icon: "China.png",
-    type: "select",
-    proxies: ["DIRECT"],
-  },
+  // {
+  //   name: "Direct",
+  //   icon: "China.png",
+  //   type: "select",
+  //   proxies: ["DIRECT"],
+  // },
 
   {
-    name: "Others",
+    name: "Final",
     icon: "Final.png",
     type: "select",
     proxies: ["Manual", "DIRECT"],
@@ -234,6 +162,12 @@ let strategyGroups = [
 ];
 
 function main(config) {
+  config["geodata-mode"] = true;
+  config["geox-url"] = {
+    geosite:
+      "https://cdn.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geosite.dat",
+  };
+
   // Inject rules and provider definitions.
   config.rules = routingRules;
   config["rule-providers"] = ruleProviders;
