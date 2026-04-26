@@ -75,8 +75,7 @@ async function _main(proxies) {
   // AI-LOCK-END
 
   const hasAiPatterns = aiPatterns.length;
-  const speedQuota = Math.ceil(take / 2);
-  const aiQuota = Math.floor(take / 2);
+  const minAiCount = Math.floor(take / 2);
   const batchScale = 1.8;
   const batchSize = Math.ceil(take * batchScale);
 
@@ -104,10 +103,8 @@ async function _main(proxies) {
       "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Mobile/15E148 Safari/604.1",
   );
 
-  const validProxies = [];
-  const speedProxies = [];
-  const speedFallbackProxies = [];
-  const aiProxies = [];
+  const candidateProxies = [];
+  let aiCount = 0;
   const internalProxies = [];
 
   proxies.forEach((proxy, index) => {
@@ -138,35 +135,18 @@ async function _main(proxies) {
   $.info(
     `[batch] take=${take}, batch_scale=${batchScale}, batch_size=${batchSize}, has_ai_patterns=${hasAiPatterns}, ai_pattern_count=${aiPatterns.length}`,
   );
-  const httpMetaTotalTimeout =
-    http_meta_start_delay + internalProxies.length * http_meta_proxy_timeout;
-  let httpMetaPid;
-  let portBySortedIndex = new Map();
-  let httpMetaStarted = false;
-
-  try {
-    for (
-      let cursor = 0;
-      cursor < internalProxies.length && !shouldStopProbe();
-      cursor += batchSize
-    ) {
-      const batch = internalProxies.slice(cursor, cursor + batchSize);
-      await processBatch(batch);
-    }
-
-    if (!hasAiPatterns) {
-      return validProxies.slice(0, take);
-    }
-
-    const aiShortage = Math.max(0, aiQuota - aiProxies.length);
-    const mixed = speedProxies
-      .concat(aiProxies)
-      .concat(speedFallbackProxies.slice(0, aiShortage))
-      .sort((a, b) => parseSpeedToKb(b.name) - parseSpeedToKb(a.name));
-    return mixed.slice(0, take);
-  } finally {
-    await stopHttpMetaOnce();
+  for (
+    let cursor = 0;
+    cursor < internalProxies.length && !shouldStopProbe();
+    cursor += batchSize
+  ) {
+    const batch = internalProxies.slice(cursor, cursor + batchSize);
+    await processBatch(batch);
   }
+
+  const sortedCandidates = candidateProxies
+    .sort((a, b) => parseSpeedToKb(b.name) - parseSpeedToKb(a.name));
+  return sortedCandidates.slice(0, take);
 
   async function processBatch(batch = []) {
     if (!batch.length || shouldStopProbe()) return;
@@ -175,6 +155,17 @@ async function _main(proxies) {
     const proxiesToCheck = [];
 
     for (const proxy of batch) {
+      const isAiProxy =
+        hasAiPatterns &&
+        aiPatterns.some((pattern) => RegExp(pattern).test(proxy.name));
+      if (
+        hasAiPatterns &&
+        !isAiProxy &&
+        candidateProxies.length - aiCount >= minAiCount
+      ) {
+        continue;
+      }
+
       const cacheResult = getCacheResult(proxy);
       if (cacheResult.type === "success") {
         batchSuccessMap.set(proxy._sorted_index, cacheResult.latency);
@@ -187,32 +178,39 @@ async function _main(proxies) {
     }
 
     if (proxiesToCheck.length) {
-      await ensureHttpMetaStarted();
+      let httpMetaPid;
+      try {
+        const batchHttpMeta = await startHttpMetaForBatch(proxiesToCheck);
+        httpMetaPid = batchHttpMeta.pid;
+        const checked = await executeAsyncTasks(
+          proxiesToCheck.map((proxy) => async () => {
+            const port = batchHttpMeta.portBySortedIndex.get(proxy._sorted_index);
+            if (port === undefined || port === null) {
+              throw new Error(`[${proxy.name}] missing http-meta port mapping`);
+            }
+            return await checkWithHttpMeta(proxy, port);
+          }),
+          { concurrency, result: true, wrap: true },
+        );
 
-      const checked = await executeAsyncTasks(
-        proxiesToCheck.map((proxy) => async () => {
-          const port = portBySortedIndex.get(proxy._sorted_index);
-          if (port === undefined || port === null) {
-            throw new Error(`[${proxy.name}] missing http-meta port mapping`);
+        for (const item of checked || []) {
+          if (item?.data?.ok) {
+            batchSuccessMap.set(item.data.sortedIndex, item.data.latency);
           }
-          return await checkWithHttpMeta(proxy, port);
-        }),
-        { concurrency, result: true, wrap: true },
-      );
-
-      for (const item of checked || []) {
-        if (item?.data?.ok) {
-          batchSuccessMap.set(item.data.sortedIndex, item.data.latency);
         }
+      } catch (e) {
+        $.error(e);
+      } finally {
+        await stopHttpMetaForBatch(httpMetaPid);
       }
     }
 
     flushBatchSuccess(batch, batchSuccessMap);
   }
 
-  async function ensureHttpMetaStarted() {
-    if (httpMetaStarted) return;
-
+  async function startHttpMetaForBatch(batchProxies = []) {
+    const httpMetaTotalTimeout =
+      http_meta_start_delay + batchProxies.length * http_meta_proxy_timeout;
     const startRes = await http({
       retries: 0,
       method: "post",
@@ -222,7 +220,7 @@ async function _main(proxies) {
         Authorization: http_meta_authorization,
       },
       body: JSON.stringify({
-        proxies: internalProxies,
+        proxies: batchProxies,
         timeout: httpMetaTotalTimeout,
       }),
     });
@@ -236,16 +234,14 @@ async function _main(proxies) {
     if (!pid || !Array.isArray(ports)) {
       throw new Error(`======== HTTP META START FAILED ====\n${body}`);
     }
-    if (ports.length < internalProxies.length) {
+    if (ports.length < batchProxies.length) {
       throw new Error(
-        `http-meta ports not enough: ${ports.length}/${internalProxies.length}`,
+        `http-meta ports not enough: ${ports.length}/${batchProxies.length}`,
       );
     }
 
-    httpMetaPid = pid;
-    httpMetaStarted = true;
-    portBySortedIndex = new Map();
-    internalProxies.forEach((proxy, index) => {
+    const portBySortedIndex = new Map();
+    batchProxies.forEach((proxy, index) => {
       portBySortedIndex.set(proxy._sorted_index, ports[index]);
     });
 
@@ -256,17 +252,19 @@ async function _main(proxies) {
       "======== HTTP META STARTED ====",
       `[pid] ${pid}`,
       `[ports] ${ports.length}`,
-      `[timeout] ${timeoutMinutes} min`,
+      `[timeout] ${http_meta_proxy_timeout}ms`,
+      `[total_timeout] ${httpMetaTotalTimeout}ms (${timeoutMinutes} min)`,
       `[start_delay] ${startDelaySeconds}s`,
     ];
     $.info(`\n${startLogLines.join("\n")}`);
     await $.wait(http_meta_start_delay);
+    return { pid, portBySortedIndex };
   }
 
-  async function stopHttpMetaOnce() {
-    if (!httpMetaStarted || !httpMetaPid) return;
+  async function stopHttpMetaForBatch(pid) {
+    if (!pid) return;
     try {
-      const requestPid = httpMetaPid;
+      const requestPid = pid;
       const stopRes = await http({
         method: "post",
         url: `${http_meta_api}/stop`,
@@ -275,7 +273,7 @@ async function _main(proxies) {
           Authorization: http_meta_authorization,
         },
         body: JSON.stringify({
-          pid: [httpMetaPid],
+          pid: [pid],
         }),
       });
 
@@ -314,10 +312,6 @@ async function _main(proxies) {
       }
     } catch (e) {
       $.error(e);
-    } finally {
-      httpMetaStarted = false;
-      httpMetaPid = undefined;
-      portBySortedIndex.clear();
     }
   }
   function flushBatchSuccess(batch, successMap) {
@@ -328,35 +322,30 @@ async function _main(proxies) {
       const latency = successMap.get(proxy._sorted_index);
       if (latency === undefined) continue;
 
+      const isAiProxy =
+        hasAiPatterns &&
+        aiPatterns.some((pattern) => RegExp(pattern).test(proxy.name));
+      if (
+        hasAiPatterns &&
+        !isAiProxy &&
+        candidateProxies.length - aiCount >= minAiCount
+      ) {
+        continue;
+      }
+
       const output = toProxyOutput(proxy, latency);
-      if (!hasAiPatterns) {
-        validProxies.push(output);
-        continue;
-      }
-
-      if (aiPatterns.some((pattern) => RegExp(pattern).test(proxy.name))) {
-        if (aiProxies.length < aiQuota) {
-          aiProxies.push(output);
-        }
-        continue;
-      }
-
-      if (speedProxies.length < speedQuota) {
-        speedProxies.push(output);
-        continue;
-      }
-
-      if (aiProxies.length < aiQuota) {
-        speedFallbackProxies.push(output);
+      candidateProxies.push(output);
+      if (isAiProxy) {
+        aiCount++;
       }
     }
   }
 
   function shouldStopProbe() {
     if (!hasAiPatterns) {
-      return validProxies.length >= take;
+      return candidateProxies.length >= take;
     }
-    return speedProxies.length >= speedQuota && aiProxies.length >= aiQuota;
+    return candidateProxies.length >= take && aiCount >= minAiCount;
   }
 
   function getCacheResult(proxy) {
