@@ -137,10 +137,22 @@ async function operator(proxies = [], targetPlatform, context) {
   const url =
     $arguments.api || `http://ip-api.com/json/{{proxy.server}}?lang=zh-CN`;
   const concurrency = parseInt($arguments.concurrency || 10); // 一组并发数
+  const shouldLogResolveDns =
+    resolveDomain &&
+    proxies.some((proxy) => {
+      const server = String(proxy?.server || "").trim();
+      return server && !ProxyUtils.isIP(server);
+    });
+  if (shouldLogResolveDns) {
+    $.info("Resolve DNS locally");
+  }
   await executeAsyncTasks(
     proxies.map((proxy) => () => check(proxy)),
     { concurrency },
   );
+  if (shouldLogResolveDns) {
+    $.info("Resolve DNS locally completed");
+  }
 
   // const batches = []
   // for (let i = 0; i < proxies.length; i += concurrency) {
@@ -183,7 +195,7 @@ async function operator(proxies = [], targetPlatform, context) {
       const cached = cache.get(id);
       if (cacheEnabled && cached) {
         if (cached.api) {
-          $.info(`[${proxy.name}] 使用成功结果缓存`);
+          // $.info(`[${proxy.name}] 使用成功结果缓存`);
           $.log(`[${proxy.name}] api: ${JSON.stringify(cached.api, null, 2)}`);
           proxy.name = formatter({ proxy, api: cached.api, format, regex });
           proxy._entrance = cached.api;
@@ -313,7 +325,7 @@ async function operator(proxies = [], targetPlatform, context) {
       return server;
     }
     const resolved = await resolveServer(server);
-    $.info(`[${proxy.name}] 本地 DNS 解析: ${server} -> ${resolved}`);
+    $.info(`${proxy.name} - ${server} -> ${resolved}`);
     return resolved;
   }
   async function resolveServer(server) {
