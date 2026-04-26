@@ -42,11 +42,11 @@ let ruleProviders = [
   "cncidr",
   "lancidr",
   // "applications",
-  {
-    adblockfilters: {
-      url: "https://raw.githubusercontent.com/217heidai/adblockfilters/main/rules/adblockmihomo.yaml",
-    },
-  },
+  // {
+  //   adblockfilters: {
+  //     url: "https://raw.githubusercontent.com/217heidai/adblockfilters/main/rules/adblockmihomo.yaml",
+  //   },
+  // },
 ].reduce((providers, provider) => {
   if (typeof provider === "string") {
     providers[provider] = {
