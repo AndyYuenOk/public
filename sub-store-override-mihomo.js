@@ -70,6 +70,9 @@ let ruleProviders = [
   return providers;
 }, {});
 
+// https://github.com/Loyalsoldier/clash-rules
+// https://github.com/Loyalsoldier/v2ray-rules-dat
+// https://github.com/v2fly/domain-list-community/tree/master/data
 // Rule order is top-down; earlier entries have higher priority.
 let routingRules = [
   "RULE-SET,private,DIRECT",
