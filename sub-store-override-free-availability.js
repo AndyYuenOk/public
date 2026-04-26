@@ -64,18 +64,22 @@ async function _main(proxies) {
   const take = parseInt($arguments.take ?? 10, 10);
 
   // AI-LOCK-BEGIN
-  let aiPatterns = $arguments.ai_patterns;
-  try {
-    aiPatterns = JSON.parse(aiPatterns);
-  } catch {
-    aiPatterns = ["GPT"];
-  }
-  console.log(aiPatterns);
+  const defaultAiPatterns = ["GPT", "GM"];
+  const aiPatterns = normalizeAiPatterns($arguments.ai_patterns);
+  const aiRegexList = aiPatterns
+    .map((pattern) => {
+      try {
+        return new RegExp(pattern);
+      } catch (e) {
+        $.error(`[ai_patterns] invalid regex "${pattern}": ${e.message ?? e}`);
+        return null;
+      }
+    })
+    .filter(Boolean);
 
   // AI-LOCK-END
 
-  const hasAiPatterns = aiPatterns.length;
-  const minAiCount = Math.floor(take / 2);
+  const hasAiPatterns = aiRegexList.length > 0;
   const batchScale = 1.8;
   const batchSize = Math.ceil(take * batchScale);
 
@@ -103,8 +107,8 @@ async function _main(proxies) {
       "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Mobile/15E148 Safari/604.1",
   );
 
-  const candidateProxies = [];
-  let aiCount = 0;
+  const aiCandidates = [];
+  const normalCandidates = [];
   const internalProxies = [];
 
   proxies.forEach((proxy, index) => {
@@ -144,9 +148,13 @@ async function _main(proxies) {
     await processBatch(batch);
   }
 
-  const sortedCandidates = candidateProxies
-    .sort((a, b) => parseSpeedToKb(b.name) - parseSpeedToKb(a.name));
-  return sortedCandidates.slice(0, take);
+  const sortedAiCandidates = aiCandidates.sort(
+    (a, b) => parseSpeedToKb(b.name) - parseSpeedToKb(a.name),
+  );
+  const sortedNormalCandidates = normalCandidates.sort(
+    (a, b) => parseSpeedToKb(b.name) - parseSpeedToKb(a.name),
+  );
+  return sortedAiCandidates.concat(sortedNormalCandidates).slice(0, take);
 
   async function processBatch(batch = []) {
     if (!batch.length || shouldStopProbe()) return;
@@ -155,17 +163,6 @@ async function _main(proxies) {
     const proxiesToCheck = [];
 
     for (const proxy of batch) {
-      const isAiProxy =
-        hasAiPatterns &&
-        aiPatterns.some((pattern) => RegExp(pattern).test(proxy.name));
-      if (
-        hasAiPatterns &&
-        !isAiProxy &&
-        candidateProxies.length - aiCount >= minAiCount
-      ) {
-        continue;
-      }
-
       const cacheResult = getCacheResult(proxy);
       if (cacheResult.type === "success") {
         batchSuccessMap.set(proxy._sorted_index, cacheResult.latency);
@@ -184,7 +181,9 @@ async function _main(proxies) {
         httpMetaPid = batchHttpMeta.pid;
         const checked = await executeAsyncTasks(
           proxiesToCheck.map((proxy) => async () => {
-            const port = batchHttpMeta.portBySortedIndex.get(proxy._sorted_index);
+            const port = batchHttpMeta.portBySortedIndex.get(
+              proxy._sorted_index,
+            );
             if (port === undefined || port === null) {
               throw new Error(`[${proxy.name}] missing http-meta port mapping`);
             }
@@ -322,30 +321,67 @@ async function _main(proxies) {
       const latency = successMap.get(proxy._sorted_index);
       if (latency === undefined) continue;
 
-      const isAiProxy =
-        hasAiPatterns &&
-        aiPatterns.some((pattern) => RegExp(pattern).test(proxy.name));
-      if (
-        hasAiPatterns &&
-        !isAiProxy &&
-        candidateProxies.length - aiCount >= minAiCount
-      ) {
-        continue;
-      }
-
       const output = toProxyOutput(proxy, latency);
-      candidateProxies.push(output);
-      if (isAiProxy) {
-        aiCount++;
+      if (hasAiPatterns && isAiProxyName(proxy.name)) {
+        aiCandidates.push(output);
+      } else {
+        normalCandidates.push(output);
       }
     }
   }
 
   function shouldStopProbe() {
     if (!hasAiPatterns) {
-      return candidateProxies.length >= take;
+      return normalCandidates.length >= take;
     }
-    return candidateProxies.length >= take && aiCount >= minAiCount;
+    return aiCandidates.length >= take;
+  }
+
+  function isAiProxyName(name = "") {
+    if (!hasAiPatterns) return false;
+    return aiRegexList.every((regex) => regex.test(name));
+  }
+
+  function normalizeAiPatterns(rawPatterns) {
+    if (rawPatterns === undefined || rawPatterns === null) {
+      return defaultAiPatterns;
+    }
+
+    if (Array.isArray(rawPatterns)) {
+      return sanitizeAiPatterns(rawPatterns);
+    }
+
+    if (typeof rawPatterns !== "string") {
+      return defaultAiPatterns;
+    }
+
+    const trimmed = rawPatterns.trim();
+    if (!trimmed) {
+      return defaultAiPatterns;
+    }
+
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return sanitizeAiPatterns(parsed);
+      }
+      if (typeof parsed === "string") {
+        return sanitizeAiPatterns([parsed]);
+      }
+      return defaultAiPatterns;
+    } catch (e) {
+      // Support a plain single pattern like `GPT`.
+      if (!/^[\[{"]/.test(trimmed)) {
+        return sanitizeAiPatterns([trimmed]);
+      }
+      return defaultAiPatterns;
+    }
+  }
+
+  function sanitizeAiPatterns(patterns = []) {
+    return patterns
+      .map((pattern) => `${pattern ?? ""}`.trim())
+      .filter((pattern) => pattern.length);
   }
 
   function getCacheResult(proxy) {
