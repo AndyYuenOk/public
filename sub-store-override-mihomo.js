@@ -74,7 +74,7 @@ let ruleProviders = [
 let routingRules = [
   "RULE-SET,private,DIRECT",
   "RULE-SET,reject,Reject",
-  "RULE-SET,adblockfilters,Reject",
+  // "RULE-SET,adblockfilters,Reject",
 
   "DOMAIN-SUFFIX,pairdrop.net,DIRECT",
   "DOMAIN-SUFFIX,gh-proxy.com,DIRECT",
