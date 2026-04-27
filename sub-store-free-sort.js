@@ -1,5 +1,7 @@
 ﻿function operator(proxies, targetPlatform, context) {
-  proxies.sort((a, b) => parseSpeedToKb(b.name) - parseSpeedToKb(a.name));
+  proxies
+    .sort((a, b) => parseSpeedToKb(b.name) - parseSpeedToKb(a.name))
+    .map((proxy) => (proxy.name = proxy.name.replaceAll("|", " ")));
   return proxies;
 }
 function parseSpeedToKb(name) {

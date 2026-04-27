@@ -3,17 +3,21 @@ const FINAL_PROXIES_CACHE_KEY = "sub-store-free-optimized:final-proxies";
 async function operator(proxies = [], targetPlatform, context) {
   const $ = $substore;
   const cache = scriptResourceCache;
+  // Incoming node names carry speed in text form; sort by parsed speed first.
   const compareProxySpeedDesc = (a, b) => {
     const speedA = normalizeProxyName(a?.name).speedKb ?? -1;
     const speedB = normalizeProxyName(b?.name).speedKb ?? -1;
     return speedB - speedA;
   };
 
+  // Runtime knobs from script arguments.
   const take = parseInt($arguments.take ?? 10, 10);
   const cacheEnabled = /true|1/i.test(`${$arguments.cache ?? 1}`);
   const cacheTtlMs = $arguments.cache_ttl_ms ?? 24 * 60 * 60 * 1000;
   const speedSortedInputProxies = [...proxies].sort(compareProxySpeedDesc);
 
+  // Cache mode short-circuits expensive probing:
+  // hit => return final cached list; miss => return speed-sorted list immediately.
   if (cacheEnabled) {
     const cachedFinalProxies = tryReturnFinalProxiesCache();
     if (cachedFinalProxies) {
@@ -23,21 +27,22 @@ async function operator(proxies = [], targetPlatform, context) {
     return speedSortedInputProxies;
   }
 
-  const sortedOriginalProxies = speedSortedInputProxies
-    .map((proxy) => {
-      const normalizedName = normalizeProxyName(proxy?.name);
-      return {
-        ...proxy,
-        _base_name_speed: normalizedName.displayName,
-        _speed_kb: normalizedName.speedKb,
-      };
-    });
+  // Keep parsed speed/base-name metadata on each proxy for downstream selection/output.
+  const sortedOriginalProxies = speedSortedInputProxies.map((proxy) => {
+    const normalizedName = normalizeProxyName(proxy?.name);
+    return {
+      ...proxy,
+      _base_name_speed: normalizedName.displayName,
+      _speed_kb: normalizedName.speedKb,
+    };
+  });
 
   const aiOptions = normalizeAiOptions($arguments.ai);
   const aiDetections = buildAiDetections(aiOptions);
   const aiTarget = aiDetections.length ? Math.ceil(take / 2) : 0;
   const batchSize = 15;
 
+  // Shared http-meta service config used to spawn per-batch local proxy ports.
   const httpMeta = {
     host: $arguments.http_meta_host ?? "127.0.0.1",
     port: $arguments.http_meta_port ?? 9876,
@@ -100,6 +105,7 @@ async function operator(proxies = [], targetPlatform, context) {
     `[gemini-country3] allow=${Array.from(geminiCountry3AllowSet).join("|") || "ANY"}, deny=${Array.from(geminiCountry3DenySet).join("|") || "NONE"}`,
   );
 
+  // Convert to ClashMeta/internal format once, while preserving custom metadata keys.
   const internalProxies = [];
   sortedOriginalProxies.forEach((proxy, sortedIndex) => {
     try {
@@ -129,6 +135,7 @@ async function operator(proxies = [], targetPlatform, context) {
   $.info(`[mode] cache=${cacheEnabled ? 1 : 0}, ttl_ms=${cacheTtlMs}`);
   if (!internalProxies.length) return [];
   const speedTarget = Math.floor(take / 2);
+  // Candidate tracking across all batches.
   const aiPassSet = new Set();
   const speedPassSet = new Set();
   const candidateSet = new Set();
@@ -141,12 +148,13 @@ async function operator(proxies = [], targetPlatform, context) {
     `[mixed-stage] start: ai_target=${aiTarget}, speed_target=${speedTarget}, take=${take}, batch_size=${batchSize}`,
   );
 
+  // Main pass: run mixed AI+speed checks until quotas are met and output is filled.
   for (let cursor = 0; cursor < internalProxies.length; cursor += batchSize) {
     const batch = internalProxies.slice(cursor, cursor + batchSize);
     if (!batch.length) continue;
 
     const needAi = aiPassSet.size < aiTarget;
-    const needSpeed = speedPassSet.size < speedTarget;
+    const needSpeed = speedPassSet.size < speedTarget || candidateSet.size < take;
     if (!needAi && !needSpeed && candidateSet.size >= take) {
       break;
     }
@@ -185,6 +193,7 @@ async function operator(proxies = [], targetPlatform, context) {
     `[mixed-stage] done: ai_total=${aiPassSet.size}/${aiTarget}, speed_total=${speedPassSet.size}/${speedTarget}, candidate_total=${candidateSet.size}/${take}`,
   );
 
+  // If AI quota is not satisfied, run a dedicated AI-only backfill on remaining proxies.
   if (aiTarget > 0 && aiPassSet.size < aiTarget) {
     $.info(
       `[ai-backfill] start ai_total=${aiPassSet.size}/${aiTarget}, batch_size=${batchSize}`,
@@ -192,7 +201,11 @@ async function operator(proxies = [], targetPlatform, context) {
     const remainingAiProxies = internalProxies.filter(
       (proxy) => !aiPassSet.has(proxy._sorted_index),
     );
-    for (let cursor = 0; cursor < remainingAiProxies.length; cursor += batchSize) {
+    for (
+      let cursor = 0;
+      cursor < remainingAiProxies.length;
+      cursor += batchSize
+    ) {
       if (aiPassSet.size >= aiTarget) break;
       const batch = remainingAiProxies.slice(cursor, cursor + batchSize);
       if (!batch.length) continue;
@@ -213,6 +226,7 @@ async function operator(proxies = [], targetPlatform, context) {
     );
   }
 
+  // Build ranked candidate records, then enforce AI quota before filling remaining slots.
   const candidateRecords = buildCandidateRecords(
     candidateSet,
     proxyBySortedIndex,
@@ -229,15 +243,15 @@ async function operator(proxies = [], targetPlatform, context) {
         (b?.speedKb ?? -1) - (a?.speedKb ?? -1) ||
         (a?.sortedIndex ?? 0) - (b?.sortedIndex ?? 0),
     );
-  const allSpeedRecords = buildCandidateRecords(
-    new Set(proxyBySortedIndex.keys()),
+  const speedBackfillRecords = buildCandidateRecords(
+    speedPassSet,
     proxyBySortedIndex,
     aiPassSet,
     speedLatencyByIndex,
   );
   const finalSelectedRecords = [...selectedRecords];
   if (finalSelectedRecords.length < take) {
-    for (const record of allSpeedRecords) {
+    for (const record of speedBackfillRecords) {
       if (finalSelectedRecords.length >= take) break;
       if (selectedIndexSet.has(record.sortedIndex)) continue;
       selectedIndexSet.add(record.sortedIndex);
@@ -256,6 +270,7 @@ async function operator(proxies = [], targetPlatform, context) {
       : toNormalProxyOutput(item.proxy, item.latency ?? 0),
   );
 
+  // Persist fully formatted final output for fast return in cache mode.
   saveFinalProxiesCache(finalProxies);
 
   $.info(
@@ -264,6 +279,7 @@ async function operator(proxies = [], targetPlatform, context) {
   return finalProxies;
 
   function tryReturnFinalProxiesCache() {
+    // Cache payload is timestamped; return deep-cloned records to avoid mutation leaks.
     const cached = cache.get(FINAL_PROXIES_CACHE_KEY);
     if (!cached || isCacheExpired(cached)) return null;
 
@@ -290,6 +306,7 @@ async function operator(proxies = [], targetPlatform, context) {
   }
 
   function cloneProxyList(list = []) {
+    // JSON clone is fastest/simple for plain objects; fallback keeps behavior safe.
     try {
       return JSON.parse(JSON.stringify(list));
     } catch (e) {
@@ -301,6 +318,7 @@ async function operator(proxies = [], targetPlatform, context) {
     batch = [],
     { needAi = false, needSpeed = false } = {},
   ) {
+    // Run AI and normal checks against the same http-meta batch to reduce startup overhead.
     const aiPassBatchSet = new Set();
     const speedPassBatchSet = new Set();
     const speedLatencyBatchMap = new Map();
@@ -350,6 +368,8 @@ async function operator(proxies = [], targetPlatform, context) {
             (b?._speed_kb ?? -1) - (a?._speed_kb ?? -1) ||
             (a?._sorted_index ?? 0) - (b?._sorted_index ?? 0),
         );
+        // Estimate longest per-proxy request chain (ai detections + optional speed check)
+        // to size http-meta timeout conservatively for this batch.
         let maxRequestsPerProxy = 1;
         for (const proxy of proxiesToCheck) {
           const sortedIndex = proxy._sorted_index;
@@ -410,7 +430,11 @@ async function operator(proxies = [], targetPlatform, context) {
             if (needAi) {
               const pendingDetections = aiPendingByIndex.get(sortedIndex) || [];
               for (const detection of pendingDetections) {
-                const result = await checkAiWithHttpMeta(proxy, port, detection);
+                const result = await checkAiWithHttpMeta(
+                  proxy,
+                  port,
+                  detection,
+                );
                 if (result.outcome !== "success") {
                   break;
                 }
@@ -555,9 +579,11 @@ async function operator(proxies = [], targetPlatform, context) {
   }
 
   function classifyAiResult({ detection, status, geminiCountry3 = "" }) {
+    // GPT heuristic: reachable endpoints usually return 404 from this probe route.
     if (detection.key === "gpt") {
       return status === 404 ? "success" : "hard_failure";
     }
+    // Gemini heuristic: 200 + valid country pass; 302 usually indicates unsupported region.
     if (detection.key === "gemini") {
       if (status === 302) return "unsupported";
       if (status === 200) {
@@ -592,6 +618,7 @@ async function operator(proxies = [], targetPlatform, context) {
       timeoutMultiplier = 1,
     } = options;
 
+    // Timeout scales with batch size and request count per proxy.
     const totalTimeout =
       startDelay +
       batchProxies.length *
@@ -680,6 +707,7 @@ async function operator(proxies = [], targetPlatform, context) {
   }
 
   function toAiProxyOutput(proxy) {
+    // Keep AI capability metadata for downstream rules/inspection.
     const parsed = safeParseProxy(proxy);
     const baseName = getBaseNameWithSpeed(proxy);
     const aiTags = [];
@@ -708,6 +736,7 @@ async function operator(proxies = [], targetPlatform, context) {
   }
 
   function safeParseProxy(proxy) {
+    // Prefer canonical parser output; fallback keeps original shape if parse fails.
     try {
       const parsed = ProxyUtils.parse(JSON.stringify(proxy))?.[0];
       if (!parsed) throw new Error("parse result empty");
@@ -733,6 +762,7 @@ async function operator(proxies = [], targetPlatform, context) {
   }
 
   function buildCandidateRecords(candidates, proxyMap, aiSet, latencyMap) {
+    // Ranking priority: higher speed first, then AI-capable before non-AI on ties.
     return Array.from(candidates)
       .map((sortedIndex) => {
         const proxy = proxyMap.get(sortedIndex);
@@ -751,6 +781,7 @@ async function operator(proxies = [], targetPlatform, context) {
   }
 
   function pickFinalRecords(records, aiQuota, maxCount) {
+    // First pass reserves AI quota, second pass fills remaining capacity.
     const selected = new Set();
     let aiCount = 0;
     let totalCount = 0;
@@ -777,6 +808,7 @@ async function operator(proxies = [], targetPlatform, context) {
   }
 
   function buildAiDetections(options = []) {
+    // Supported short names: GPT, GM/GEMINI.
     const normalized = Array.from(
       new Set(
         options
@@ -820,6 +852,7 @@ async function operator(proxies = [], targetPlatform, context) {
   }
 
   function normalizeAiOptions(rawAi) {
+    // Accepts array, JSON array/string, comma list, or a single token.
     const defaultAi = ["GPT", "GM"];
     if (rawAi === undefined || rawAi === null) return defaultAi;
 
@@ -904,6 +937,7 @@ async function operator(proxies = [], targetPlatform, context) {
     );
     let count = 0;
 
+    // Small retry wrapper for transient network instability.
     const fn = async () => {
       try {
         return await $.http[METHOD]({ ...opt, timeout: TIMEOUT });
@@ -922,6 +956,7 @@ async function operator(proxies = [], targetPlatform, context) {
   }
 
   function executeAsyncTasks(tasks, { wrap, result, concurrency = 1 } = {}) {
+    // Lightweight promise pool with bounded concurrency.
     return new Promise(async (resolve, reject) => {
       try {
         let running = 0;
@@ -965,6 +1000,7 @@ async function operator(proxies = [], targetPlatform, context) {
 }
 
 function parseSpeedToKb(name) {
+  // Name format is "<base>|<speed>", e.g. "JP-01|12.3MB/s".
   const speed = name.split("|")[1];
   if (speed.includes("MB/s")) {
     return parseFloat(speed) * 1024;
@@ -976,6 +1012,7 @@ function parseSpeedToKb(name) {
 }
 
 function normalizeProxyName(name = "") {
+  // Parse and expose commonly reused name/speed fields once.
   const raw = `${name ?? ""}`.trim();
   const parts = raw.split("|");
   const baseName = `${parts[0] ?? raw ?? "UNKNOWN"}`.trim();
