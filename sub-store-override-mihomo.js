@@ -127,7 +127,7 @@ let strategyGroups = [
     name: "AI",
     icon: "OpenAI.png",
     type: "select",
-    proxies: ["AutoAI", "Manual"],
+    proxies: ["AutoAI"],
   },
   {
     name: "Netflix",
@@ -197,7 +197,7 @@ function main(config) {
   let ManualProxies = strategyGroups.find(
     ({ name }) => name == "Manual",
   ).proxies;
-  let fullNodeGroupNames = ["Manual", "Netflix"];
+  let fullNodeGroupNames = ["Manual", "AI", "Netflix"];
 
   let autoSelectGroup,
     healthCheck = {
