@@ -12,11 +12,11 @@ async function operator(proxies = [], targetPlatform, context) {
 
   // Runtime knobs from script arguments.
   const take = parseInt($arguments.take ?? 10, 10);
+  const appendMeasuredSpeed = /true|1/i.test(`${$arguments.speed ?? 1}`);
 
   let cacheEnabled = /true|1/i.test(`${$arguments.cache ?? 0}`);
-  // $options is undefined in preview and cron
   // Always cache for the client.
-  if ($options?._req) {
+  if (targetPlatform != "JSON") {
     cacheEnabled = 1;
   }
 
@@ -24,14 +24,14 @@ async function operator(proxies = [], targetPlatform, context) {
   const speedSortedInputProxies = [...proxies].sort(compareProxySpeedDesc);
 
   // Cache mode short-circuits expensive probing:
-  // hit => return final cached list; miss => return speed-sorted list immediately.
+  // hit => return final cached list; miss => return empty instead of leaking source nodes.
   if (cacheEnabled) {
     const cachedFinalProxies = tryReturnFinalProxiesCache();
     if (cachedFinalProxies) {
       return cachedFinalProxies;
     }
-    $.info("[cache-final] miss, cache=1 return speed-sorted proxies");
-    return speedSortedInputProxies;
+    $.info("[cache-final] miss, cache=1 return empty proxies");
+    return [];
   }
 
   // Keep parsed speed/base-name metadata on each proxy for downstream selection/output.
@@ -47,7 +47,7 @@ async function operator(proxies = [], targetPlatform, context) {
   const aiOptions = normalizeAiOptions($arguments.ai);
   const aiDetections = buildAiDetections(aiOptions);
   const aiTarget = aiDetections.length ? Math.ceil(take / 2) : 0;
-  const batchSize = 15;
+  const batchSize = Math.max(1, Math.ceil(take * 1.8));
 
   // Shared http-meta service config used to spawn per-batch local proxy ports.
   const httpMeta = {
@@ -57,17 +57,12 @@ async function operator(proxies = [], targetPlatform, context) {
     authorization: $arguments.http_meta_authorization ?? "",
   };
   const httpMetaApi = `${httpMeta.protocol}://${httpMeta.host}:${httpMeta.port}`;
+  const timeoutMs = parsePositiveInteger($arguments.timeout, 5000);
 
   const aiHttpMetaStartDelay = parseInt(
     $arguments.ai_http_meta_start_delay ??
       $arguments.http_meta_start_delay ??
       3000,
-    10,
-  );
-  const aiHttpMetaProxyTimeout = parseInt(
-    $arguments.ai_http_meta_proxy_timeout ??
-      $arguments.http_meta_proxy_timeout ??
-      10000,
     10,
   );
   const aiConcurrency = parseInt(
@@ -89,24 +84,21 @@ async function operator(proxies = [], targetPlatform, context) {
       100,
     10,
   );
-  const normalHttpMetaProxyTimeout = parseInt(
-    $arguments.normal_http_meta_proxy_timeout ??
-      $arguments.http_meta_proxy_timeout ??
-      5000,
-    10,
-  );
   const normalConcurrency = parseInt($arguments.concurrency ?? take, 10);
-  const normalMethod = `${$arguments.method ?? "head"}`.toLowerCase();
-  const validStatusRaw = $arguments.status || "204";
+  const normalMethod = `${
+    $arguments.speed_method ?? $arguments.method ?? "get"
+  }`.toLowerCase();
+  const validStatusRaw = $arguments.speed_status ?? $arguments.status ?? "200";
   const validStatus = new RegExp(validStatusRaw);
   const normalUrl = decodeURIComponent(
-    $arguments.url || "http://www.gstatic.com/generate_204",
+    $arguments.speed_url ??
+      $arguments.url ??
+      "https://github.com/BitDoctor/speed-test-file/raw/refs/heads/master/5mb.txt",
   );
   const normalUa = decodeURIComponent(
     $arguments.ua ||
       "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Mobile/15E148 Safari/604.1",
   );
-  const showLatency = /true|1/i.test(`${$arguments.show_latency ?? 0}`);
 
   $.info(
     `[gemini-country3] allow=${Array.from(geminiCountry3AllowSet).join("|") || "ANY"}, deny=${Array.from(geminiCountry3DenySet).join("|") || "NONE"}`,
@@ -140,122 +132,108 @@ async function operator(proxies = [], targetPlatform, context) {
     `[setup] total=${sortedOriginalProxies.length}, core_supported=${internalProxies.length}, take=${take}, ai_target=${aiTarget}, batch_size=${batchSize}`,
   );
   $.info(`[mode] cache=${cacheEnabled ? 1 : 0}, ttl_ms=${cacheTtlMs}`);
+  $.info(
+    `[speed-test] url=${normalUrl}, method=${normalMethod}, size=actual_body, status=${validStatusRaw}`,
+  );
   if (!internalProxies.length) return [];
-  const speedTarget = Math.floor(take / 2);
   // Candidate tracking across all batches.
   const aiPassSet = new Set();
+  const aiCheckedSet = new Set();
   const speedPassSet = new Set();
+  const speedCheckedSet = new Set();
   const candidateSet = new Set();
-  const speedLatencyByIndex = new Map();
+  const speedResultByIndex = new Map();
   const proxyBySortedIndex = new Map(
     internalProxies.map((proxy) => [proxy._sorted_index, proxy]),
   );
 
-  $.info(
-    `[mixed-stage] start: ai_target=${aiTarget}, speed_target=${speedTarget}, take=${take}, batch_size=${batchSize}`,
-  );
+  $.info(`[speed-stage] start: target=${take}, batch_size=${batchSize}`);
 
-  // Main pass: run mixed AI+speed checks until quotas are met and output is filled.
-  for (let cursor = 0; cursor < internalProxies.length; cursor += batchSize) {
+  let cursor = 0;
+  while (speedPassSet.size < take && cursor < internalProxies.length) {
     const batch = internalProxies.slice(cursor, cursor + batchSize);
+    cursor += batchSize;
     if (!batch.length) continue;
 
-    const needAi = aiPassSet.size < aiTarget;
-    const needSpeed =
-      speedPassSet.size < speedTarget || candidateSet.size < take;
-    if (!needAi && !needSpeed && candidateSet.size >= take) {
-      break;
-    }
-
-    const { aiPassBatchSet, speedPassBatchSet, speedLatencyBatchMap } =
-      await processMixedBatch(batch, { needAi, needSpeed });
-
-    for (const [sortedIndex, latency] of speedLatencyBatchMap.entries()) {
-      speedLatencyByIndex.set(sortedIndex, latency);
-    }
-
-    for (const sortedIndex of aiPassBatchSet) {
-      aiPassSet.add(sortedIndex);
-      candidateSet.add(sortedIndex);
-    }
-    for (const sortedIndex of speedPassBatchSet) {
-      speedPassSet.add(sortedIndex);
-      candidateSet.add(sortedIndex);
-    }
+    const { speedPassBatchSet, speedResultBatchMap } =
+      await processSpeedBatch(batch);
+    addSpeedBatchResults(speedPassBatchSet, speedResultBatchMap);
 
     $.info(
-      `[stage-mixed-batch] total=${batch.length}, ai_pass_batch=${aiPassBatchSet.size}, speed_pass_batch=${speedPassBatchSet.size}, ai_total=${aiPassSet.size}/${aiTarget}, speed_total=${speedPassSet.size}/${speedTarget}, candidate_total=${candidateSet.size}/${take}`,
+      `[speed-stage-batch] total=${batch.length}, speed_pass_batch=${speedPassBatchSet.size}, speed_total=${speedPassSet.size}/${take}`,
     );
     $.info("========================================");
-
-    if (
-      aiPassSet.size >= aiTarget &&
-      speedPassSet.size >= speedTarget &&
-      candidateSet.size >= take
-    ) {
-      break;
-    }
   }
 
   $.info(
-    `[mixed-stage] done: ai_total=${aiPassSet.size}/${aiTarget}, speed_total=${speedPassSet.size}/${speedTarget}, candidate_total=${candidateSet.size}/${take}`,
+    `[speed-stage] done: speed_total=${speedPassSet.size}/${take}, checked=${speedCheckedSet.size}/${internalProxies.length}`,
   );
 
-  // If AI quota is not satisfied, run a dedicated AI-only backfill on remaining proxies.
-  if (aiTarget > 0 && aiPassSet.size < aiTarget) {
-    $.info(
-      `[ai-backfill] start ai_total=${aiPassSet.size}/${aiTarget}, batch_size=${batchSize}`,
-    );
-    const remainingAiProxies = internalProxies.filter(
-      (proxy) => !aiPassSet.has(proxy._sorted_index),
-    );
-    for (
-      let cursor = 0;
-      cursor < remainingAiProxies.length;
-      cursor += batchSize
-    ) {
-      if (aiPassSet.size >= aiTarget) break;
-      const batch = remainingAiProxies.slice(cursor, cursor + batchSize);
-      if (!batch.length) continue;
-      const { aiPassBatchSet } = await processMixedBatch(batch, {
-        needAi: true,
-        needSpeed: false,
-      });
-      for (const sortedIndex of aiPassBatchSet) {
-        aiPassSet.add(sortedIndex);
-        candidateSet.add(sortedIndex);
+  if (aiTarget > 0) {
+    $.info(`[ai-stage] start: target=${aiTarget}, batch_size=${batchSize}`);
+
+    while (!hasEnoughFinalCandidates()) {
+      const aiBatch = getUncheckedAiSpeedPassedProxies().slice(0, batchSize);
+
+      if (aiBatch.length) {
+        const { aiPassBatchSet } = await processAiBatch(aiBatch);
+        for (const sortedIndex of aiPassBatchSet) {
+          aiPassSet.add(sortedIndex);
+        }
+        $.info(
+          `[ai-stage-batch] total=${aiBatch.length}, ai_pass_batch=${aiPassBatchSet.size}, ai_total=${aiPassSet.size}/${aiTarget}, ai_candidate_total=${countAiCandidates()}/${aiTarget}`,
+        );
+        $.info("========================================");
+        continue;
       }
+
+      if (cursor >= internalProxies.length) {
+        break;
+      }
+
+      const batch = internalProxies.slice(cursor, cursor + batchSize);
+      cursor += batchSize;
+      if (!batch.length) continue;
+
       $.info(
-        `[ai-backfill-batch] total=${batch.length}, ai_pass_batch=${aiPassBatchSet.size}, ai_total=${aiPassSet.size}/${aiTarget}`,
+        `[speed-refill] start: ai_candidate_total=${countAiCandidates()}/${aiTarget}, speed_total=${speedPassSet.size}`,
       );
+      const { speedPassBatchSet, speedResultBatchMap } =
+        await processSpeedBatch(batch);
+      addSpeedBatchResults(speedPassBatchSet, speedResultBatchMap);
+      $.info(
+        `[speed-refill-batch] total=${batch.length}, speed_pass_batch=${speedPassBatchSet.size}, speed_total=${speedPassSet.size}`,
+      );
+      $.info("========================================");
+
+      if (!speedPassBatchSet.size && cursor >= internalProxies.length) {
+        break;
+      }
     }
+
     $.info(
-      `[ai-backfill] done ai_total=${aiPassSet.size}/${aiTarget}, candidate_total=${candidateSet.size}/${take}`,
+      `[ai-stage] done: ai_total=${aiPassSet.size}/${aiTarget}, ai_candidate_total=${countAiCandidates()}/${aiTarget}, speed_total=${speedPassSet.size}, checked=${aiCheckedSet.size}`,
     );
   }
 
-  // Build ranked candidate records, then enforce AI quota before filling remaining slots.
+  // Build ranked records from speed-passed candidates only, then enforce AI quota.
   const candidateRecords = buildCandidateRecords(
     candidateSet,
     proxyBySortedIndex,
     aiPassSet,
-    speedLatencyByIndex,
+    speedResultByIndex,
   );
   const aiCandidateCount = candidateRecords.filter((item) => item.isAi).length;
   const aiQuota = Math.min(aiTarget, aiCandidateCount, take);
   const selectedIndexSet = pickFinalRecords(candidateRecords, aiQuota, take);
   const selectedRecords = candidateRecords
     .filter((item) => selectedIndexSet.has(item.sortedIndex))
-    .sort(
-      (a, b) =>
-        (b?.speedKb ?? -1) - (a?.speedKb ?? -1) ||
-        (a?.sortedIndex ?? 0) - (b?.sortedIndex ?? 0),
-    );
+    .sort(compareCandidateRecords);
   const speedBackfillRecords = buildCandidateRecords(
     speedPassSet,
     proxyBySortedIndex,
     aiPassSet,
-    speedLatencyByIndex,
+    speedResultByIndex,
   );
   const finalSelectedRecords = [...selectedRecords];
   if (finalSelectedRecords.length < take) {
@@ -266,25 +244,65 @@ async function operator(proxies = [], targetPlatform, context) {
       finalSelectedRecords.push(record);
     }
   }
-  finalSelectedRecords.sort(
-    (a, b) =>
-      (b?.speedKb ?? -1) - (a?.speedKb ?? -1) ||
-      (a?.sortedIndex ?? 0) - (b?.sortedIndex ?? 0),
-  );
+  finalSelectedRecords.sort(compareCandidateRecords);
 
   const finalProxies = finalSelectedRecords.map((item) =>
     item.isAi
-      ? toAiProxyOutput(item.proxy)
-      : toNormalProxyOutput(item.proxy, item.latency ?? 0),
+      ? toAiProxyOutput(
+          item.proxy,
+          item.measuredSpeedKb ?? 0,
+          item.durationMs ?? 0,
+        )
+      : toNormalProxyOutput(
+          item.proxy,
+          item.measuredSpeedKb ?? 0,
+          item.durationMs ?? 0,
+        ),
   );
 
   // Persist fully formatted final output for fast return in cache mode.
   saveFinalProxiesCache(finalProxies);
 
   $.info(
-    `[done] ai=${aiPassSet.size}, ai_quota=${aiQuota}, speed=${speedPassSet.size}, candidate=${candidateSet.size}, filled=${Math.max(0, finalSelectedRecords.length - selectedRecords.length)}, output=${finalProxies.length}`,
+    `[done] ai=${aiPassSet.size}, ai_candidate=${aiCandidateCount}, ai_quota=${aiQuota}, speed=${speedPassSet.size}, candidate=${candidateSet.size}, filled=${Math.max(0, finalSelectedRecords.length - selectedRecords.length)}, output=${finalProxies.length}`,
   );
   return finalProxies;
+
+  function countAiCandidates() {
+    let total = 0;
+    for (const sortedIndex of candidateSet) {
+      if (aiPassSet.has(sortedIndex)) total++;
+    }
+    return total;
+  }
+
+  function hasEnoughFinalCandidates() {
+    return candidateSet.size >= take && countAiCandidates() >= aiTarget;
+  }
+
+  function addSpeedBatchResults(speedPassBatchSet, speedResultBatchMap) {
+    for (const [sortedIndex, speedResult] of speedResultBatchMap.entries()) {
+      speedResultByIndex.set(sortedIndex, speedResult);
+    }
+    for (const sortedIndex of speedPassBatchSet) {
+      speedPassSet.add(sortedIndex);
+      candidateSet.add(sortedIndex);
+    }
+  }
+
+  function getUncheckedAiSpeedPassedProxies() {
+    return Array.from(candidateSet)
+      .filter((sortedIndex) => !aiCheckedSet.has(sortedIndex))
+      .map((sortedIndex) => proxyBySortedIndex.get(sortedIndex))
+      .filter(Boolean)
+      .sort(
+        (a, b) =>
+          (speedResultByIndex.get(b?._sorted_index)?.measuredSpeedKb ?? -1) -
+            (speedResultByIndex.get(a?._sorted_index)?.measuredSpeedKb ?? -1) ||
+          (b?._speed_kb ?? -1) - (a?._speed_kb ?? -1) ||
+          (a?._sorted_index ?? 0) - (b?._sorted_index ?? 0),
+      );
+  }
 
   function tryReturnFinalProxiesCache() {
     // Cache payload is timestamped; return deep-cloned records to avoid mutation leaks.
@@ -296,13 +314,25 @@ async function operator(proxies = [], targetPlatform, context) {
       : [];
     if (!cachedProxies.length) return null;
 
+    const { proxies: normalizedProxies, changed } =
+      normalizeFinalProxyNames(cachedProxies);
+    if (changed) {
+      cache.set(FINAL_PROXIES_CACHE_KEY, {
+        proxies: cloneProxyList(normalizedProxies),
+        ts: cached.ts,
+      });
+      $.info(
+        `[cache-final] normalize names proxies=${normalizedProxies.length}`,
+      );
+    }
+
     $.info(`[cache-final] hit proxies=${cachedProxies.length}`);
-    return cachedProxies;
+    return normalizedProxies;
   }
 
   function saveFinalProxiesCache(records = []) {
     const proxiesForCache = Array.isArray(records)
-      ? cloneProxyList(records)
+      ? normalizeFinalProxyNames(records).proxies
       : [];
     if (!proxiesForCache.length) return;
 
@@ -311,6 +341,99 @@ async function operator(proxies = [], targetPlatform, context) {
       ts: Date.now(),
     });
     $.info(`[cache-final] save proxies=${proxiesForCache.length}`);
+  }
+
+  function normalizeFinalProxyNames(records = []) {
+    let changed = false;
+    const proxies = cloneProxyList(records).map((proxy) => {
+      let nextProxy = proxy;
+      if (
+        nextProxy._duration_ms === undefined &&
+        nextProxy._latency !== undefined
+      ) {
+        changed = true;
+        nextProxy = {
+          ...nextProxy,
+          _duration_ms: nextProxy._latency,
+        };
+        delete nextProxy._latency;
+      }
+      if (
+        nextProxy._avg_speed_kb === undefined &&
+        nextProxy._speed_kb !== undefined &&
+        nextProxy._base_name_speed === undefined
+      ) {
+        changed = true;
+        nextProxy = {
+          ...nextProxy,
+          _avg_speed_kb: nextProxy._speed_kb,
+        };
+        delete nextProxy._speed_kb;
+      }
+      if (
+        nextProxy._avg_speed_kb === undefined &&
+        nextProxy._speed !== undefined
+      ) {
+        changed = true;
+        nextProxy = {
+          ...nextProxy,
+          _avg_speed_kb: Math.round(Number(nextProxy._speed) * 128),
+        };
+        delete nextProxy._speed;
+      }
+      const normalizedName = normalizeFinalProxyName(nextProxy);
+      if (normalizedName && normalizedName !== nextProxy.name) {
+        changed = true;
+        return { ...nextProxy, name: normalizedName };
+      }
+      return nextProxy;
+    });
+    return { proxies, changed };
+  }
+
+  function normalizeFinalProxyName(proxy = {}) {
+    const measuredSpeedKb = Number(
+      proxy._avg_speed_kb ?? (proxy._speed ? Number(proxy._speed) * 128 : 0),
+    );
+    const rawName = `${proxy.name ?? ""}`.trim();
+    if (!rawName) return rawName;
+
+    const tags = getOutputTags(proxy, rawName);
+    let baseName = stripOutputTags(rawName);
+    baseName = stripMeasuredSpeedSuffix(baseName);
+    if (!baseName) return rawName;
+
+    return formatMeasuredName(
+      baseName,
+      measuredSpeedKb,
+      proxy._duration_ms ?? proxy._latency,
+      tags,
+    );
+  }
+
+  function getOutputTags(proxy = {}, name = "") {
+    const tags = [];
+    if (proxy._gpt === true || /\sGPT\s*$|\sGPT\s+GM\s*$/i.test(name)) {
+      tags.push("GPT");
+    }
+    if (proxy._gemini === true || /\sGM\s*$/i.test(name)) {
+      tags.push("GM");
+    }
+    return tags;
+  }
+
+  function stripOutputTags(name = "") {
+    let result = `${name ?? ""}`.trim();
+    while (/\s(?:GPT|GM)\s*$/i.test(result)) {
+      result = result.replace(/\s(?:GPT|GM)\s*$/i, "").trim();
+    }
+    return result;
+  }
+
+  function stripMeasuredSpeedSuffix(name = "") {
+    return `${name ?? ""}`
+      .replace(/\s+-\s+\d+(?:\.\d+)?(?:MB\/s|KB\/s|M)\s*$/i, "")
+      .trim();
   }
 
   function cloneProxyList(list = []) {
@@ -322,167 +445,113 @@ async function operator(proxies = [], targetPlatform, context) {
     }
   }
 
-  async function processMixedBatch(
-    batch = [],
-    { needAi = false, needSpeed = false } = {},
-  ) {
-    // Run AI and normal checks against the same http-meta batch to reduce startup overhead.
-    const aiPassBatchSet = new Set();
+  function parsePositiveInteger(value, fallback) {
+    const parsed = parseInt(value, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  }
+
+  async function processSpeedBatch(batch = []) {
     const speedPassBatchSet = new Set();
-    const speedLatencyBatchMap = new Map();
+    const speedResultBatchMap = new Map();
 
-    if (!batch.length || (!needAi && !needSpeed)) {
-      return { aiPassBatchSet, speedPassBatchSet, speedLatencyBatchMap };
+    const proxiesToCheck = batch.filter(
+      (proxy) => !speedCheckedSet.has(proxy._sorted_index),
+    );
+
+    if (!proxiesToCheck.length) {
+      return { speedPassBatchSet, speedResultBatchMap };
     }
 
-    const aiPendingByIndex = new Map();
-    const speedToCheckSet = new Set();
-    const speedSuccessMap = new Map();
+    let httpMetaPid;
+    try {
+      const batchHttpMeta = await startHttpMetaForBatch(proxiesToCheck, {
+        label: "speed",
+        startDelay: normalHttpMetaStartDelay,
+        proxyTimeout: timeoutMs,
+        timeoutMultiplier: 1,
+      });
+      httpMetaPid = batchHttpMeta.pid;
 
-    for (const proxy of batch) {
-      const sortedIndex = proxy._sorted_index;
-
-      if (needAi) {
-        const pendingDetections = [...aiDetections];
-        if (pendingDetections.length > 0) {
-          aiPendingByIndex.set(sortedIndex, pendingDetections);
-        }
-      }
-
-      if (needSpeed) {
-        speedToCheckSet.add(sortedIndex);
-      }
-    }
-
-    const proxiesToCheckMap = new Map();
-    if (needAi) {
-      for (const sortedIndex of aiPendingByIndex.keys()) {
-        const proxy = proxyBySortedIndex.get(sortedIndex);
-        if (proxy) proxiesToCheckMap.set(sortedIndex, proxy);
-      }
-    }
-    if (needSpeed) {
-      for (const sortedIndex of speedToCheckSet) {
-        const proxy = proxyBySortedIndex.get(sortedIndex);
-        if (proxy) proxiesToCheckMap.set(sortedIndex, proxy);
-      }
-    }
-
-    if (proxiesToCheckMap.size) {
-      let httpMetaPid;
-      try {
-        const proxiesToCheck = Array.from(proxiesToCheckMap.values()).sort(
-          (a, b) =>
-            (b?._speed_kb ?? -1) - (a?._speed_kb ?? -1) ||
-            (a?._sorted_index ?? 0) - (b?._sorted_index ?? 0),
-        );
-        // Estimate longest per-proxy request chain (ai detections + optional speed check)
-        // to size http-meta timeout conservatively for this batch.
-        let maxRequestsPerProxy = 1;
-        for (const proxy of proxiesToCheck) {
+      await executeAsyncTasks(
+        proxiesToCheck.map((proxy) => async () => {
           const sortedIndex = proxy._sorted_index;
-          const aiRequestCount = needAi
-            ? (aiPendingByIndex.get(sortedIndex)?.length ?? 0)
-            : 0;
-          const speedRequestCount =
-            needSpeed && speedToCheckSet.has(sortedIndex) ? 1 : 0;
-          maxRequestsPerProxy = Math.max(
-            maxRequestsPerProxy,
-            aiRequestCount + speedRequestCount,
-          );
-        }
+          const port = batchHttpMeta.portBySortedIndex.get(sortedIndex);
+          if (port === undefined || port === null) {
+            throw new Error(`[${proxy.name}] missing http-meta port mapping`);
+          }
 
-        let mixedStartDelay = 1000;
-        if (needAi)
-          mixedStartDelay = Math.max(mixedStartDelay, aiHttpMetaStartDelay);
-        if (needSpeed) {
-          mixedStartDelay = Math.max(mixedStartDelay, normalHttpMetaStartDelay);
-        }
-
-        let mixedProxyTimeout = 5000;
-        if (needAi) {
-          mixedProxyTimeout = Math.max(
-            mixedProxyTimeout,
-            aiHttpMetaProxyTimeout,
-          );
-        }
-        if (needSpeed) {
-          mixedProxyTimeout = Math.max(
-            mixedProxyTimeout,
-            normalHttpMetaProxyTimeout,
-          );
-        }
-
-        const mixedConcurrency = Math.max(
-          1,
-          needAi ? aiConcurrency : 1,
-          needSpeed ? normalConcurrency : 1,
-        );
-
-        const batchHttpMeta = await startHttpMetaForBatch(proxiesToCheck, {
-          label: "mixed",
-          startDelay: mixedStartDelay,
-          proxyTimeout: mixedProxyTimeout,
-          timeoutMultiplier: maxRequestsPerProxy,
-        });
-        httpMetaPid = batchHttpMeta.pid;
-
-        await executeAsyncTasks(
-          proxiesToCheck.map((proxy) => async () => {
-            const sortedIndex = proxy._sorted_index;
-            const port = batchHttpMeta.portBySortedIndex.get(sortedIndex);
-            if (port === undefined || port === null) {
-              throw new Error(`[${proxy.name}] missing http-meta port mapping`);
-            }
-
-            if (needAi) {
-              const pendingDetections = aiPendingByIndex.get(sortedIndex) || [];
-              for (const detection of pendingDetections) {
-                const result = await checkAiWithHttpMeta(
-                  proxy,
-                  port,
-                  detection,
-                );
-                if (result.outcome !== "success") {
-                  break;
-                }
-              }
-            }
-
-            if (needSpeed && speedToCheckSet.has(sortedIndex)) {
-              const speedResult = await checkNormalWithHttpMeta(proxy, port);
-              if (speedResult?.ok) {
-                speedSuccessMap.set(sortedIndex, speedResult.latency);
-              }
-            }
-          }),
-          { concurrency: mixedConcurrency },
-        );
-      } catch (e) {
-        $.error(e);
-      } finally {
-        await stopHttpMetaForBatch(httpMetaPid, "mixed");
-      }
+          speedCheckedSet.add(sortedIndex);
+          const speedResult = await checkNormalWithHttpMeta(proxy, port);
+          if (speedResult?.ok) {
+            speedPassBatchSet.add(sortedIndex);
+            speedResultBatchMap.set(sortedIndex, {
+              durationMs: speedResult.durationMs,
+              measuredSpeedKb: speedResult.measuredSpeedKb,
+            });
+          }
+        }),
+        { concurrency: normalConcurrency },
+      );
+    } catch (e) {
+      $.error(e);
+    } finally {
+      await stopHttpMetaForBatch(httpMetaPid, "speed");
     }
 
-    if (needAi) {
-      for (const proxy of batch) {
-        if (
-          aiDetections.every((detection) => proxy[detection.flagKey] === true)
-        ) {
-          aiPassBatchSet.add(proxy._sorted_index);
-        }
-      }
+    return { speedPassBatchSet, speedResultBatchMap };
+  }
+
+  async function processAiBatch(batch = []) {
+    const aiPassBatchSet = new Set();
+    const proxiesToCheck = batch.filter(
+      (proxy) => !aiCheckedSet.has(proxy._sorted_index),
+    );
+
+    if (!proxiesToCheck.length || !aiDetections.length) {
+      return { aiPassBatchSet };
     }
 
-    if (needSpeed) {
-      for (const [sortedIndex, latency] of speedSuccessMap.entries()) {
-        speedPassBatchSet.add(sortedIndex);
-        speedLatencyBatchMap.set(sortedIndex, latency);
-      }
+    let httpMetaPid;
+    try {
+      const batchHttpMeta = await startHttpMetaForBatch(proxiesToCheck, {
+        label: "ai",
+        startDelay: aiHttpMetaStartDelay,
+        proxyTimeout: timeoutMs,
+        timeoutMultiplier: aiDetections.length,
+      });
+      httpMetaPid = batchHttpMeta.pid;
+
+      await executeAsyncTasks(
+        proxiesToCheck.map((proxy) => async () => {
+          const sortedIndex = proxy._sorted_index;
+          const port = batchHttpMeta.portBySortedIndex.get(sortedIndex);
+          if (port === undefined || port === null) {
+            throw new Error(`[${proxy.name}] missing http-meta port mapping`);
+          }
+
+          aiCheckedSet.add(sortedIndex);
+          for (const detection of aiDetections) {
+            const result = await checkAiWithHttpMeta(proxy, port, detection);
+            if (result.outcome !== "success") {
+              break;
+            }
+          }
+
+          if (
+            aiDetections.every((detection) => proxy[detection.flagKey] === true)
+          ) {
+            aiPassBatchSet.add(sortedIndex);
+          }
+        }),
+        { concurrency: aiConcurrency },
+      );
+    } catch (e) {
+      $.error(e);
+    } finally {
+      await stopHttpMetaForBatch(httpMetaPid, "ai");
     }
 
-    return { aiPassBatchSet, speedPassBatchSet, speedLatencyBatchMap };
+    return { aiPassBatchSet };
   }
 
   async function checkAiWithHttpMeta(proxy, port, detection) {
@@ -561,27 +630,39 @@ async function operator(proxies = [], targetPlatform, context) {
       const res = await http({
         proxy: `http://${httpMeta.host}:${port}`,
         method: normalMethod,
-        timeout: normalHttpMetaProxyTimeout,
+        timeout: timeoutMs,
         headers: {
           "User-Agent": normalUa,
         },
         url: normalUrl,
       });
       const status = parseInt(res.status || res.statusCode || 200, 10);
-      const latency = Date.now() - startedAt;
-      $.info(`[${proxy.name}] [normal] status=${status}, latency=${latency}`);
+      const durationMs = Date.now() - startedAt;
+      const responseBytes = getResponseBodyByteLength(res);
+      const measuredSpeedKb =
+        durationMs > 0 && responseBytes > 0
+          ? Math.round(responseBytes / 1024 / (durationMs / 1000))
+          : 0;
+      $.info(
+        `[${proxy.name}] [speed] status=${status}, duration=${durationMs}, bytes=${responseBytes}, speed=${formatSpeedText(measuredSpeedKb)}`,
+      );
 
-      if (validStatus.test(`${status}`)) {
+      if (
+        validStatus.test(`${status}`) &&
+        responseBytes > 0 &&
+        measuredSpeedKb > 0
+      ) {
         return {
           ok: true,
           sortedIndex: proxy._sorted_index,
-          latency,
+          durationMs,
+          measuredSpeedKb,
         };
       }
 
       return { ok: false };
     } catch (e) {
-      $.error(`[${proxy.name}] [normal] ${e.message ?? e}`);
+      $.error(`[${proxy.name}] [speed] ${e.message ?? e}`);
       return { ok: false };
     }
   }
@@ -714,7 +795,7 @@ async function operator(proxies = [], targetPlatform, context) {
     proxy[detection.latencyKey] = latency;
   }
 
-  function toAiProxyOutput(proxy) {
+  function toAiProxyOutput(proxy, measuredSpeedKb = 0, durationMs = 0) {
     // Keep AI capability metadata for downstream rules/inspection.
     const parsed = safeParseProxy(proxy);
     const baseName = getBaseNameWithSpeed(proxy);
@@ -731,16 +812,47 @@ async function operator(proxies = [], targetPlatform, context) {
     if (proxy._gemini_latency !== undefined) {
       parsed._gemini_latency = proxy._gemini_latency;
     }
-    parsed.name = aiTags.length ? `${baseName} ${aiTags.join(" ")}` : baseName;
+    if (measuredSpeedKb > 0) parsed._avg_speed_kb = measuredSpeedKb;
+    if (durationMs > 0) parsed._duration_ms = `${durationMs}`;
+    parsed.name = formatMeasuredName(
+      baseName,
+      measuredSpeedKb,
+      durationMs,
+      aiTags,
+    );
     return parsed;
   }
 
-  function toNormalProxyOutput(proxy, latency) {
+  function toNormalProxyOutput(proxy, measuredSpeedKb, durationMs) {
     const parsed = safeParseProxy(proxy);
     const baseName = getBaseNameWithSpeed(proxy);
-    parsed.name = `${showLatency ? `[${latency}] ` : ""}${baseName}`;
-    parsed._latency = `${latency}`;
+    parsed.name = formatMeasuredName(baseName, measuredSpeedKb, durationMs);
+    parsed._avg_speed_kb = measuredSpeedKb;
+    parsed._duration_ms = `${durationMs}`;
     return parsed;
+  }
+
+  function formatMeasuredName(
+    name,
+    measuredSpeedKb = 0,
+    durationMs = 0,
+    suffixTags = [],
+  ) {
+    const speedSuffix =
+      appendMeasuredSpeed && measuredSpeedKb > 0
+        ? ` - ${formatSpeedText(measuredSpeedKb)}`
+        : "";
+    const tagSuffix = suffixTags.length ? ` ${suffixTags.join(" ")}` : "";
+    return `${name}${speedSuffix}${tagSuffix}`;
+  }
+
+  function formatSpeedText(speedKb = 0) {
+    const kb = Number(speedKb);
+    if (!Number.isFinite(kb) || kb <= 0) return "";
+    if (kb >= 1024) {
+      return `${Math.round((kb / 1024) * 10) / 10}MB/s`;
+    }
+    return `${Math.round(kb)}KB/s`;
   }
 
   function safeParseProxy(proxy) {
@@ -769,23 +881,34 @@ async function operator(proxies = [], targetPlatform, context) {
     return normalizeProxyName(proxy?.name).displayName;
   }
 
-  function buildCandidateRecords(candidates, proxyMap, aiSet, latencyMap) {
-    // Ranking priority: higher speed first, then AI-capable before non-AI on ties.
+  function buildCandidateRecords(candidates, proxyMap, aiSet, speedResultMap) {
+    // Ranking priority: measured speed first, then incoming speed text.
     return Array.from(candidates)
       .map((sortedIndex) => {
         const proxy = proxyMap.get(sortedIndex);
         if (!proxy) return null;
         const isAi = aiSet.has(sortedIndex);
+        const speedResult = speedResultMap.get(sortedIndex) || {};
         return {
           sortedIndex,
           isAi,
+          measuredSpeedKb: Number(speedResult.measuredSpeedKb ?? -1),
           speedKb: proxy._speed_kb ?? -1,
-          latency: latencyMap.get(sortedIndex) ?? 0,
+          durationMs: speedResult.durationMs ?? 0,
           proxy,
         };
       })
       .filter(Boolean)
-      .sort((a, b) => b.speedKb - a.speedKb || Number(b.isAi) - Number(a.isAi));
+      .sort(compareCandidateRecords);
+  }
+
+  function compareCandidateRecords(a, b) {
+    return (
+      (b?.measuredSpeedKb ?? -1) - (a?.measuredSpeedKb ?? -1) ||
+      (b?.speedKb ?? -1) - (a?.speedKb ?? -1) ||
+      Number(b?.isAi ?? false) - Number(a?.isAi ?? false) ||
+      (a?.sortedIndex ?? 0) - (b?.sortedIndex ?? 0)
+    );
   }
 
   function pickFinalRecords(records, aiQuota, maxCount) {
@@ -908,6 +1031,61 @@ async function operator(proxies = [], targetPlatform, context) {
     return "";
   }
 
+  function getResponseBodyByteLength(res = {}) {
+    const body = res?.rawBody ?? res?.body;
+    if (body === undefined || body === null) return 0;
+
+    if (typeof body === "string") {
+      return getUtf8ByteLength(body);
+    }
+
+    if (typeof ArrayBuffer !== "undefined") {
+      if (body instanceof ArrayBuffer) return body.byteLength;
+      if (ArrayBuffer.isView?.(body)) return body.byteLength;
+    }
+
+    if (typeof body === "object" && Number.isFinite(body.byteLength)) {
+      return body.byteLength;
+    }
+
+    return 0;
+  }
+
+  function getUtf8ByteLength(text = "") {
+    const value = `${text ?? ""}`;
+    if (!value) return 0;
+
+    if (typeof TextEncoder !== "undefined") {
+      return new TextEncoder().encode(value).byteLength;
+    }
+
+    if (typeof Buffer !== "undefined") {
+      return Buffer.byteLength(value, "utf8");
+    }
+
+    let bytes = 0;
+    for (let i = 0; i < value.length; i++) {
+      const code = value.charCodeAt(i);
+      if (code < 0x80) {
+        bytes += 1;
+      } else if (code < 0x800) {
+        bytes += 2;
+      } else if (
+        code >= 0xd800 &&
+        code <= 0xdbff &&
+        i + 1 < value.length &&
+        value.charCodeAt(i + 1) >= 0xdc00 &&
+        value.charCodeAt(i + 1) <= 0xdfff
+      ) {
+        bytes += 4;
+        i++;
+      } else {
+        bytes += 3;
+      }
+    }
+    return bytes;
+  }
+
   function getGeminiCountry3(bodyText = "") {
     const text = String(bodyText ?? "");
     if (!text) return "";
@@ -938,7 +1116,7 @@ async function operator(proxies = [], targetPlatform, context) {
 
   async function http(opt = {}) {
     const METHOD = `${opt.method || $arguments.method || "get"}`.toLowerCase();
-    const TIMEOUT = parseFloat(opt.timeout || $arguments.timeout || 5000);
+    const TIMEOUT = parsePositiveInteger(opt.timeout, timeoutMs);
     const RETRIES = parseFloat(opt.retries ?? $arguments.retries ?? 1);
     const RETRY_DELAY = parseFloat(
       opt.retry_delay ?? $arguments.retry_delay ?? 1000,
@@ -1007,9 +1185,9 @@ async function operator(proxies = [], targetPlatform, context) {
   }
 }
 
-function parseSpeedToKb(name) {
+function parseSpeedToKb(name = "") {
   // Name format is "<base>|<speed>", e.g. "JP-01|12.3MB/s".
-  const speed = name.split("|")[1];
+  const speed = `${name ?? ""}`.split("|")[1] ?? "";
   if (speed.includes("MB/s")) {
     return parseFloat(speed) * 1024;
   } else if (speed.includes("KB/s")) {
