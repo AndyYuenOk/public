@@ -12,7 +12,14 @@ async function operator(proxies = [], targetPlatform, context) {
 
   // Runtime knobs from script arguments.
   const take = parseInt($arguments.take ?? 10, 10);
-  const cacheEnabled = /true|1/i.test(`${$arguments.cache ?? 1}`);
+
+  let cacheEnabled = /true|1/i.test(`${$arguments.cache ?? 0}`);
+  // $options is undefined in preview and cron
+  // Always cache for the client.
+  if ($options?._req) {
+    cacheEnabled = 1;
+  }
+
   const cacheTtlMs = $arguments.cache_ttl_ms ?? 24 * 60 * 60 * 1000;
   const speedSortedInputProxies = [...proxies].sort(compareProxySpeedDesc);
 
@@ -154,7 +161,8 @@ async function operator(proxies = [], targetPlatform, context) {
     if (!batch.length) continue;
 
     const needAi = aiPassSet.size < aiTarget;
-    const needSpeed = speedPassSet.size < speedTarget || candidateSet.size < take;
+    const needSpeed =
+      speedPassSet.size < speedTarget || candidateSet.size < take;
     if (!needAi && !needSpeed && candidateSet.size >= take) {
       break;
     }
