@@ -288,6 +288,7 @@ function setSubUserinfo(subcriptionName) {
 
   for (const subscription of subscriptions) {
     if (subscription.name === subcriptionName) {
+      $options ??= {};
       $options._res = {
         headers: {
           "subscription-userinfo": subscription.subUserinfo,
