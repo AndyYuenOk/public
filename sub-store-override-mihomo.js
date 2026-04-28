@@ -166,9 +166,9 @@ let strategyGroups = [
 ];
 
 function main(config) {
-  const subName = $arguments?.sub_name;
-  if (subName) {
-    setSubUserinfo(subName);
+  const userinfoSubName = $arguments?.userinfo_sub_name;
+  if (userinfoSubName) {
+    setSubUserinfo(userinfoSubName);
   }
 
   config["geodata-mode"] = true;
