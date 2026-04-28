@@ -24,6 +24,8 @@
  * - [gpt_prefix] GPT 显示前缀. 默认为 " GPT"
  * - GPT 当前检测端点为 https://ios.chat.openai.com/public-api/auth/session, 规则为 404 成功
  * - [gm_prefix] Gemini 显示前缀. 默认为 " GM"
+ * - [gm_country3_allow] Gemini 三位国家码允许列表, 逗号分隔. 默认空表示任意非拒绝国家
+ * - [gm_country3_deny] Gemini 三位国家码拒绝列表, 逗号分隔. 默认 CHN
  * 注:
  * - 节点上总是会添加一个 _gpt 字段, 可用于脚本筛选. 新增 _gpt_latency 字段, 指响应延迟
  * - 节点上会按需添加 _gemini 和 _gemini_latency 字段, 指 Gemini 检测结果与响应延迟
@@ -57,6 +59,12 @@ async function operator(proxies = [], targetPlatform, context) {
   const gptPrefix = $arguments.gpt_prefix ?? " GPT";
   const gmPrefix = $arguments.gm_prefix ?? " GM";
   const method = $arguments.method || "get";
+  const geminiCountry3AllowSet = toCountryCodeSet(
+    $arguments.gm_country3_allow ?? $arguments.gemini_country3_allow ?? "",
+  );
+  const geminiCountry3DenySet = toCountryCodeSet(
+    $arguments.gm_country3_deny ?? $arguments.gemini_country3_deny ?? "CHN",
+  );
   // `client` is kept for backward compatibility, but GPT check now always uses iOS session endpoint.
   const gptUrl = `https://ios.chat.openai.com/public-api/auth/session`;
   const networkTransientFailureRegex =
@@ -88,24 +96,14 @@ async function operator(proxies = [], targetPlatform, context) {
       latencyKey: "_gemini_latency",
       cacheKey: "gemini",
       cacheLatencyKey: "gemini_latency",
+      cacheVariant: `country3_allow=${Array.from(geminiCountry3AllowSet).join(",")};country3_deny=${Array.from(geminiCountry3DenySet).join(",")}`,
       userAgent:
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
-      isSuccess({ status, message, bodyText }) {
-        const text = `${message}\n${bodyText}`;
-        if (
-          /unsupported_country|not available in your country|not available in your region|isn't available in your country|location is not supported|unusual traffic|recaptcha|captcha|attention required|access denied|forbidden/i.test(
-            text,
-          )
-        ) {
-          return false;
-        }
-        if (status >= 200 && status < 400) {
-          return true;
-        }
-        return [401, 403].includes(status);
-      },
     },
   ];
+  $.info(
+    `[gemini-country3] allow=${Array.from(geminiCountry3AllowSet).join("|") || "ANY"}, deny=${Array.from(geminiCountry3DenySet).join("|") || "NONE"}`,
+  );
 
   const internalProxies = [];
   proxies.map((proxy, index) => {
@@ -273,8 +271,7 @@ async function operator(proxies = [], targetPlatform, context) {
 
       const index = internalProxies.indexOf(proxy);
       const startedAt = Date.now();
-      const requestMethod =
-        detection.key === "gemini" && $.http?.head ? "head" : method;
+      const requestMethod = detection.key === "gemini" ? "get" : method;
       const res = await http({
         proxy: `http://${http_meta_host}:${http_meta_ports[index]}`,
         method: requestMethod,
@@ -294,9 +291,15 @@ async function operator(proxies = [], targetPlatform, context) {
       let msg = "";
       let bodyText = "";
       let body;
+      let geminiCountry3 = "";
       if (detection.key === "gemini") {
         const locationHeader = getHeaderValue(res.headers, "location");
-        msg = locationHeader ? `location: ${locationHeader}` : "";
+        bodyText = String(res.body ?? res.rawBody ?? "");
+        geminiCountry3 = getGeminiCountry3(bodyText);
+        const details = [];
+        if (locationHeader) details.push(`location: ${locationHeader}`);
+        if (geminiCountry3) details.push(`gbar_country3: ${geminiCountry3}`);
+        msg = details.join(", ");
       } else {
         const rawBody = String(res.body ?? res.rawBody ?? "");
         body = rawBody;
@@ -323,6 +326,7 @@ async function operator(proxies = [], targetPlatform, context) {
         bodyText,
         body,
         headers: res.headers,
+        geminiCountry3,
       });
 
       if (outcome === "success") {
@@ -390,12 +394,13 @@ async function operator(proxies = [], targetPlatform, context) {
     bodyText = "",
     body,
     headers = {},
+    geminiCountry3 = "",
   }) {
     if (detection.key === "gpt") {
       return status === 404 ? "success" : "hard_failure";
     }
     if (detection.key === "gemini") {
-      return classifyGeminiHeaderResult({ status, headers });
+      return classifyGeminiCountry3Result({ status, geminiCountry3 });
     }
     if (isUnsupportedResult({ message, bodyText })) {
       return "unsupported";
@@ -429,11 +434,21 @@ async function operator(proxies = [], targetPlatform, context) {
       detectionKey,
     });
   }
-  function classifyGeminiHeaderResult({ status }) {
+  function classifyGeminiCountry3Result({ status, geminiCountry3 = "" }) {
     if (status === 302) {
       return "unsupported";
     }
     if (status === 200) {
+      const country3 = `${geminiCountry3 ?? ""}`.toUpperCase();
+      if (!country3) return "transient_failure";
+      if (geminiCountry3AllowSet.size) {
+        return geminiCountry3AllowSet.has(country3)
+          ? "success"
+          : "unsupported";
+      }
+      if (geminiCountry3DenySet.has(country3)) {
+        return "unsupported";
+      }
       return "success";
     }
     return "transient_failure";
@@ -465,6 +480,32 @@ async function operator(proxies = [], targetPlatform, context) {
     );
     return matched?.[0] || "";
   }
+  function getGeminiCountry3(bodyText = "") {
+    const text = String(bodyText ?? "");
+    if (!text) return "";
+
+    const patterns = [
+      /,2,1,200,"([A-Z]{3})",null,null,"\d+"/,
+      /,2,1,200,\\"([A-Z]{3})\\",null,null,\\"\d+\\"/,
+    ];
+
+    for (const pattern of patterns) {
+      const matched = text.match(pattern);
+      if (matched?.[1]) return matched[1].toUpperCase();
+    }
+
+    return "";
+  }
+  function toCountryCodeSet(raw = "") {
+    const text = `${raw ?? ""}`.trim();
+    if (!text) return new Set();
+    return new Set(
+      text
+        .split(",")
+        .map((item) => item.trim().toUpperCase())
+        .filter((item) => /^[A-Z]{3}$/.test(item)),
+    );
+  }
   // 请求
   async function http(opt = {}) {
     const METHOD = opt.method || $arguments.method || "get";
@@ -494,7 +535,7 @@ async function operator(proxies = [], targetPlatform, context) {
     return await fn();
   }
   function getCacheId({ proxy = {}, detection }) {
-    return `http-meta:${detection.key}:${detection.url}:${JSON.stringify(
+    return `http-meta:${detection.key}:${detection.url}:${detection.cacheVariant || ""}:${JSON.stringify(
       Object.fromEntries(
         Object.entries(proxy).filter(
           ([key]) => !/^(name|collectionName|subName|id|_.*)$/i.test(key),
