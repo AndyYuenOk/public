@@ -1,4 +1,11 @@
 const FINAL_PROXIES_CACHE_KEY = "sub-store-free-optimized:final-proxies";
+// 测速文件，需要在超时时间内下载完成，目标，越小越好
+// 由于下载爬坡原因，估算速度 != 实际速度，但保证最低速度
+// https://github.com/litterinchina/large-file-download-test
+const DEFAULT_SPEED_TEST_URL =
+  "https://github.com/BitDoctor/speed-test-file/raw/refs/heads/master/1mb.txt";
+const DEFAULT_TIMEOUT_MS = 5000;
+const SPEED_REFERENCE_LABEL = "A";
 
 async function operator(proxies = [], targetPlatform, context) {
   const $ = $substore;
@@ -57,7 +64,10 @@ async function operator(proxies = [], targetPlatform, context) {
     authorization: $arguments.http_meta_authorization ?? "",
   };
   const httpMetaApi = `${httpMeta.protocol}://${httpMeta.host}:${httpMeta.port}`;
-  const timeoutMs = parsePositiveInteger($arguments.timeout, 5000);
+  const timeoutMs = parsePositiveInteger(
+    $arguments.timeout,
+    DEFAULT_TIMEOUT_MS,
+  );
 
   const aiHttpMetaStartDelay = parseInt(
     $arguments.ai_http_meta_start_delay ??
@@ -91,9 +101,7 @@ async function operator(proxies = [], targetPlatform, context) {
   const validStatusRaw = $arguments.speed_status ?? $arguments.status ?? "200";
   const validStatus = new RegExp(validStatusRaw);
   const normalUrl = decodeURIComponent(
-    $arguments.speed_url ??
-      $arguments.url ??
-      "https://github.com/BitDoctor/speed-test-file/raw/refs/heads/master/5mb.txt",
+    $arguments.speed_url ?? $arguments.url ?? DEFAULT_SPEED_TEST_URL,
   );
   const normalUa = decodeURIComponent(
     $arguments.ua ||
@@ -401,6 +409,7 @@ async function operator(proxies = [], targetPlatform, context) {
     const tags = getOutputTags(proxy, rawName);
     let baseName = stripOutputTags(rawName);
     baseName = stripMeasuredSpeedSuffix(baseName);
+    baseName = normalizeProxyName(baseName).displayName;
     if (!baseName) return rawName;
 
     return formatMeasuredName(
@@ -432,7 +441,7 @@ async function operator(proxies = [], targetPlatform, context) {
 
   function stripMeasuredSpeedSuffix(name = "") {
     return `${name ?? ""}`
-      .replace(/\s+-\s+\d+(?:\.\d+)?(?:MB\/s|KB\/s|M)\s*$/i, "")
+      .replace(/\s+B\d+(?:\.\d+)?(?:M\+\/s|K\+\/s)\s*$/i, "")
       .trim();
   }
 
@@ -468,7 +477,7 @@ async function operator(proxies = [], targetPlatform, context) {
         label: "speed",
         startDelay: normalHttpMetaStartDelay,
         proxyTimeout: timeoutMs,
-        timeoutMultiplier: 1,
+        timeoutMultiplier: 2,
       });
       httpMetaPid = batchHttpMeta.pid;
 
@@ -624,8 +633,46 @@ async function operator(proxies = [], targetPlatform, context) {
     }
   }
 
+  async function checkSpeedLatencyWithHttpMeta(proxy, port) {
+    try {
+      const startedAt = Date.now();
+      const res = await http({
+        proxy: `http://${httpMeta.host}:${port}`,
+        method: "head",
+        timeout: timeoutMs,
+        headers: {
+          "User-Agent": normalUa,
+        },
+        url: normalUrl,
+      });
+      const status = parseInt(res.status || res.statusCode || 200, 10);
+      const latencyMs = Date.now() - startedAt;
+      $.info(
+        `[${proxy.name}] [speed-latency] status=${status}, latency=${latencyMs}`,
+      );
+
+      if (validStatus.test(`${status}`)) {
+        return {
+          ok: true,
+          latencyMs,
+        };
+      }
+
+      return { ok: false };
+    } catch (e) {
+      $.error(`[${proxy.name}] [speed-latency] ${e.message ?? e}`);
+      return { ok: false };
+    }
+  }
+
   async function checkNormalWithHttpMeta(proxy, port) {
     try {
+      const latencyResult = await checkSpeedLatencyWithHttpMeta(proxy, port);
+      if (!latencyResult?.ok) {
+        return { ok: false };
+      }
+
+      const latencyMs = latencyResult.latencyMs;
       const startedAt = Date.now();
       const res = await http({
         proxy: `http://${httpMeta.host}:${port}`,
@@ -638,17 +685,26 @@ async function operator(proxies = [], targetPlatform, context) {
       });
       const status = parseInt(res.status || res.statusCode || 200, 10);
       const durationMs = Date.now() - startedAt;
+      const effectiveDurationMs = Math.max(durationMs - latencyMs, 1);
       const responseBytes = getResponseBodyByteLength(res);
-      const measuredSpeedKb =
-        durationMs > 0 && responseBytes > 0
-          ? Math.round(responseBytes / 1024 / (durationMs / 1000))
+      const rawMeasuredSpeedKb =
+        effectiveDurationMs > 0 && responseBytes > 0
+          ? Math.round(responseBytes / 1024 / (effectiveDurationMs / 1000))
           : 0;
+      const maxMeasuredSpeedKb =
+        responseBytes > 0 ? Math.round(responseBytes / 1024) : 0;
+      const measuredSpeedKb =
+        rawMeasuredSpeedKb > 0 && maxMeasuredSpeedKb > 0
+          ? Math.min(rawMeasuredSpeedKb, maxMeasuredSpeedKb)
+          : 0;
+      const withinEffectiveTimeout = effectiveDurationMs <= DEFAULT_TIMEOUT_MS;
       $.info(
-        `[${proxy.name}] [speed] status=${status}, duration=${durationMs}, bytes=${responseBytes}, speed=${formatSpeedText(measuredSpeedKb)}`,
+        `[${proxy.name}] [speed] status=${status}, duration=${durationMs}, latency=${latencyMs}, effective_duration=${effectiveDurationMs}, effective_timeout=${DEFAULT_TIMEOUT_MS}, bytes=${responseBytes}, max_speed=${formatSpeedText(maxMeasuredSpeedKb)}, speed=${formatSpeedText(measuredSpeedKb)}`,
       );
 
       if (
         validStatus.test(`${status}`) &&
+        withinEffectiveTimeout &&
         responseBytes > 0 &&
         measuredSpeedKb > 0
       ) {
@@ -703,7 +759,7 @@ async function operator(proxies = [], targetPlatform, context) {
     const {
       label = "batch",
       startDelay = 1000,
-      proxyTimeout = 5000,
+      proxyTimeout = DEFAULT_TIMEOUT_MS,
       timeoutMultiplier = 1,
     } = options;
 
@@ -840,7 +896,7 @@ async function operator(proxies = [], targetPlatform, context) {
   ) {
     const speedSuffix =
       appendMeasuredSpeed && measuredSpeedKb > 0
-        ? ` - ${formatSpeedText(measuredSpeedKb)}`
+        ? ` ${formatEstimatedSpeedNameText(measuredSpeedKb)}`
         : "";
     const tagSuffix = suffixTags.length ? ` ${suffixTags.join(" ")}` : "";
     return `${name}${speedSuffix}${tagSuffix}`;
@@ -1186,25 +1242,31 @@ async function operator(proxies = [], targetPlatform, context) {
 }
 
 function parseSpeedToKb(name = "") {
-  // Name format is "<base>|<speed>", e.g. "JP-01|12.3MB/s".
-  const speed = `${name ?? ""}`.split("|")[1] ?? "";
-  if (speed.includes("MB/s")) {
-    return parseFloat(speed) * 1024;
-  } else if (speed.includes("KB/s")) {
-    return parseFloat(speed);
-  } else {
-    return -1;
-  }
+  // Supported formats:
+  // - "<base>|<speed>", e.g. "JP-01|12.3MB/s"
+  // - output names with "A<speed>+/s" / "B<speed>+/s", e.g. "JP-01 A12.3M+/s B1M+/s"
+  const raw = `${name ?? ""}`;
+  const pipeSpeed = raw.split("|")[1] ?? "";
+  const parsedPipeSpeed = parseSpeedTextToKb(pipeSpeed);
+  if (parsedPipeSpeed > 0) return parsedPipeSpeed;
+
+  const referenceSpeed = parseLabeledSpeedToKb(raw, SPEED_REFERENCE_LABEL);
+  if (referenceSpeed > 0) return referenceSpeed;
+
+  return parseSpeedTextToKb(raw);
 }
 
 function normalizeProxyName(name = "") {
   // Parse and expose commonly reused name/speed fields once.
   const raw = `${name ?? ""}`.trim();
   const parts = raw.split("|");
-  const baseName = `${parts[0] ?? raw ?? "UNKNOWN"}`.trim();
-  const speedText = `${parts[1] ?? ""}`.trim();
   const speedKb = parseSpeedToKb(raw);
-  const displayName = speedText ? `${baseName} ${speedText}` : baseName;
+  const baseName =
+    stripUnlabeledSpeedSuffix(stripSpeedLabels(`${parts[0] ?? raw}`)).trim() ||
+    "UNKNOWN";
+  const speedText = speedKb > 0 ? formatSpeedNameText(speedKb) : "";
+  const displayName =
+    speedKb > 0 ? `${baseName} ${SPEED_REFERENCE_LABEL}${speedText}` : baseName;
 
   return {
     baseName,
@@ -1212,4 +1274,73 @@ function normalizeProxyName(name = "") {
     speedKb,
     displayName,
   };
+}
+
+function parseLabeledSpeedToKb(text = "", label = "") {
+  const pattern = new RegExp(
+    `(?:^|\\s)${label}\\s*(\\d+(?:\\.\\d+)?)\\s*(MB\\/s|KB\\/s|M\\+?\\/s|K\\+?\\/s|M|K)(?![\\w/+])`,
+    "i",
+  );
+  const matched = `${text ?? ""}`.match(pattern);
+  if (!matched) return -1;
+  return speedValueToKb(matched[1], matched[2]);
+}
+
+function parseSpeedTextToKb(text = "") {
+  const matched = `${text ?? ""}`.match(
+    /(\d+(?:\.\d+)?)\s*(MB\/s|KB\/s|M\+?\/s|K\+?\/s|M|K)(?![\w/+])/i,
+  );
+  if (!matched) return -1;
+  return speedValueToKb(matched[1], matched[2]);
+}
+
+function speedValueToKb(value, unit) {
+  const speed = parseFloat(value);
+  if (!Number.isFinite(speed) || speed <= 0) return -1;
+  const normalizedUnit = `${unit ?? ""}`.toUpperCase().replace("+", "");
+  if (
+    normalizedUnit === "MB/S" ||
+    normalizedUnit === "M/S" ||
+    normalizedUnit === "M"
+  ) {
+    return speed * 1024;
+  }
+  if (
+    normalizedUnit === "KB/S" ||
+    normalizedUnit === "K/S" ||
+    normalizedUnit === "K"
+  ) {
+    return speed;
+  }
+  return -1;
+}
+
+function stripSpeedLabels(name = "") {
+  return `${name ?? ""}`
+    .replace(/\s+[AB]\s*\d+(?:\.\d+)?(?:M\+\/s|K\+\/s)(?=\s|$)/gi, "")
+    .trim();
+}
+
+function stripUnlabeledSpeedSuffix(name = "") {
+  return `${name ?? ""}`
+    .replace(/\s+\d+(?:\.\d+)?(?:MB\/s|KB\/s|M\+?\/s|K\+?\/s|M|K)\s*$/i, "")
+    .trim();
+}
+
+function formatEstimatedSpeedNameText(speedKb = 0) {
+  const kb = Number(speedKb);
+  if (!Number.isFinite(kb) || kb <= 0) return "";
+  if (kb >= 1024) {
+    return `B${Math.round((kb / 1024) * 10) / 10}M+/s`;
+  }
+  return `B${Math.round(kb)}K+/s`;
+}
+
+function formatSpeedNameText(speedKb = 0) {
+  const kb = Number(speedKb);
+  if (!Number.isFinite(kb) || kb <= 0) return "";
+  if (kb >= 1024) {
+    return `${Math.round((kb / 1024) * 10) / 10}M+/s`;
+  }
+  return `${Math.round(kb)}K+/s`;
 }
