@@ -22,7 +22,7 @@ try {
 }
 
 try {
-  aiPatterns = JSON.parse($arguments.ai ?? '["GPT"]');
+  aiPatterns = JSON.parse($arguments.ai ?? '["GPT","GM"]');
 } catch {
   aiPatterns = [$arguments.ai];
 }
@@ -85,6 +85,7 @@ let routingRules = [
   "DOMAIN-SUFFIX,host.docker.internal,DIRECT",
 
   "GEOSITE,category-ai-!cn,AI",
+  "GEOSITE,anthropic,AI",
   "GEOSITE,microsoft,Microsoft",
   "GEOSITE,netflix,Netflix",
 
@@ -165,6 +166,11 @@ let strategyGroups = [
 ];
 
 function main(config) {
+  const subName = $arguments?.sub_name;
+  if (subName) {
+    setSubUserinfo(subName);
+  }
+
   config["geodata-mode"] = true;
   config["geox-url"] = {
     geosite:
@@ -275,6 +281,20 @@ function main(config) {
   config["proxy-groups"] = strategyGroups;
 
   return config;
+}
+
+function setSubUserinfo(subcriptionName) {
+  const subscriptions = $substore.read("subs") || [];
+
+  for (const subscription of subscriptions) {
+    if (subscription.name === subcriptionName) {
+      $options._res = {
+        headers: {
+          "subscription-userinfo": subscription.subUserinfo,
+        },
+      };
+    }
+  }
 }
 
 if ($content) {
