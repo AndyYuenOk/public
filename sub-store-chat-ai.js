@@ -27,9 +27,10 @@
  * - [gm_country3_allow] Gemini 三位国家码允许列表, 逗号分隔. 默认空表示任意非拒绝国家
  * - [gm_country3_deny] Gemini 三位国家码拒绝列表, 逗号分隔. 默认 CHN
  * 注:
- * - 节点上总是会添加一个 _gpt 字段, 可用于脚本筛选. 新增 _gpt_latency 字段, 指响应延迟
- * - 节点上会按需添加 _gemini 和 _gemini_latency 字段, 指 Gemini 检测结果与响应延迟
- * - [cache] 使用缓存, 默认不使用缓存
+ * - 节点上会按需添加 canAccessGpt/gptLatency, 指 GPT 检测结果与响应延迟
+ * - 节点上会按需添加 canAccessGm/gmLatency, 指 Gemini 检测结果与响应延迟
+ * - [cache] 使用缓存结果直接返回; 关闭时实时检测并保存最后测试结果
+ * - [cache_ttl_ms] 缓存时长(单位: 毫秒) 默认 24 小时
  * - 失败结果和不支持地区结果也会缓存, 便于后续直接复用
  * 关于缓存时长
  * 当使用相关脚本时, 若在对应的脚本中使用参数(⚠ 别忘了这个, 一般为 cache, 值设为 true 即可)开启缓存
@@ -43,8 +44,14 @@
 
 async function operator(proxies = [], targetPlatform, context) {
   const $ = $substore;
-  const cacheEnabled = /true|1/.test($arguments.cache ?? 1);
+  // Always cache for the client.
+  let useCache = 1; // 默认为 1 (涵盖了非 JSON 平台)
+  if (targetPlatform === "JSON") {
+    // 只有在 JSON 平台且匹配失败或未定义时，才设为 0
+    useCache = /true|1/i.test($arguments.cache) ? 1 : 0;
+  }
   const cache = scriptResourceCache;
+  const cacheTtlMs = parseFloat($arguments.cache_ttl_ms ?? 24 * 60 * 60 * 1000);
   const http_meta_host = $arguments.http_meta_host ?? "127.0.0.1";
   const http_meta_port = $arguments.http_meta_port ?? 9876;
   const http_meta_protocol = $arguments.http_meta_protocol ?? "http";
@@ -74,13 +81,14 @@ async function operator(proxies = [], targetPlatform, context) {
   const detectionConfigs = [
     {
       key: "gpt",
+      cacheAiName: "gpt",
       name: "GPT",
       url: gptUrl,
       prefix: gptPrefix,
-      flagKey: "_gpt",
-      latencyKey: "_gpt_latency",
-      cacheKey: "gpt",
-      cacheLatencyKey: "gpt_latency",
+      flagKey: "canAccessGpt",
+      latencyKey: "gptLatency",
+      cacheKey: "canAccessGpt",
+      cacheLatencyKey: "gptLatency",
       userAgent:
         "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Mobile/15E148 Safari/604.1",
       isSuccess({ status }) {
@@ -89,14 +97,14 @@ async function operator(proxies = [], targetPlatform, context) {
     },
     {
       key: "gemini",
+      cacheAiName: "gm",
       name: "Gemini",
       url: "https://gemini.google.com/app",
       prefix: gmPrefix,
-      flagKey: "_gemini",
-      latencyKey: "_gemini_latency",
-      cacheKey: "gemini",
-      cacheLatencyKey: "gemini_latency",
-      cacheVariant: `country3_allow=${Array.from(geminiCountry3AllowSet).join(",")};country3_deny=${Array.from(geminiCountry3DenySet).join(",")}`,
+      flagKey: "canAccessGm",
+      latencyKey: "gmLatency",
+      cacheKey: "canAccessGm",
+      cacheLatencyKey: "gmLatency",
       userAgent:
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
     },
@@ -108,6 +116,7 @@ async function operator(proxies = [], targetPlatform, context) {
   const internalProxies = [];
   proxies.map((proxy, index) => {
     try {
+      clearLegacyAiFields(proxy);
       const node = ProxyUtils.produce(
         [{ ...proxy }],
         "ClashMeta",
@@ -129,40 +138,40 @@ async function operator(proxies = [], targetPlatform, context) {
   $.info(`核心支持节点数: ${internalProxies.length}/${proxies.length}`);
   if (!internalProxies.length) return proxies;
 
-  if (cacheEnabled) {
-    try {
-      let allCached = true;
-      for (let i = 0; i < internalProxies.length; i++) {
-        const proxy = internalProxies[i];
-        for (const detection of detectionConfigs) {
-          const id = getCacheId({ proxy, detection });
-          const cached = cache.get(id);
-          if (!cached) {
-            allCached = false;
-            break;
-          }
-        }
-        if (!allCached) {
-          break;
+  if (useCache) {
+    for (const proxy of internalProxies) {
+      for (const detection of detectionConfigs) {
+        const cached = getCache(getCacheId({ proxy, detection }));
+        const aiName = getCacheAiDisplayName(detection);
+        if (cached?.[detection.cacheKey]) {
+          applyDetectionSuccess({
+            proxyIndex: proxy._proxies_index,
+            detection,
+            latency: cached[detection.cacheLatencyKey],
+          });
+          $.info(
+            `[${proxy.name}] ${aiName} 可用, latency=${cached[detection.cacheLatencyKey]}ms`,
+          );
+        } else if (cached?.unsupported) {
+          const latencyText =
+            cached.unsupported_latency !== undefined
+              ? `, latency=${cached.unsupported_latency}ms`
+              : "";
+          const messageText = cached.unsupported_message
+            ? `, msg=${cached.unsupported_message}`
+            : "";
+          $.info(
+            `[${proxy.name}] ${aiName} 地区不支持${latencyText}${messageText}`,
+          );
+        } else if (cached) {
+          $.info(`[${proxy.name}] ${aiName} 不可用`);
+        } else {
+          $.info(`[${proxy.name}] ${aiName} 未检测`);
         }
       }
-      if (allCached) {
-        for (const proxy of internalProxies) {
-          for (const detection of detectionConfigs) {
-            const cached = cache.get(getCacheId({ proxy, detection }));
-            if (cached?.[detection.cacheKey]) {
-              applyDetectionSuccess({
-                proxyIndex: proxy._proxies_index,
-                detection,
-                latency: cached[detection.cacheLatencyKey],
-              });
-            }
-          }
-        }
-        $.info("所有节点都有有效缓存 完成");
-        return proxies;
-      }
-    } catch (e) {}
+    }
+    $.info("缓存模式完成");
+    return proxies;
   }
 
   const http_meta_timeout =
@@ -246,29 +255,8 @@ async function operator(proxies = [], targetPlatform, context) {
     }
   }
   async function runDetection({ proxy, detection }) {
-    const id = cacheEnabled ? getCacheId({ proxy, detection }) : undefined;
+    const id = getCacheId({ proxy, detection });
     try {
-      const cached = cacheEnabled ? cache.get(id) : undefined;
-      if (cacheEnabled && cached) {
-        if (cached[detection.cacheKey]) {
-          applyDetectionSuccess({
-            proxyIndex: proxy._proxies_index,
-            detection,
-            latency: cached[detection.cacheLatencyKey],
-          });
-          $.info(`[${proxy.name}] [${detection.name}] 使用成功结果缓存`);
-          return;
-        } else if (cached.unsupported) {
-          $.info(
-            `[${proxy.name}] [${detection.name}] 使用不支持地区结果缓存: ${cached.unsupported_message || ""}`,
-          );
-          return;
-        } else {
-          $.info(`[${proxy.name}] [${detection.name}] 使用失败结果缓存`);
-          return;
-        }
-      }
-
       const index = internalProxies.indexOf(proxy);
       const startedAt = Date.now();
       const requestMethod = detection.key === "gemini" ? "get" : method;
@@ -335,28 +323,26 @@ async function operator(proxies = [], targetPlatform, context) {
           detection,
           latency,
         });
-        if (cacheEnabled) {
-          $.info(`[${proxy.name}] [${detection.name}] 写入成功结果缓存`);
-          cache.set(id, {
-            [detection.cacheKey]: true,
-            [detection.cacheLatencyKey]: latency,
-          });
-        }
-      } else if (cacheEnabled && outcome === "unsupported") {
+        $.info(`[${proxy.name}] [${detection.name}] 写入成功结果缓存`);
+        setCache(id, {
+          [detection.cacheKey]: true,
+          [detection.cacheLatencyKey]: latency,
+        });
+      } else if (outcome === "unsupported") {
         $.info(`[${proxy.name}] [${detection.name}] 写入不支持地区结果缓存`);
-        cache.set(id, {
+        setCache(id, {
           unsupported: true,
           unsupported_message: msg || getUnsupportedMessage(bodyText),
           unsupported_latency: latency,
         });
       } else if (outcome === "transient_failure") {
-        if (cacheEnabled) {
-          $.info(`[${proxy.name}] [${detection.name}] 写入失败结果缓存(transient)`);
-          cache.set(id, {});
-        }
-      } else if (cacheEnabled) {
+        $.info(
+          `[${proxy.name}] [${detection.name}] 写入失败结果缓存(transient)`,
+        );
+        setCache(id, {});
+      } else {
         $.info(`[${proxy.name}] [${detection.name}] 写入失败结果缓存`);
-        cache.set(id, {});
+        setCache(id, {});
       }
     } catch (e) {
       const errorMessage = String(e?.message ?? e ?? "");
@@ -367,13 +353,13 @@ async function operator(proxies = [], targetPlatform, context) {
           detectionKey: detection.key,
         })
       ) {
-        if (cacheEnabled) {
-          $.info(`[${proxy.name}] [${detection.name}] 写入失败结果缓存(transient error)`);
-          cache.set(id, {});
-        }
-      } else if (cacheEnabled) {
+        $.info(
+          `[${proxy.name}] [${detection.name}] 写入失败结果缓存(transient error)`,
+        );
+        setCache(id, {});
+      } else {
         $.info(`[${proxy.name}] [${detection.name}] 写入失败结果缓存`);
-        cache.set(id, {});
+        setCache(id, {});
       }
     }
   }
@@ -381,6 +367,21 @@ async function operator(proxies = [], targetPlatform, context) {
     proxies[proxyIndex].name = `${proxies[proxyIndex].name}${detection.prefix}`;
     proxies[proxyIndex][detection.flagKey] = true;
     proxies[proxyIndex][detection.latencyKey] = latency;
+  }
+  function clearLegacyAiFields(proxy = {}) {
+    delete proxy._gpt;
+    delete proxy._gpt_latency;
+    delete proxy._gemini;
+    delete proxy._gemini_latency;
+  }
+  function getCache(id) {
+    return cache.get(id, 0, true);
+  }
+  function setCache(id, value) {
+    cache.set(id, value, cacheTtlMs);
+  }
+  function getCacheAiDisplayName(detection) {
+    return detection.cacheAiName === "gm" ? "GM" : "GPT";
   }
   function isUnsupportedResult({ message = "", bodyText = "" }) {
     return /unsupported_country|unsupported_country_region_territory|not available in your country|not available in your region|isn't available in your country|location is not supported/i.test(
@@ -442,9 +443,7 @@ async function operator(proxies = [], targetPlatform, context) {
       const country3 = `${geminiCountry3 ?? ""}`.toUpperCase();
       if (!country3) return "transient_failure";
       if (geminiCountry3AllowSet.size) {
-        return geminiCountry3AllowSet.has(country3)
-          ? "success"
-          : "unsupported";
+        return geminiCountry3AllowSet.has(country3) ? "success" : "unsupported";
       }
       if (geminiCountry3DenySet.has(country3)) {
         return "unsupported";
@@ -535,13 +534,7 @@ async function operator(proxies = [], targetPlatform, context) {
     return await fn();
   }
   function getCacheId({ proxy = {}, detection }) {
-    return `http-meta:${detection.key}:${detection.url}:${detection.cacheVariant || ""}:${JSON.stringify(
-      Object.fromEntries(
-        Object.entries(proxy).filter(
-          ([key]) => !/^(name|collectionName|subName|id|_.*)$/i.test(key),
-        ),
-      ),
-    )}`;
+    return `${proxy.server}:${proxy.port}:${detection.cacheAiName}`;
   }
   function executeAsyncTasks(tasks, { wrap, result, concurrency = 1 } = {}) {
     return new Promise(async (resolve, reject) => {

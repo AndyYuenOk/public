@@ -187,6 +187,7 @@ async function operator(proxies = [], targetPlatform, context) {
     // $.info(`[${proxy.name}] 检测`)
     // $.info(`检测 ${JSON.stringify(proxy, null, 2)}`)
     let queryServer = String(proxy.server || "").trim();
+    const originalServer = queryServer;
     let id = cacheEnabled ? getCacheId(proxy, queryServer) : undefined;
     // $.info(`检测 ${id}`)
     try {
@@ -197,6 +198,7 @@ async function operator(proxies = [], targetPlatform, context) {
         if (cached.api) {
           // $.info(`[${proxy.name}] 使用成功结果缓存`);
           $.log(`[${proxy.name}] api: ${JSON.stringify(cached.api, null, 2)}`);
+          logCountryCodeAso(proxy, cached.api);
           proxy.name = formatter({ proxy, api: cached.api, format, regex });
           proxy._entrance = cached.api;
           return;
@@ -217,8 +219,12 @@ async function operator(proxies = [], targetPlatform, context) {
           countryCode: utils.geoip(queryServer) || "",
           aso: utils.ipaso(queryServer) || "",
         };
+        const queryText =
+          originalServer && originalServer !== queryServer
+            ? `${originalServer} -> ${queryServer}`
+            : `queryServer: ${queryServer}`;
         $.info(
-          `[${proxy.name}] queryServer: ${queryServer}, countryCode: ${api.countryCode}, aso: ${api.aso}`,
+          `[${proxy.name}] ${queryText}, countryCode: ${api.countryCode}, aso: ${api.aso}`,
         );
         if (
           (api.countryCode || api.aso) &&
@@ -325,7 +331,6 @@ async function operator(proxies = [], targetPlatform, context) {
       return server;
     }
     const resolved = await resolveServer(server);
-    $.info(`${proxy.name} - ${server} -> ${resolved}`);
     return resolved;
   }
   async function resolveServer(server) {
@@ -397,6 +402,11 @@ async function operator(proxies = [], targetPlatform, context) {
       }
     }
     return normalized;
+  }
+  function logCountryCodeAso(proxy = {}, api = {}) {
+    $.log(
+      `[${proxy.name}] countryCode: ${api.countryCode || ""}, aso: ${api.aso || ""}`,
+    );
   }
   function executeAsyncTasks(tasks, { wrap, result, concurrency = 1 } = {}) {
     return new Promise(async (resolve, reject) => {
