@@ -73,14 +73,14 @@
 async function operator(proxies = [], targetPlatform, context) {
   const $ = $substore;
   const { isNode } = $.env;
-  const internal = /true|1/.test($arguments.internal ?? 1);
+  const internal = /true|1/.test($arguments.internal ?? 0);
   const mmdb_country_path = $arguments.mmdb_country_path;
   const mmdb_asn_path = $arguments.mmdb_asn_path;
   const resolveDomain = /true|1/.test($arguments.resolve_domain ?? 1);
   const regex = $arguments.regex;
+  const shouldRename = Boolean($arguments.format);
   let valid = $arguments.valid || `ProxyUtils.isIP('{{api.ip || api.query}}')`;
-  let format =
-    $arguments.format || `{{api.country}} {{api.isp}} - {{proxy.name}}`;
+  let format = $arguments.format || "";
   let utils;
   let dns;
   if (resolveDomain) {
@@ -135,7 +135,8 @@ async function operator(proxies = [], targetPlatform, context) {
   const cache = scriptResourceCache;
   const method = $arguments.method || "get";
   const url =
-    $arguments.api || `http://ip-api.com/json/{{proxy.server}}?lang=zh-CN`;
+    $arguments.api || `http://ip-api.com/json/{{proxy.server}}?lang=en`;
+  const ipApiRawCacheEnabled = /^https?:\/\/ip-api\.com\/json\//i.test(url);
   const concurrency = parseInt($arguments.concurrency || 10); // 一组并发数
   const shouldLogResolveDns =
     resolveDomain &&
@@ -199,7 +200,10 @@ async function operator(proxies = [], targetPlatform, context) {
           // $.info(`[${proxy.name}] 使用成功结果缓存`);
           $.log(`[${proxy.name}] api: ${JSON.stringify(cached.api, null, 2)}`);
           logCountryCodeAso(proxy, cached.api);
-          proxy.name = formatter({ proxy, api: cached.api, format, regex });
+          applyIpInfo(proxy, cached.api);
+          if (shouldRename) {
+            proxy.name = formatter({ proxy, api: cached.api, format, regex });
+          }
           proxy._entrance = cached.api;
           return;
         } else {
@@ -230,7 +234,10 @@ async function operator(proxies = [], targetPlatform, context) {
           (api.countryCode || api.aso) &&
           eval(formatter({ api, format: valid, regex }))
         ) {
-          proxy.name = formatter({ proxy, api, format, regex });
+          applyIpInfo(proxy, api);
+          if (shouldRename) {
+            proxy.name = formatter({ proxy, api, format, regex });
+          }
           proxy._entrance = api;
           if (cacheEnabled) {
             $.info(`[${proxy.name}] 写入成功结果缓存`);
@@ -243,30 +250,54 @@ async function operator(proxies = [], targetPlatform, context) {
           }
         }
       } else {
-        const res = await http({
-          method,
-          headers: {
-            "User-Agent":
-              "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Mobile/15E148 Safari/604.1",
-          },
-          url: formatter({
-            proxy: { ...proxy, server: queryServer },
-            format: url,
-          }),
-        });
-        api = String(lodash_get(res, "body"));
-        try {
-          api = JSON.parse(api);
-        } catch (e) {}
-        const status = parseInt(res.status || res.statusCode || 200);
+        const ipApiCacheId = getIpApiCacheId(queryServer);
+        const cachedIpApi = ipApiRawCacheEnabled
+          ? cache.get(ipApiCacheId, 0, true)
+          : null;
+        let status = 200;
         let latency = "";
-        latency = `${Date.now() - startedAt}`;
-        $.info(
-          `[${proxy.name}] queryServer: ${queryServer}, status: ${status}, latency: ${latency}`,
-        );
-        if (status == 200 && eval(formatter({ api, format: valid, regex }))) {
-          proxy.name = formatter({ proxy, api, format, regex });
+
+        if (cachedIpApi) {
+          api = cachedIpApi;
+          $.info(
+            `[${proxy.name}] queryServer: ${queryServer}, 使用 IP API 缓存, ${formatIpApiInfo(api)}`,
+          );
+        } else {
+          const res = await http({
+            method,
+            headers: {
+              "User-Agent":
+                "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Mobile/15E148 Safari/604.1",
+            },
+            url: ipApiRawCacheEnabled
+              ? getIpApiUrl(queryServer)
+              : formatter({
+                  proxy: { ...proxy, server: queryServer },
+                  format: url,
+                }),
+          });
+          api = String(lodash_get(res, "body"));
+          try {
+            api = JSON.parse(api);
+          } catch (e) {}
+          status = parseInt(res.status || res.statusCode || 200);
+          latency = `${Date.now() - startedAt}`;
+          $.info(
+            `[${proxy.name}] queryServer: ${queryServer}, status: ${status}, latency: ${latency}, ${formatIpApiInfo(api)}`,
+          );
+        }
+
+        const validApi = eval(formatter({ api, format: valid, regex }));
+        if (status == 200 && validApi) {
+          applyIpInfo(proxy, api);
+          if (shouldRename) {
+            proxy.name = formatter({ proxy, api, format, regex });
+          }
           proxy._entrance = api;
+          if (ipApiRawCacheEnabled && !cachedIpApi) {
+            $.info(`[${proxy.name}] 写入 IP API 缓存: ${queryServer}`);
+            cache.set(ipApiCacheId, api, getPermanentCacheTtl());
+          }
           if (cacheEnabled) {
             $.info(`[${proxy.name}] 写入成功结果缓存`);
             cache.set(id, { api });
@@ -316,7 +347,7 @@ async function operator(proxies = [], targetPlatform, context) {
     return await fn();
   }
   function getCacheId(proxy, queryServer) {
-    return `entrance:${url}:${format}:${regex}:${internal}:${resolveDomain}:${queryServer}:${JSON.stringify(
+    return `entrance:${url}:${format}:${regex}:${internal}:${resolveDomain}:${getMmdbCacheVariant()}:${queryServer}:${JSON.stringify(
       Object.fromEntries(
         Object.entries(proxy).filter(([key]) => {
           const re = new RegExp(uniq_key);
@@ -324,6 +355,36 @@ async function operator(proxies = [], targetPlatform, context) {
         }),
       ),
     )}`;
+  }
+  function getMmdbCacheVariant() {
+    if (!internal) return "";
+    return [
+      mmdb_country_path ||
+        eval("process.env.SUB_STORE_MMDB_COUNTRY_PATH") ||
+        "",
+      mmdb_asn_path || eval("process.env.SUB_STORE_MMDB_ASN_PATH") || "",
+    ].join("|");
+  }
+  function getIpApiCacheId(ip) {
+    return `entrance:ip-api:${ip}`;
+  }
+  function getIpApiUrl(ip) {
+    const query = String(url).split("?")[1];
+    return `http://ip-api.com/json/${encodeURIComponent(ip)}${query ? `?${query}` : ""}`;
+  }
+  function getPermanentCacheTtl() {
+    return 8640000000000000 - Date.now();
+  }
+  function formatIpApiInfo(api = {}) {
+    return `country: ${api.country || ""}, regionName: ${api.regionName || ""}, city: ${api.city || ""}, isp: ${api.isp || ""}`;
+  }
+  function applyIpInfo(proxy = {}, api = {}) {
+    proxy.ipCountryCode = api.countryCode;
+    proxy.ipCountry = api.country;
+    proxy.ipRegion = api.region;
+    proxy.ipCity = api.city;
+    proxy.ipRegionName = api.regionName;
+    proxy.ipIsp = api.isp;
   }
   async function getQueryServer(proxy) {
     const server = String(proxy.server || "").trim();

@@ -91,12 +91,12 @@ let routingRules = [
 
   "RULE-SET,icloud,DIRECT",
   "RULE-SET,apple,DIRECT",
-  "RULE-SET,google,Manual",
-  "RULE-SET,proxy,Manual",
+  "RULE-SET,google,Proxy",
+  "RULE-SET,proxy,Proxy",
   "RULE-SET,direct,DIRECT",
   "RULE-SET,lancidr,DIRECT",
   "RULE-SET,cncidr,DIRECT",
-  "RULE-SET,telegramcidr,Manual",
+  "RULE-SET,telegramcidr,Proxy",
 
   "GEOIP,LAN,DIRECT",
   "GEOIP,CN,DIRECT",
@@ -119,7 +119,7 @@ let strategyGroups = [
     proxies: [],
   },
   {
-    name: "Manual",
+    name: "Proxy",
     icon: "Static.png",
     type: "select",
     proxies: [],
@@ -134,13 +134,13 @@ let strategyGroups = [
     name: "Netflix",
     icon: "Netflix.png",
     type: "select",
-    proxies: ["Manual"],
+    proxies: ["Proxy"],
   },
   {
     name: "Microsoft",
     icon: "Microsoft.png",
     type: "select",
-    proxies: ["Manual", "DIRECT"],
+    proxies: ["Proxy", "DIRECT"],
   },
 
   {
@@ -161,7 +161,7 @@ let strategyGroups = [
     name: "Final",
     icon: "Final.png",
     type: "select",
-    proxies: ["Manual", "DIRECT"],
+    proxies: ["Proxy", "DIRECT"],
   },
 ];
 
@@ -200,10 +200,10 @@ function main(config) {
     );
   }
 
-  let ManualProxies = strategyGroups.find(
-    ({ name }) => name == "Manual",
+  let ProxyProxies = strategyGroups.find(
+    ({ name }) => name == "Proxy",
   ).proxies;
-  let fullNodeGroupNames = ["Manual", "AI", "Netflix"];
+  let fullNodeGroupNames = ["Proxy", "AI", "Netflix"];
 
   let autoSelectGroup,
     healthCheck = {
@@ -254,7 +254,7 @@ function main(config) {
 
   strategyGroups.unshift({ ...autoSelectGroup, ...healthCheck });
 
-  ManualProxies.push(autoSelectGroup.name);
+  ProxyProxies.push(autoSelectGroup.name);
 
   let allProxyNames = config.proxies.map((proxy) => proxy.name);
 
