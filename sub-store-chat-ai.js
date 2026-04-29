@@ -21,9 +21,9 @@
  * - [concurrency] 并发数 默认 10
  * - [client] GPT 检测的客户端类型(兼容保留). 不再影响 GPT URL
  * - [method] 请求方法. 默认 get
- * - [gpt_prefix] GPT 显示前缀. 默认为 " GPT"
+ * - [gpt_prefix] GPT 显示前缀. 默认不追加
  * - GPT 当前检测端点为 https://ios.chat.openai.com/public-api/auth/session, 规则为 404 成功
- * - [gm_prefix] Gemini 显示前缀. 默认为 " GM"
+ * - [gm_prefix] Gemini 显示前缀. 默认不追加
  * - [gm_country3_allow] Gemini 三位国家码允许列表, 逗号分隔. 默认空表示任意非拒绝国家
  * - [gm_country3_deny] Gemini 三位国家码拒绝列表, 逗号分隔. 默认 CHN
  * 注:
@@ -63,8 +63,8 @@ async function operator(proxies = [], targetPlatform, context) {
   const http_meta_proxy_timeout = parseFloat(
     $arguments.http_meta_proxy_timeout ?? 10000,
   );
-  const gptPrefix = $arguments.gpt_prefix ?? " GPT";
-  const gmPrefix = $arguments.gm_prefix ?? " GM";
+  const gptPrefix = $arguments.gpt_prefix ?? "";
+  const gmPrefix = $arguments.gm_prefix ?? "";
   const method = $arguments.method || "get";
   const geminiCountry3AllowSet = toCountryCodeSet(
     $arguments.gm_country3_allow ?? $arguments.gemini_country3_allow ?? "",
