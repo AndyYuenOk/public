@@ -27,7 +27,7 @@ async function operator(proxies = [], targetPlatform, context) {
   let useCache = 1; // 默认为 1 (涵盖了非 JSON 平台)
   if (targetPlatform === "JSON") {
     // 只有在 JSON 平台且匹配失败或未定义时，才设为 0
-    useCache = /true|1/i.test($arguments.cache) ? 1 : 0;
+    useCache = /true|1/i.test($arguments.cache ?? 0);
   }
 
   const speedSortedInputProxies = [...proxies].sort(compareProxySpeedDesc);
