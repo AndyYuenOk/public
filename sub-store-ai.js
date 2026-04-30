@@ -262,7 +262,8 @@ async function operator(proxies = [], targetPlatform, context) {
       }),
     });
     const stopStatus = String(res?.status ?? res?.statusCode ?? "");
-    $.info(`HTTP META 关闭响应: ${stopStatus}`);
+    const stopBody = String(res?.body ?? "");
+    $.info(`HTTP META 关闭响应: status=${stopStatus}, body=${stopBody}`);
     logHttpMetaBoundary("END");
   } catch (e) {
     $.error(e);
