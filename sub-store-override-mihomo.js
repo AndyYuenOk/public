@@ -200,9 +200,7 @@ function main(config) {
     );
   }
 
-  let ProxyProxies = strategyGroups.find(
-    ({ name }) => name == "Proxy",
-  ).proxies;
+  let ProxyProxies = strategyGroups.find(({ name }) => name == "Proxy").proxies;
   let fullNodeGroupNames = ["Proxy", "AI", "Netflix"];
 
   let autoSelectGroup,
@@ -238,7 +236,7 @@ function main(config) {
           type: "url-test",
           proxies: airportProxies,
         });
-        autoSelectGroup.proxies.push("Auto" + airportCode);
+        autoSelectGroup.proxies.push("Auto_" + airportCode);
       },
     );
   } else {

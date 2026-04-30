@@ -4,6 +4,7 @@ const FINAL_PROXIES_CACHE_KEY = "sub-store-free-optimized:final-proxies";
 // 测速文件，需要在超时时间内下载完成，目标，越小越好
 // 由于下载爬坡原因，估算速度 != 实际速度，但保证最低速度
 // https://github.com/litterinchina/large-file-download-test
+// 并行数量不要太多，避免并发抢带宽
 const DEFAULT_SPEED_TEST_URL =
   "https://github.com/BitDoctor/speed-test-file/raw/refs/heads/master/1mb.txt";
 const DEFAULT_TIMEOUT_MS = 5000;
