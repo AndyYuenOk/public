@@ -304,8 +304,10 @@ async function operator(proxies = [], targetPlatform, context) {
       let body;
       let geminiCountry3 = "";
       let gptLoc = "";
+      let geminiLocation = "";
       if (detection.key === "gemini") {
         const locationHeader = getHeaderValue(res.headers, "location");
+        geminiLocation = String(locationHeader || "");
         bodyText = String(res.body ?? res.rawBody ?? "");
         geminiCountry3 = getGeminiCountry3(bodyText);
         const details = [];
@@ -393,8 +395,12 @@ async function operator(proxies = [], targetPlatform, context) {
             : {}),
         });
       } else {
+        const locationText =
+          detection.key === "gemini" && geminiLocation
+            ? `, location=${geminiLocation}`
+            : "";
         $.info(
-          `[${proxy.name}] [${detection.name}] 错误, status=${status}, body=${bodyText}`,
+          `[${proxy.name}] [${detection.name}] 错误, status=${status}${locationText}, body=${bodyText}`,
         );
         setCache(id, {});
       }
@@ -485,7 +491,7 @@ async function operator(proxies = [], targetPlatform, context) {
   }
   function classifyGeminiCountry3Result({ status, geminiCountry3 = "" }) {
     if (status === 302) {
-      return "unsupported";
+      return "error";
     }
     if (status === 200) {
       const country3 = `${geminiCountry3 ?? ""}`.toUpperCase();

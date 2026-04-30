@@ -12,6 +12,15 @@ const SPEED_REFERENCE_LABEL = "A";
 async function operator(proxies = [], targetPlatform, context) {
   const $ = $substore;
   const cache = scriptResourceCache;
+  const logBoundary = (phase = "") =>
+    $.info(
+      `==================== [SUB-STORE-FREE-AVAILABLE ${phase}] ====================`,
+    );
+  const logHttpMetaBoundary = (phase = "", label = "") =>
+    $.info(
+      `==================== [HTTP META ${phase}${label ? ` ${label}` : ""}] ====================`,
+    );
+  logBoundary("START");
   // Incoming node names carry speed in text form; sort by parsed speed first.
   const compareProxySpeedDesc = (a, b) => {
     const speedA = normalizeProxyName(a?.name).speedKb ?? -1;
@@ -37,9 +46,11 @@ async function operator(proxies = [], targetPlatform, context) {
   if (useCache) {
     const cachedFinalProxies = tryReturnFinalProxiesCache();
     if (cachedFinalProxies) {
+      logBoundary("END");
       return cachedFinalProxies;
     }
     $.info("[cache-final] miss, cache=1 return empty proxies");
+    logBoundary("END");
     return [];
   }
 
@@ -89,6 +100,9 @@ async function operator(proxies = [], targetPlatform, context) {
   const geminiCountry3DenySet = toCountryCodeSet(
     $arguments.gm_country3_deny ?? $arguments.gemini_country3_deny ?? "CHN",
   );
+  const gptLocDenySet = toCountryCode2Set(
+    $arguments.gpt_loc_deny ?? $arguments.gpt_country_deny ?? "CN,HK",
+  );
 
   const normalHttpMetaStartDelay = parseInt(
     $arguments.normal_http_meta_start_delay ??
@@ -113,6 +127,7 @@ async function operator(proxies = [], targetPlatform, context) {
   $.info(
     `[gemini-country3] allow=${Array.from(geminiCountry3AllowSet).join("|") || "ANY"}, deny=${Array.from(geminiCountry3DenySet).join("|") || "NONE"}`,
   );
+  $.info(`[gpt-loc] deny=${Array.from(gptLocDenySet).join("|") || "NONE"}`);
 
   // Convert to ClashMeta/internal format once, while preserving custom metadata keys.
   const internalProxies = [];
@@ -145,7 +160,10 @@ async function operator(proxies = [], targetPlatform, context) {
   $.info(
     `[speed-test] url=${normalUrl}, method=${normalMethod}, size=actual_body, status=${validStatusRaw}`,
   );
-  if (!internalProxies.length) return [];
+  if (!internalProxies.length) {
+    logBoundary("END");
+    return [];
+  }
   // Candidate tracking across all batches.
   const aiPassSet = new Set();
   const aiCheckedSet = new Set();
@@ -172,7 +190,6 @@ async function operator(proxies = [], targetPlatform, context) {
     $.info(
       `[speed-stage-batch] total=${batch.length}, speed_pass_batch=${speedPassBatchSet.size}, speed_total=${speedPassSet.size}/${take}`,
     );
-    $.info("========================================");
   }
 
   $.info(
@@ -193,7 +210,7 @@ async function operator(proxies = [], targetPlatform, context) {
         $.info(
           `[ai-stage-batch] total=${aiBatch.length}, ai_pass_batch=${aiPassBatchSet.size}, ai_total=${aiPassSet.size}/${aiTarget}, ai_candidate_total=${countAiCandidates()}/${aiTarget}`,
         );
-        $.info("========================================");
+
         continue;
       }
 
@@ -276,6 +293,7 @@ async function operator(proxies = [], targetPlatform, context) {
   $.info(
     `[done] ai=${aiPassSet.size}, ai_candidate=${aiCandidateCount}, ai_quota=${aiQuota}, speed=${speedPassSet.size}, candidate=${candidateSet.size}, filled=${Math.max(0, finalSelectedRecords.length - selectedRecords.length)}, output=${finalProxies.length}`,
   );
+  logBoundary("END");
   return finalProxies;
 
   function countAiCandidates() {
@@ -584,51 +602,77 @@ async function operator(proxies = [], targetPlatform, context) {
       });
 
       const status = parseInt(res.status || res.statusCode || 200, 10);
-      let message = "";
       let bodyText = "";
+      let body;
       let geminiCountry3 = "";
+      let gptLoc = "";
+      let locationHeader = "";
       if (detection.key === "gemini") {
-        const location = getHeaderValue(res.headers, "location");
         bodyText = String(res.body ?? res.rawBody ?? "");
         geminiCountry3 = getGeminiCountry3(bodyText);
-        const details = [];
-        if (location) details.push(`location: ${location}`);
-        if (geminiCountry3) details.push(`gbar_country3: ${geminiCountry3}`);
-        message = details.join(", ");
+        locationHeader = String(getHeaderValue(res.headers, "location") || "");
+      } else if (detection.key === "gpt") {
+        const rawBody = String(res.body ?? res.rawBody ?? "");
+        bodyText = rawBody;
+        const trace = parseTraceFields(rawBody);
+        gptLoc = String(trace.loc || "").toUpperCase();
       } else {
         const rawBody = String(res.body ?? res.rawBody ?? "");
-        let body = rawBody;
+        body = rawBody;
         try {
           body = JSON.parse(rawBody);
         } catch (e) {}
-        message = String(
-          body?.error?.code ||
-            body?.error?.error_type ||
-            body?.cf_details ||
-            body?.message ||
-            "",
-        );
         bodyText = typeof body === "string" ? body : rawBody;
       }
 
       const latency = Date.now() - startedAt;
-      $.info(
-        `[${proxy.name}] [${detection.name}] status=${status}, msg=${message}, latency=${latency}`,
-      );
-
       const outcome = classifyAiResult({
         detection,
         status,
+        bodyText,
+        body,
         geminiCountry3,
+        gptLoc,
       });
 
       if (outcome === "success") {
         applyAiDetectionSuccess(proxy, detection, latency);
+        const regionText =
+          detection.key === "gemini" && geminiCountry3
+            ? `, region=${geminiCountry3}`
+            : detection.key === "gpt" && gptLoc
+              ? `, loc=${gptLoc}`
+              : "";
+        $.info(
+          `[${proxy.name}] [${detection.name}] 支持, status=${status}${regionText}`,
+        );
+      } else if (outcome === "unsupported") {
+        const regionText =
+          detection.key === "gemini" && geminiCountry3
+            ? `, region=${geminiCountry3}`
+            : detection.key === "gpt" && gptLoc
+              ? `, loc=${gptLoc}`
+              : "";
+        const locationText =
+          detection.key === "gemini" && status === 302 && locationHeader
+            ? `, location=${locationHeader}`
+            : "";
+        $.info(
+          `[${proxy.name}] [${detection.name}] 不支持(地区限制), status=${status}${regionText}${locationText}`,
+        );
+      } else {
+        $.info(
+          `[${proxy.name}] [${detection.name}] 错误, status=${status}, body=${bodyText}`,
+        );
       }
 
       return { outcome };
     } catch (e) {
-      $.error(`[${proxy.name}] [${detection.name}] ${e.message ?? e}`);
+      const errorMessage = String(e?.message ?? e ?? "");
+      const errorBody = String(e?.response?.body ?? e?.response?.rawBody ?? "");
+      $.info(
+        `[${proxy.name}] [${detection.name}] 错误, status=ERR, body=${errorBody || errorMessage}`,
+      );
       return { outcome: "hard_failure" };
     }
   }
@@ -723,17 +767,23 @@ async function operator(proxies = [], targetPlatform, context) {
     }
   }
 
-  function classifyAiResult({ detection, status, geminiCountry3 = "" }) {
-    // GPT heuristic: reachable endpoints usually return 404 from this probe route.
+  function classifyAiResult({
+    detection,
+    status,
+    geminiCountry3 = "",
+    gptLoc = "",
+  }) {
     if (detection.key === "gpt") {
-      return status === 404 ? "success" : "hard_failure";
+      if (status !== 200) return "hard_failure";
+      const loc = `${gptLoc ?? ""}`.toUpperCase();
+      if (!loc) return "hard_failure";
+      return gptLocDenySet.has(loc) ? "unsupported" : "success";
     }
-    // Gemini heuristic: 200 + valid country pass; 302 usually indicates unsupported region.
     if (detection.key === "gemini") {
-      if (status === 302) return "unsupported";
+      if (status === 302) return "hard_failure";
       if (status === 200) {
         const country3 = `${geminiCountry3 ?? ""}`.toUpperCase();
-        if (!country3) return "transient_failure";
+        if (!country3) return "hard_failure";
         if (geminiCountry3AllowSet.size) {
           return geminiCountry3AllowSet.has(country3)
             ? "success"
@@ -744,7 +794,7 @@ async function operator(proxies = [], targetPlatform, context) {
         }
         return "success";
       }
-      return "transient_failure";
+      return "hard_failure";
     }
     return "hard_failure";
   }
@@ -806,8 +856,9 @@ async function operator(proxies = [], targetPlatform, context) {
     });
 
     const portsCount = Array.isArray(ports) ? ports.length : 0;
+    logHttpMetaBoundary("START", label);
     $.info(
-      `======== HTTP-META START [${label}] ========\n[status] ${startStatus} [pid] ${pid} [ports_count] ${portsCount} [proxies] ${batchProxies.length} [timeout] ${totalTimeout}`,
+      `[status] ${startStatus} [pid] ${pid} [ports_count] ${portsCount} [proxies] ${batchProxies.length} [timeout] ${totalTimeout}`,
     );
     await $.wait(startDelay);
     return { pid, portBySortedIndex };
@@ -831,9 +882,8 @@ async function operator(proxies = [], targetPlatform, context) {
         stopRes?.status || stopRes?.statusCode || 0,
         10,
       );
-      $.info(
-        `======== HTTP-META STOP [${label}] =========\n[status] ${stopStatus} [pid] ${pid}`,
-      );
+      logHttpMetaBoundary("END", label);
+      $.info(`[status] ${stopStatus} [pid] ${pid}`);
     } catch (e) {
       $.error(e);
     }
@@ -1008,11 +1058,11 @@ async function operator(proxies = [], targetPlatform, context) {
         key: "gpt",
         name: "GPT",
         appendTag: "GPT",
-        url: "https://ios.chat.openai.com/public-api/auth/session",
+        url: "https://chat.openai.com/cdn-cgi/trace",
         flagKey: "_gpt",
         latencyKey: "_gpt_latency",
         userAgent:
-          "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Mobile/15E148 Safari/604.1",
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
       });
     }
 
@@ -1153,6 +1203,20 @@ async function operator(proxies = [], targetPlatform, context) {
     return "";
   }
 
+  function parseTraceFields(bodyText = "") {
+    const trace = {};
+    const lines = String(bodyText ?? "").split(/\r?\n/g);
+    for (const line of lines) {
+      const idx = line.indexOf("=");
+      if (idx <= 0) continue;
+      const key = line.slice(0, idx).trim();
+      const value = line.slice(idx + 1).trim();
+      if (!key) continue;
+      trace[key] = value;
+    }
+    return trace;
+  }
+
   function toCountryCodeSet(raw = "") {
     const text = `${raw ?? ""}`.trim();
     if (!text) return new Set();
@@ -1161,6 +1225,17 @@ async function operator(proxies = [], targetPlatform, context) {
         .split(",")
         .map((item) => item.trim().toUpperCase())
         .filter((item) => /^[A-Z]{3}$/.test(item)),
+    );
+  }
+
+  function toCountryCode2Set(raw = "") {
+    const text = `${raw ?? ""}`.trim();
+    if (!text) return new Set();
+    return new Set(
+      text
+        .split(",")
+        .map((item) => item.trim().toUpperCase())
+        .filter((item) => /^[A-Z]{2}$/.test(item)),
     );
   }
 
