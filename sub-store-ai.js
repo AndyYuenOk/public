@@ -23,7 +23,8 @@
  * - [client] GPT 检测的客户端类型(兼容保留). 不再影响 GPT URL
  * - [method] 请求方法. 默认 get
  * - [gpt_prefix] GPT 显示前缀. 默认不追加
- * - GPT 当前检测端点为 https://ios.chat.openai.com/public-api/auth/session, 规则为 404 成功
+ * - [gpt_loc_deny/gpt_country_deny] GPT loc 黑名单, 逗号分隔. 默认 CN,HK
+ * - GPT 当前检测端点为 https://chat.openai.com/cdn-cgi/trace, 规则为 status=200 且 loc 不在黑名单
  * - [gm_prefix] Gemini 显示前缀. 默认不追加
  * - [gm_country3_allow] Gemini 三位国家码允许列表, 逗号分隔. 默认空表示任意非拒绝国家
  * - [gm_country3_deny] Gemini 三位国家码拒绝列表, 逗号分隔. 默认 CHN
@@ -45,6 +46,13 @@
 
 async function operator(proxies = [], targetPlatform, context) {
   const $ = $substore;
+  const logBoundary = (phase = "") =>
+    $.info(
+      `==================== [SUB-STORE-AI ${phase}] ====================`,
+    );
+  const logHttpMetaBoundary = (phase = "") =>
+    $.info(`==================== [HTTP META ${phase}] ====================`);
+  logBoundary("START");
   // Always cache for the client.
   let useCache = 1; // 默认为 1 (涵盖了非 JSON 平台)
   if (targetPlatform === "JSON") {
@@ -72,8 +80,11 @@ async function operator(proxies = [], targetPlatform, context) {
   const geminiCountry3DenySet = toCountryCodeSet(
     $arguments.gm_country3_deny ?? $arguments.gemini_country3_deny ?? "CHN",
   );
-  // `client` is kept for backward compatibility, but GPT check now always uses iOS session endpoint.
-  const gptUrl = `https://ios.chat.openai.com/public-api/auth/session`;
+  const gptLocDenySet = toCountryCode2Set(
+    $arguments.gpt_loc_deny ?? $arguments.gpt_country_deny ?? "CN,HK",
+  );
+  // `client` is kept for backward compatibility, but GPT check now always uses trace endpoint.
+  const gptUrl = `https://chat.openai.com/cdn-cgi/trace`;
   const networkTransientFailureRegex =
     /exceeds the timeout|timed out|timeout|client network socket disconnected before secure tls connection was established|socket hang up|econnreset/i;
   const policyTransientFailureRegex =
@@ -90,9 +101,9 @@ async function operator(proxies = [], targetPlatform, context) {
       cacheKey: "canAccessGpt",
       cacheLatencyKey: "gptLatency",
       userAgent:
-        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Mobile/15E148 Safari/604.1",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
       isSuccess({ status }) {
-        return status === 404;
+        return status === 200;
       },
     },
     {
@@ -112,6 +123,7 @@ async function operator(proxies = [], targetPlatform, context) {
   $.info(
     `[gemini-country3] allow=${Array.from(geminiCountry3AllowSet).join("|") || "ANY"}, deny=${Array.from(geminiCountry3DenySet).join("|") || "NONE"}`,
   );
+  $.info(`[gpt-loc] deny=${Array.from(gptLocDenySet).join("|") || "NONE"}`);
 
   const internalProxies = [];
   proxies.map((proxy, index) => {
@@ -139,7 +151,10 @@ async function operator(proxies = [], targetPlatform, context) {
     }
   });
   $.info(`核心支持节点数: ${internalProxies.length}/${proxies.length}`);
-  if (!internalProxies.length) return proxies;
+  if (!internalProxies.length) {
+    logBoundary("END");
+    return proxies;
+  }
 
   if (useCache) {
     for (const proxy of internalProxies) {
@@ -152,28 +167,30 @@ async function operator(proxies = [], targetPlatform, context) {
             detection,
             latency: cached[detection.cacheLatencyKey],
           });
+          const regionText = getCachedSupportedRegionText({
+            detection,
+            cached,
+          });
           $.info(
-            `[${proxy.name}] ${aiName} 可用, latency=${cached[detection.cacheLatencyKey]}ms`,
+            `[${proxy.name}] ${aiName} 支持, status=支持${regionText}`,
           );
         } else if (cached?.unsupported) {
-          const latencyText =
-            cached.unsupported_latency !== undefined
-              ? `, latency=${cached.unsupported_latency}ms`
+          const regionText =
+            detection.key === "gemini" && cached.unsupported_region
+              ? `, region=${cached.unsupported_region}`
               : "";
-          const messageText = cached.unsupported_message
-            ? `, msg=${cached.unsupported_message}`
-            : "";
           $.info(
-            `[${proxy.name}] ${aiName} 地区不支持${latencyText}${messageText}`,
+            `[${proxy.name}] ${aiName} 不支持(地区限制), status=不支持${regionText}`,
           );
         } else if (cached) {
-          $.info(`[${proxy.name}] ${aiName} 不可用`);
+          $.info(`[${proxy.name}] ${aiName} 错误, status=错误`);
         } else {
           $.info(`[${proxy.name}] ${aiName} 未检测`);
         }
       }
     }
     $.info("缓存模式完成");
+    logBoundary("END");
     return proxies;
   }
 
@@ -203,11 +220,13 @@ async function operator(proxies = [], targetPlatform, context) {
   } catch (e) {}
   const { ports, pid } = body;
   if (!pid || !ports) {
-    throw new Error(`======== HTTP META 启动失败 ====\n${body}`);
+    logHttpMetaBoundary("ERROR");
+    logBoundary("END");
+    throw new Error(`HTTP META 启动失败\n${body}`);
   }
   http_meta_pid = pid;
   http_meta_ports = ports;
-  $.info(`======== HTTP META 启动 ========`);
+  logHttpMetaBoundary("START");
   $.info(
     `HTTP META 启动: 端口数量=${Array.isArray(ports) ? ports.length : 0}, PID=${pid}, 超时=${Math.round(http_meta_timeout / 60 / 10) / 100} 分钟后自动关闭`,
   );
@@ -231,6 +250,7 @@ async function operator(proxies = [], targetPlatform, context) {
 
   // stop http meta
   try {
+    logHttpMetaBoundary("STOP");
     const res = await http({
       method: "post",
       url: `${http_meta_api}/stop`,
@@ -242,12 +262,14 @@ async function operator(proxies = [], targetPlatform, context) {
         pid: [http_meta_pid],
       }),
     });
-    $.info(`\n======== HTTP META 关闭 ====\n${JSON.stringify(res, null, 2)}`);
-    $.info(`======== HTTP META 结束 ========`);
+    $.info(`HTTP META 关闭响应: ${String(res?.body ?? "")}`);
+    logHttpMetaBoundary("END");
   } catch (e) {
     $.error(e);
+    logHttpMetaBoundary("END");
   }
 
+  logBoundary("END");
   return proxies;
 
   async function check(proxy) {
@@ -259,9 +281,9 @@ async function operator(proxies = [], targetPlatform, context) {
   }
   async function runDetection({ proxy, detection }) {
     const id = getCacheId({ proxy, detection });
+    const startedAt = Date.now();
     try {
       const index = internalProxies.indexOf(proxy);
-      const startedAt = Date.now();
       const requestMethod = detection.key === "gemini" ? "get" : method;
       const res = await http({
         proxy: `http://${http_meta_host}:${http_meta_ports[index]}`,
@@ -283,6 +305,7 @@ async function operator(proxies = [], targetPlatform, context) {
       let bodyText = "";
       let body;
       let geminiCountry3 = "";
+      let gptLoc = "";
       if (detection.key === "gemini") {
         const locationHeader = getHeaderValue(res.headers, "location");
         bodyText = String(res.body ?? res.rawBody ?? "");
@@ -290,6 +313,17 @@ async function operator(proxies = [], targetPlatform, context) {
         const details = [];
         if (locationHeader) details.push(`location: ${locationHeader}`);
         if (geminiCountry3) details.push(`gbar_country3: ${geminiCountry3}`);
+        msg = details.join(", ");
+      } else if (detection.key === "gpt") {
+        const rawBody = String(res.body ?? res.rawBody ?? "");
+        bodyText = rawBody;
+        const trace = parseTraceFields(rawBody);
+        gptLoc = String(trace.loc || "").toUpperCase();
+        const details = [];
+        if (trace.h) details.push(`h: ${trace.h}`);
+        if (gptLoc) details.push(`loc: ${gptLoc}`);
+        if (trace.ip) details.push(`ip: ${trace.ip}`);
+        if (trace.colo) details.push(`colo: ${trace.colo}`);
         msg = details.join(", ");
       } else {
         const rawBody = String(res.body ?? res.rawBody ?? "");
@@ -307,9 +341,6 @@ async function operator(proxies = [], targetPlatform, context) {
         bodyText = typeof body === "string" ? body : rawBody;
       }
       const latency = Date.now() - startedAt;
-      $.info(
-        `[${proxy.name}] [${detection.name}] status: ${status}, msg: ${msg}, latency: ${latency}`,
-      );
       const outcome = classifyDetectionResult({
         detection,
         status,
@@ -318,52 +349,64 @@ async function operator(proxies = [], targetPlatform, context) {
         body,
         headers: res.headers,
         geminiCountry3,
+        gptLoc,
       });
 
-      if (outcome === "success") {
+      if (outcome === "supported") {
         applyDetectionSuccess({
           proxyIndex: proxy._proxies_index,
           detection,
           latency,
         });
-        $.info(`[${proxy.name}] [${detection.name}] 写入成功结果缓存`);
+        const regionText =
+          detection.key === "gemini" && geminiCountry3
+            ? `, region=${geminiCountry3}`
+            : detection.key === "gpt" && gptLoc
+              ? `, loc=${gptLoc}`
+            : "";
+        $.info(
+          `[${proxy.name}] [${detection.name}] 支持, status=${status}${regionText}`,
+        );
         setCache(id, {
           [detection.cacheKey]: true,
           [detection.cacheLatencyKey]: latency,
+          ...(detection.key === "gemini" && geminiCountry3
+            ? { supported_region: geminiCountry3 }
+            : detection.key === "gpt" && gptLoc
+              ? { supported_region: gptLoc }
+            : {}),
         });
       } else if (outcome === "unsupported") {
-        $.info(`[${proxy.name}] [${detection.name}] 写入不支持地区结果缓存`);
+        const locText =
+          detection.key === "gpt" && gptLoc
+            ? `, loc=${gptLoc}`
+            : detection.key === "gemini" && geminiCountry3
+              ? `, region=${geminiCountry3}`
+              : "";
+        $.info(
+          `[${proxy.name}] [${detection.name}] 不支持(地区限制), status=${status}${locText}`,
+        );
         setCache(id, {
           unsupported: true,
           unsupported_message: msg || getUnsupportedMessage(bodyText),
           unsupported_latency: latency,
+          ...(detection.key === "gemini" && geminiCountry3
+            ? { unsupported_region: geminiCountry3 }
+            : {}),
         });
-      } else if (outcome === "transient_failure") {
-        $.info(
-          `[${proxy.name}] [${detection.name}] 写入失败结果缓存(transient)`,
-        );
-        setCache(id, {});
       } else {
-        $.info(`[${proxy.name}] [${detection.name}] 写入失败结果缓存`);
+        $.info(
+          `[${proxy.name}] [${detection.name}] 错误, status=${status}, body=${bodyText}`,
+        );
         setCache(id, {});
       }
     } catch (e) {
       const errorMessage = String(e?.message ?? e ?? "");
-      $.error(`[${proxy.name}] [${detection.name}] ${errorMessage}`);
-      if (
-        isTransientTextForDetection({
-          text: errorMessage,
-          detectionKey: detection.key,
-        })
-      ) {
-        $.info(
-          `[${proxy.name}] [${detection.name}] 写入失败结果缓存(transient error)`,
-        );
-        setCache(id, {});
-      } else {
-        $.info(`[${proxy.name}] [${detection.name}] 写入失败结果缓存`);
-        setCache(id, {});
-      }
+      const errorBody = String(e?.response?.body ?? e?.response?.rawBody ?? "");
+      $.info(
+        `[${proxy.name}] [${detection.name}] 错误, status=ERR, body=${errorBody || errorMessage}`,
+      );
+      setCache(id, {});
     }
   }
   function applyDetectionSuccess({ proxyIndex, detection, latency }) {
@@ -399,9 +442,13 @@ async function operator(proxies = [], targetPlatform, context) {
     body,
     headers = {},
     geminiCountry3 = "",
+    gptLoc = "",
   }) {
     if (detection.key === "gpt") {
-      return status === 404 ? "success" : "hard_failure";
+      if (status !== 200) return "error";
+      const loc = `${gptLoc ?? ""}`.toUpperCase();
+      if (!loc) return "error";
+      return gptLocDenySet.has(loc) ? "unsupported" : "supported";
     }
     if (detection.key === "gemini") {
       return classifyGeminiCountry3Result({ status, geminiCountry3 });
@@ -417,12 +464,12 @@ async function operator(proxies = [], targetPlatform, context) {
         detectionKey: detection.key,
       })
     ) {
-      return "transient_failure";
+      return "error";
     }
     if (detection.isSuccess({ status, message, bodyText, body })) {
-      return "success";
+      return "supported";
     }
-    return "hard_failure";
+    return "error";
   }
   function isTransientFailure({
     status,
@@ -444,16 +491,18 @@ async function operator(proxies = [], targetPlatform, context) {
     }
     if (status === 200) {
       const country3 = `${geminiCountry3 ?? ""}`.toUpperCase();
-      if (!country3) return "transient_failure";
+      if (!country3) return "error";
       if (geminiCountry3AllowSet.size) {
-        return geminiCountry3AllowSet.has(country3) ? "success" : "unsupported";
+        return geminiCountry3AllowSet.has(country3)
+          ? "supported"
+          : "unsupported";
       }
       if (geminiCountry3DenySet.has(country3)) {
         return "unsupported";
       }
-      return "success";
+      return "supported";
     }
-    return "transient_failure";
+    return "error";
   }
   function getHeaderValue(headers = {}, key = "") {
     const lowered = String(key).toLowerCase();
@@ -476,11 +525,31 @@ async function operator(proxies = [], targetPlatform, context) {
     }
     return false;
   }
+  function getCachedSupportedRegionText({ detection, cached }) {
+    const region = String(cached?.supported_region || "");
+    if (!region) return "";
+    if (detection.key === "gpt") return `, loc=${region}`;
+    if (detection.key === "gemini") return `, region=${region}`;
+    return "";
+  }
   function getUnsupportedMessage(bodyText = "") {
     const matched = `${bodyText}`.match(
       /unsupported_country_region_territory|unsupported_country|not available in your country|not available in your region|isn't available in your country|location is not supported/i,
     );
     return matched?.[0] || "";
+  }
+  function parseTraceFields(bodyText = "") {
+    const trace = {};
+    const lines = String(bodyText ?? "").split(/\r?\n/g);
+    for (const line of lines) {
+      const idx = line.indexOf("=");
+      if (idx <= 0) continue;
+      const key = line.slice(0, idx).trim();
+      const value = line.slice(idx + 1).trim();
+      if (!key) continue;
+      trace[key] = value;
+    }
+    return trace;
   }
   function getGeminiCountry3(bodyText = "") {
     const text = String(bodyText ?? "");
@@ -506,6 +575,16 @@ async function operator(proxies = [], targetPlatform, context) {
         .split(",")
         .map((item) => item.trim().toUpperCase())
         .filter((item) => /^[A-Z]{3}$/.test(item)),
+    );
+  }
+  function toCountryCode2Set(raw = "") {
+    const text = `${raw ?? ""}`.trim();
+    if (!text) return new Set();
+    return new Set(
+      text
+        .split(",")
+        .map((item) => item.trim().toUpperCase())
+        .filter((item) => /^[A-Z]{2}$/.test(item)),
     );
   }
   // 请求
