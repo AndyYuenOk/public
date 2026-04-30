@@ -250,7 +250,6 @@ async function operator(proxies = [], targetPlatform, context) {
 
   // stop http meta
   try {
-    logHttpMetaBoundary("STOP");
     const res = await http({
       method: "post",
       url: `${http_meta_api}/stop`,
@@ -262,7 +261,8 @@ async function operator(proxies = [], targetPlatform, context) {
         pid: [http_meta_pid],
       }),
     });
-    $.info(`HTTP META 关闭响应: ${String(res?.body ?? "")}`);
+    const stopStatus = String(res?.status ?? res?.statusCode ?? "");
+    $.info(`HTTP META 关闭响应: ${stopStatus}`);
     logHttpMetaBoundary("END");
   } catch (e) {
     $.error(e);

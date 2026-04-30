@@ -79,6 +79,9 @@ async function operator(proxies = [], targetPlatform, context) {
     useCache = /true|1/i.test($arguments.cache ?? 0);
   }
   const $ = $substore;
+  const logBoundary = (phase = "") =>
+    $.info(`==================== [SUB-STORE-ENTRANCE ${phase}] ====================`);
+  logBoundary("START");
   const { isNode } = $.env;
   const internal = /true|1/.test($arguments.internal ?? 0);
   const mmdb_country_path = $arguments.mmdb_country_path;
@@ -92,6 +95,7 @@ async function operator(proxies = [], targetPlatform, context) {
   let dns;
   if (resolveDomain) {
     if (!isNode) {
+      logBoundary("END");
       throw new Error("resolve_domain 仅支持 Node.js 环境");
     }
     dns = require("dns").promises;
@@ -125,6 +129,7 @@ async function operator(proxies = [], targetPlatform, context) {
         $.error(
           `目前仅支持 Surge/Loon(build >= 692) 等有 $utils.ipaso 和 $utils.geoip API 的 App`,
         );
+        logBoundary("END");
         throw new Error("不支持使用内部方法获取 IP 信息, 请查看日志");
       }
       utils = $utils;
@@ -195,6 +200,7 @@ async function operator(proxies = [], targetPlatform, context) {
 
   $.info(`[stats] nodes: ${nodeCount}, ip-api requests: ${ipApiRequestCount}`);
 
+  logBoundary("END");
   return proxies;
 
   async function check(proxy) {
@@ -239,7 +245,7 @@ async function operator(proxies = [], targetPlatform, context) {
         const queryText =
           originalServer && originalServer !== queryServer
             ? `${originalServer} -> ${queryServer}`
-            : `queryServer: ${queryServer}`;
+            : `${queryServer}`;
         $.info(
           `[${proxy.name}] ${queryText}, countryCode: ${api.countryCode}, aso: ${api.aso}`,
         );
@@ -269,18 +275,18 @@ async function operator(proxies = [], targetPlatform, context) {
 
         if (ipApiResult.source === "persistent-cache") {
           $.info(
-            `[${proxy.name}] queryServer: ${queryServer}, using IP API persistent cache, ${formatIpApiInfo(api)}`,
+            `[${proxy.name}] ${queryServer}, using IP API persistent cache, ${formatIpApiInfo(api)}`,
           );
         } else if (
           ipApiResult.source === "shared-cache" ||
           ipApiResult.source === "shared-inflight"
         ) {
           $.info(
-            `[${proxy.name}] queryServer: ${queryServer}, using deduplicated IP result, ${formatIpApiInfo(api)}`,
+            `[${proxy.name}] ${queryServer}, deduplicated, ${formatIpApiInfo(api)}`,
           );
         } else {
           $.info(
-            `[${proxy.name}] queryServer: ${queryServer}, status: ${status}, latency: ${ipApiResult.latency}, ${formatIpApiInfo(api)}`,
+            `[${proxy.name}] ${queryServer}, status: ${status}, ${formatIpApiInfo(api)}`,
           );
         }
         const validApi = eval(formatter({ api, format: valid, regex }));
