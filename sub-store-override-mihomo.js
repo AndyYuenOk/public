@@ -229,14 +229,15 @@ function main(config) {
 
     Object.entries(airportProxyMap).forEach(
       ([airportCode, airportProxies], groupInsertIndex) => {
+        let name = "Auto_" + airportCode;
         // Create one url-test group per airport.
         strategyGroups.splice(groupInsertIndex, 0, {
-          name: "Auto" + airportCode,
+          name,
           icon: "Urltest.png",
           type: "url-test",
           proxies: airportProxies,
         });
-        autoSelectGroup.proxies.push("Auto_" + airportCode);
+        autoSelectGroup.proxies.push(name);
       },
     );
   } else {
