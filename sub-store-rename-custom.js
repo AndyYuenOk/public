@@ -12,14 +12,15 @@ if ($arguments?.is_multiple) {
     .replace(/.*China Unicom.*/, "CU")
     .replace(/.*Chinanet.*/, "CT")
     .replace(/.*Amazon.*/, "AMZ")
-    // .replace(/Cloudflare.*?(?= -)/, "CF")
     .replace(/.*Microsoft.*/, "Azure")
     .replace(/.*Chunghwa Telecom.*/, "HiNet")
     .replace(/.*HostPapa.*/, "HPAPA")
     .replace(/.*NetLab.*/, "NetLab")
-    // .replace(/PAN-LIAN.*?(?= -)/, "PL")
     .replace(/.*Hong Kong Telecommunications.*/, "HKT")
-    .replace(/.*Alibaba.*/, "Ali");
+    .replace(/.*Alibaba.*/, "Ali")
+    .replace(/Technology|Co\.,|Ltd\./, "")
+    .replace(/\s{2,}/, " ")
+    .trim();
 
   $server.name = [
     countryFlagMap[$server.name.split(" ")[0]],
