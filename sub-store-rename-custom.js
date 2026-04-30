@@ -18,7 +18,7 @@ if ($arguments?.is_multiple) {
     .replace(/.*NetLab.*/, "NetLab")
     .replace(/.*Hong Kong Telecommunications.*/, "HKT")
     .replace(/.*Alibaba.*/, "Ali")
-    .replace(/Technology|Co\.,|Ltd\./, "")
+    .replace(/Technology|Co\.,|Ltd\./g, "")
     .replace(/\s{2,}/, " ")
     .trim();
 
