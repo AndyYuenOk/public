@@ -49,7 +49,7 @@ async function operator(proxies = [], targetPlatform, context) {
   let useCache = 1; // 默认为 1 (涵盖了非 JSON 平台)
   if (targetPlatform === "JSON") {
     // 只有在 JSON 平台且匹配失败或未定义时，才设为 0
-    useCache = /true|1/i.test($arguments.cache) ? 1 : 0;
+    useCache = /true|1/i.test($arguments.cache ?? 0);
   }
   const cache = scriptResourceCache;
   const http_meta_host = $arguments.http_meta_host ?? "127.0.0.1";
@@ -128,6 +128,9 @@ async function operator(proxies = [], targetPlatform, context) {
             node[key] = proxy[key];
           }
         }
+        // Keep original endpoint for stable cache key.
+        node._origin_server = proxy.server;
+        node._origin_port = proxy.port;
         // $.info(JSON.stringify(node, null, 2))
         internalProxies.push({ ...node, _proxies_index: index });
       }
@@ -534,7 +537,9 @@ async function operator(proxies = [], targetPlatform, context) {
     return await fn();
   }
   function getCacheId({ proxy = {}, detection }) {
-    return `${proxy.server}:${proxy.port}:${detection.cacheAiName}`;
+    const server = proxy._origin_server ?? proxy.server ?? "";
+    const port = proxy._origin_port ?? proxy.port ?? "";
+    return `${server}:${port}:${detection.cacheAiName}`;
   }
   function executeAsyncTasks(tasks, { wrap, result, concurrency = 1 } = {}) {
     return new Promise(async (resolve, reject) => {
