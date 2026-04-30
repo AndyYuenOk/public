@@ -1,3 +1,5 @@
+// REFERENCE FOLDER: C:\Users\Admin\BtSoft\wwwroot\Sub-Store
+
 const FINAL_PROXIES_CACHE_KEY = "sub-store-free-optimized:final-proxies";
 // 测速文件，需要在超时时间内下载完成，目标，越小越好
 // 由于下载爬坡原因，估算速度 != 实际速度，但保证最低速度
@@ -21,18 +23,18 @@ async function operator(proxies = [], targetPlatform, context) {
   const take = parseInt($arguments.take ?? 10, 10);
   const appendMeasuredSpeed = /true|1/i.test(`${$arguments.speed ?? 1}`);
 
-  let cacheEnabled = /true|1/i.test(`${$arguments.cache ?? 0}`);
   // Always cache for the client.
-  if (targetPlatform != "JSON") {
-    cacheEnabled = 1;
+  let useCache = 1; // 默认为 1 (涵盖了非 JSON 平台)
+  if (targetPlatform === "JSON") {
+    // 只有在 JSON 平台且匹配失败或未定义时，才设为 0
+    useCache = /true|1/i.test($arguments.cache) ? 1 : 0;
   }
 
-  const cacheTtlMs = $arguments.cache_ttl_ms ?? 24 * 60 * 60 * 1000;
   const speedSortedInputProxies = [...proxies].sort(compareProxySpeedDesc);
 
   // Cache mode short-circuits expensive probing:
   // hit => return final cached list; miss => return empty instead of leaking source nodes.
-  if (cacheEnabled) {
+  if (useCache) {
     const cachedFinalProxies = tryReturnFinalProxiesCache();
     if (cachedFinalProxies) {
       return cachedFinalProxies;
@@ -54,7 +56,7 @@ async function operator(proxies = [], targetPlatform, context) {
   const aiOptions = normalizeAiOptions($arguments.ai);
   const aiDetections = buildAiDetections(aiOptions);
   const aiTarget = aiDetections.length ? Math.ceil(take / 2) : 0;
-  const batchSize = Math.max(1, Math.ceil(take * 1.8));
+  const batchSize = Math.max(1, take);
 
   // Shared http-meta service config used to spawn per-batch local proxy ports.
   const httpMeta = {
@@ -139,7 +141,7 @@ async function operator(proxies = [], targetPlatform, context) {
   $.info(
     `[setup] total=${sortedOriginalProxies.length}, core_supported=${internalProxies.length}, take=${take}, ai_target=${aiTarget}, batch_size=${batchSize}`,
   );
-  $.info(`[mode] cache=${cacheEnabled ? 1 : 0}, ttl_ms=${cacheTtlMs}`);
+  $.info(`[mode] cache=${useCache ? 1 : 0}`);
   $.info(
     `[speed-test] url=${normalUrl}, method=${normalMethod}, size=actual_body, status=${validStatusRaw}`,
   );
@@ -313,9 +315,9 @@ async function operator(proxies = [], targetPlatform, context) {
   }
 
   function tryReturnFinalProxiesCache() {
-    // Cache payload is timestamped; return deep-cloned records to avoid mutation leaks.
+    // Return deep-cloned records to avoid mutation leaks.
     const cached = cache.get(FINAL_PROXIES_CACHE_KEY);
-    if (!cached || isCacheExpired(cached)) return null;
+    if (!cached) return null;
 
     const cachedProxies = Array.isArray(cached.proxies)
       ? cloneProxyList(cached.proxies)
@@ -327,7 +329,6 @@ async function operator(proxies = [], targetPlatform, context) {
     if (changed) {
       cache.set(FINAL_PROXIES_CACHE_KEY, {
         proxies: cloneProxyList(normalizedProxies),
-        ts: cached.ts,
       });
       $.info(
         `[cache-final] normalize names proxies=${normalizedProxies.length}`,
@@ -346,7 +347,6 @@ async function operator(proxies = [], targetPlatform, context) {
 
     cache.set(FINAL_PROXIES_CACHE_KEY, {
       proxies: proxiesForCache,
-      ts: Date.now(),
     });
     $.info(`[cache-final] save proxies=${proxiesForCache.length}`);
   }
@@ -747,12 +747,6 @@ async function operator(proxies = [], targetPlatform, context) {
       return "transient_failure";
     }
     return "hard_failure";
-  }
-
-  function isCacheExpired(cached) {
-    const ts = Number(cached?.ts ?? 0);
-    if (!ts || !Number.isFinite(ts)) return true;
-    return Date.now() - ts > cacheTtlMs;
   }
 
   async function startHttpMetaForBatch(batchProxies = [], options = {}) {

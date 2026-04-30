@@ -1,4 +1,5 @@
-﻿/**
+﻿// REFERENCE FOLDER: C:\Users\Admin\BtSoft\wwwroot\Sub-Store
+/**
  *
  * GPT 检测(适配 Sub-Store Node.js 版)
  *
@@ -18,7 +19,7 @@
  * - [timeout] 请求超时(单位: 毫秒) 默认 5000
  * - [retries] 重试次数 默认 1
  * - [retry_delay] 重试延时(单位: 毫秒) 默认 1000
- * - [concurrency] 并发数 默认 10
+ * - [take] 并发数 默认 10
  * - [client] GPT 检测的客户端类型(兼容保留). 不再影响 GPT URL
  * - [method] 请求方法. 默认 get
  * - [gpt_prefix] GPT 显示前缀. 默认不追加
@@ -30,7 +31,7 @@
  * - 节点上会按需添加 canAccessGpt/gptLatency, 指 GPT 检测结果与响应延迟
  * - 节点上会按需添加 canAccessGm/gmLatency, 指 Gemini 检测结果与响应延迟
  * - [cache] 使用缓存结果直接返回; 关闭时实时检测并保存最后测试结果
- * - [cache_ttl_ms] 缓存时长(单位: 毫秒) 默认 24 小时
+ * - 缓存时长使用 Sub-Store 默认配置
  * - 失败结果和不支持地区结果也会缓存, 便于后续直接复用
  * 关于缓存时长
  * 当使用相关脚本时, 若在对应的脚本中使用参数(⚠ 别忘了这个, 一般为 cache, 值设为 true 即可)开启缓存
@@ -51,14 +52,13 @@ async function operator(proxies = [], targetPlatform, context) {
     useCache = /true|1/i.test($arguments.cache) ? 1 : 0;
   }
   const cache = scriptResourceCache;
-  const cacheTtlMs = parseFloat($arguments.cache_ttl_ms ?? 24 * 60 * 60 * 1000);
   const http_meta_host = $arguments.http_meta_host ?? "127.0.0.1";
   const http_meta_port = $arguments.http_meta_port ?? 9876;
   const http_meta_protocol = $arguments.http_meta_protocol ?? "http";
   const http_meta_authorization = $arguments.http_meta_authorization ?? "";
   const http_meta_api = `${http_meta_protocol}://${http_meta_host}:${http_meta_port}`;
   const http_meta_start_delay = parseFloat(
-    $arguments.http_meta_start_delay ?? 3000,
+    $arguments.http_meta_start_delay ?? 100,
   );
   const http_meta_proxy_timeout = parseFloat(
     $arguments.http_meta_proxy_timeout ?? 10000,
@@ -204,15 +204,14 @@ async function operator(proxies = [], targetPlatform, context) {
   }
   http_meta_pid = pid;
   http_meta_ports = ports;
+  $.info(`======== HTTP META 启动 ========`);
   $.info(
-    `\n======== HTTP META 启动 ====\n[端口] ${ports}\n[PID] ${pid}\n[超时] 若未手动关闭 ${
-      Math.round(http_meta_timeout / 60 / 10) / 100
-    } 分钟后自动关闭\n`,
+    `HTTP META 启动: 端口数量=${Array.isArray(ports) ? ports.length : 0}, PID=${pid}, 超时=${Math.round(http_meta_timeout / 60 / 10) / 100} 分钟后自动关闭`,
   );
   $.info(`等待 ${http_meta_start_delay / 1000} 秒后开始检测`);
   await $.wait(http_meta_start_delay);
 
-  const concurrency = parseInt($arguments.concurrency || 10); // 一组并发数
+  const concurrency = Math.max(1, parseInt($arguments.take ?? 10, 10) || 10); // 一组并发数
   await executeAsyncTasks(
     internalProxies.map((proxy) => () => check(proxy)),
     { concurrency },
@@ -241,6 +240,7 @@ async function operator(proxies = [], targetPlatform, context) {
       }),
     });
     $.info(`\n======== HTTP META 关闭 ====\n${JSON.stringify(res, null, 2)}`);
+    $.info(`======== HTTP META 结束 ========`);
   } catch (e) {
     $.error(e);
   }
@@ -378,7 +378,7 @@ async function operator(proxies = [], targetPlatform, context) {
     return cache.get(id, 0, true);
   }
   function setCache(id, value) {
-    cache.set(id, value, cacheTtlMs);
+    cache.set(id, value);
   }
   function getCacheAiDisplayName(detection) {
     return detection.cacheAiName === "gm" ? "GM" : "GPT";

@@ -1,3 +1,4 @@
+// REFERENCE FOLDER: C:\Users\Admin\BtSoft\wwwroot\Sub-Store
 /**
  * 节点信息(入口版)
  *
@@ -296,7 +297,7 @@ async function operator(proxies = [], targetPlatform, context) {
           proxy._entrance = api;
           if (ipApiRawCacheEnabled && !cachedIpApi) {
             $.info(`[${proxy.name}] 写入 IP API 缓存: ${queryServer}`);
-            cache.set(ipApiCacheId, api, getPermanentCacheTtl());
+            cache.set(ipApiCacheId, api);
           }
           if (cacheEnabled) {
             $.info(`[${proxy.name}] 写入成功结果缓存`);
@@ -371,9 +372,6 @@ async function operator(proxies = [], targetPlatform, context) {
   function getIpApiUrl(ip) {
     const query = String(url).split("?")[1];
     return `http://ip-api.com/json/${encodeURIComponent(ip)}${query ? `?${query}` : ""}`;
-  }
-  function getPermanentCacheTtl() {
-    return 8640000000000000 - Date.now();
   }
   function formatIpApiInfo(api = {}) {
     return `country: ${api.country || ""}, regionName: ${api.regionName || ""}, city: ${api.city || ""}, isp: ${api.isp || ""}`;
