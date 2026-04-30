@@ -216,6 +216,10 @@ async function operator(proxies = [], targetPlatform, context) {
       const cached = cache.get(id);
       if (useCache && cached) {
         if (cached.api) {
+          const cacheInfo = internal
+            ? `countryCode: ${cached.api.countryCode || ""}, aso: ${cached.api.aso || ""}`
+            : formatIpApiInfo(cached.api);
+          $.info(`使用缓存 [${proxy.name}], ip: ${queryServer}, ${cacheInfo}`);
           // $.info(`[${proxy.name}] 使用成功结果缓存`);
           $.log(`[${proxy.name}] api: ${JSON.stringify(cached.api, null, 2)}`);
           logCountryCodeAso(proxy, cached.api);
@@ -229,7 +233,7 @@ async function operator(proxies = [], targetPlatform, context) {
           if (disableFailedCache) {
             $.info(`[${proxy.name}] 跳过失败结果缓存`);
           } else {
-            $.info(`[${proxy.name}] 使用失败结果缓存`);
+            $.info(`使用缓存 [${proxy.name}], 错误`);
             return;
           }
         }

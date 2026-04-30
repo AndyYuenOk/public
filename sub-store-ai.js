@@ -47,9 +47,7 @@
 async function operator(proxies = [], targetPlatform, context) {
   const $ = $substore;
   const logBoundary = (phase = "") =>
-    $.info(
-      `==================== [SUB-STORE-AI ${phase}] ====================`,
-    );
+    $.info(`==================== [SUB-STORE-AI ${phase}] ====================`);
   const logHttpMetaBoundary = (phase = "") =>
     $.info(`==================== [HTTP META ${phase}] ====================`);
   logBoundary("START");
@@ -125,10 +123,47 @@ async function operator(proxies = [], targetPlatform, context) {
   );
   $.info(`[gpt-loc] deny=${Array.from(gptLocDenySet).join("|") || "NONE"}`);
 
+  for (const proxy of proxies) {
+    clearLegacyAiFields(proxy);
+  }
+
+  if (useCache) {
+    for (let proxyIndex = 0; proxyIndex < proxies.length; proxyIndex++) {
+      const proxy = proxies[proxyIndex];
+      for (const detection of detectionConfigs) {
+        const cached = getCache(getCacheId({ proxy, detection }));
+        const aiName = getCacheAiDisplayName(detection);
+        if (cached?.[detection.cacheKey]) {
+          applyDetectionSuccess({
+            proxyIndex,
+            detection,
+            latency: cached[detection.cacheLatencyKey],
+          });
+          const regionText = getCachedSupportedRegionText({
+            detection,
+            cached,
+          });
+          $.info(`使用缓存 [${proxy.name}] ${aiName} 支持${regionText}`);
+        } else if (cached?.unsupported) {
+          const regionText =
+            detection.key === "gemini" && cached.unsupported_region
+              ? `, region=${cached.unsupported_region}`
+              : "";
+          $.info(`使用缓存 [${proxy.name}] ${aiName} 不支持(地区限制)${regionText}`);
+        } else if (cached) {
+          $.info(`使用缓存 [${proxy.name}] ${aiName} 错误`);
+        } else {
+          $.info(`使用缓存 [${proxy.name}] ${aiName} 未检测(未命中缓存)`);
+        }
+      }
+    }
+    logBoundary("END");
+    return proxies;
+  }
+
   const internalProxies = [];
   proxies.map((proxy, index) => {
     try {
-      clearLegacyAiFields(proxy);
       const node = ProxyUtils.produce(
         [{ ...proxy }],
         "ClashMeta",
@@ -152,44 +187,6 @@ async function operator(proxies = [], targetPlatform, context) {
   });
   $.info(`核心支持节点数: ${internalProxies.length}/${proxies.length}`);
   if (!internalProxies.length) {
-    logBoundary("END");
-    return proxies;
-  }
-
-  if (useCache) {
-    for (const proxy of internalProxies) {
-      for (const detection of detectionConfigs) {
-        const cached = getCache(getCacheId({ proxy, detection }));
-        const aiName = getCacheAiDisplayName(detection);
-        if (cached?.[detection.cacheKey]) {
-          applyDetectionSuccess({
-            proxyIndex: proxy._proxies_index,
-            detection,
-            latency: cached[detection.cacheLatencyKey],
-          });
-          const regionText = getCachedSupportedRegionText({
-            detection,
-            cached,
-          });
-          $.info(
-            `[${proxy.name}] ${aiName} 支持, status=支持${regionText}`,
-          );
-        } else if (cached?.unsupported) {
-          const regionText =
-            detection.key === "gemini" && cached.unsupported_region
-              ? `, region=${cached.unsupported_region}`
-              : "";
-          $.info(
-            `[${proxy.name}] ${aiName} 不支持(地区限制), status=不支持${regionText}`,
-          );
-        } else if (cached) {
-          $.info(`[${proxy.name}] ${aiName} 错误, status=错误`);
-        } else {
-          $.info(`[${proxy.name}] ${aiName} 未检测`);
-        }
-      }
-    }
-    $.info("缓存模式完成");
     logBoundary("END");
     return proxies;
   }
@@ -364,7 +361,7 @@ async function operator(proxies = [], targetPlatform, context) {
             ? `, region=${geminiCountry3}`
             : detection.key === "gpt" && gptLoc
               ? `, loc=${gptLoc}`
-            : "";
+              : "";
         $.info(
           `[${proxy.name}] [${detection.name}] 支持, status=${status}${regionText}`,
         );
@@ -375,7 +372,7 @@ async function operator(proxies = [], targetPlatform, context) {
             ? { supported_region: geminiCountry3 }
             : detection.key === "gpt" && gptLoc
               ? { supported_region: gptLoc }
-            : {}),
+              : {}),
         });
       } else if (outcome === "unsupported") {
         const locText =
