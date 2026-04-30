@@ -110,7 +110,7 @@ Object.values(ruleProviders).forEach((provider) => {
 
 let strategyGroups = [
   {
-    name: "AutoAI",
+    name: "Auto_AI",
     icon: "Urltest.png",
     type: "url-test",
     url: "http://www.gstatic.com/generate_204",
@@ -128,7 +128,7 @@ let strategyGroups = [
     name: "AI",
     icon: "OpenAI.png",
     type: "select",
-    proxies: ["AutoAI"],
+    proxies: ["Auto_AI"],
   },
   {
     name: "Netflix",
@@ -266,7 +266,7 @@ function main(config) {
       group.proxies = group.proxies.concat(allProxyNames);
     }
 
-    if (group.name == "AutoAI") {
+    if (group.name == "Auto_AI") {
       if (aiPatterns.length) {
         group.proxies = allProxyNames.filter((name) =>
           aiPatterns.every((pattern) => RegExp(pattern).test(name)),
