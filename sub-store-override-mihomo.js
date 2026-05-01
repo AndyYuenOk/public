@@ -82,7 +82,6 @@ let routingRules = [
   "DOMAIN-SUFFIX,pairdrop.net,DIRECT",
   "DOMAIN-SUFFIX,gh-proxy.com,DIRECT",
   "DOMAIN-SUFFIX,ghfast.top,DIRECT",
-  "DOMAIN-SUFFIX,ip-api.com,DIRECT",
   "DOMAIN-SUFFIX,host.docker.internal,DIRECT",
 
   "GEOSITE,category-ai-!cn,AI",

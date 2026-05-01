@@ -1,4 +1,4 @@
-﻿let config = ProxyUtils.yaml.load($content ?? $files[0]);
+let config = ProxyUtils.yaml.load($content ?? $files[0]);
 config = await _main(config);
 $content = ProxyUtils.yaml.dump(config);
 

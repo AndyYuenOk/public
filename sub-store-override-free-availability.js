@@ -1,4 +1,4 @@
-﻿/**
+/**
  *
  * Node availability check (Sub-Store Node.js)
  *

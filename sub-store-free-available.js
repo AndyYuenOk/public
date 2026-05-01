@@ -1,4 +1,4 @@
-﻿// REFERENCE FOLDER: C:\Users\Admin\BtSoft\wwwroot\Sub-Store
+// REFERENCE FOLDER: C:\Users\Admin\BtSoft\wwwroot\Sub-Store
 
 const FINAL_PROXIES_CACHE_KEY = "sub-store-free-optimized:final-proxies";
 // 测速文件，需要在超时时间内下载完成，目标越小越好。

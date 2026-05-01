@@ -1,4 +1,4 @@
-﻿// REFERENCE FOLDER: C:\Users\Admin\BtSoft\wwwroot\Sub-Store
+// REFERENCE FOLDER: C:\Users\Admin\BtSoft\wwwroot\Sub-Store
 /**
  *
  * AI 检测(适配 Sub-Store Node.js 版)
@@ -462,6 +462,19 @@ async function operator(proxies = [], targetPlatform, context) {
         $.info(
           `[${proxy.name}] [${detection.name}] 错误, status=${status}, ${detailText}`,
         );
+        if (
+          isTransientFailure({
+            status,
+            message: msg,
+            bodyText,
+            detectionKey: detection.key,
+          })
+        ) {
+          $.info(
+            `[${proxy.name}] [${detection.name}] 超时/临时错误, 跳过缓存更新`,
+          );
+          return;
+        }
         setCache(id, {});
       }
     } catch (e) {
@@ -481,6 +494,19 @@ async function operator(proxies = [], targetPlatform, context) {
       $.info(
         `[${proxy.name}] [${detection.name}] 错误, status=${errorStatus || "ERR"}, ${detailText}`,
       );
+      if (
+        isTransientFailure({
+          status: errorStatus,
+          message: errorMessage,
+          bodyText: errorBody,
+          detectionKey: detection.key,
+        })
+      ) {
+        $.info(
+          `[${proxy.name}] [${detection.name}] 超时/临时错误, 跳过缓存更新`,
+        );
+        return;
+      }
       setCache(id, {});
     }
   }

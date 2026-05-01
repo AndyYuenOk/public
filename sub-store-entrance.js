@@ -147,8 +147,9 @@ async function operator(proxies = [], targetPlatform, context) {
   const method = $arguments.method || "get";
   const url =
     $arguments.api || `http://ip-api.com/json/{{proxy.server}}?lang=en`;
+  const isIpApiUrl = /^https?:\/\/ip-api\.com\/json\//i.test(url);
   const ipApiRawCacheEnabled =
-    useCache && /^https?:\/\/ip-api\.com\/json\//i.test(url);
+    useCache && isIpApiUrl;
   const ipApiInFlight = new Map();
   const ipApiRequestCache = new Map();
   const nodeCount = proxies.length;
@@ -309,8 +310,10 @@ async function operator(proxies = [], targetPlatform, context) {
             cache.set(id, { api });
           }
         } else {
-          if (useCache) {
-            $.info(`[${proxy.name}] 写入失败结果缓存`);
+          if (isIpApiUrl) {
+            $.info(`[${proxy.name}] ip-api status=${status} invalid response, log only`);
+          } else if (useCache) {
+            $.info(`[${proxy.name}] write failed cache`);
             cache.set(id, {});
           }
         }
@@ -318,8 +321,12 @@ async function operator(proxies = [], targetPlatform, context) {
       $.log(`[${proxy.name}] api: ${JSON.stringify(api, null, 2)}`);
     } catch (e) {
       $.error(`[${proxy.name}] ${e.message ?? e}`);
+      if (isIpApiUrl && !internal) {
+        $.info(`[${proxy.name}] ip-api error/timeout, log only`);
+        return;
+      }
       if (useCache) {
-        $.info(`[${proxy.name}] 写入失败结果缓存`);
+        $.info(`[${proxy.name}] write failed cache`);
         cache.set(id, {});
       }
     }
