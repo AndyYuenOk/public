@@ -64,6 +64,8 @@ async function operator(proxies = [], targetPlatform, context) {
     // 只有在 JSON 平台且匹配失败或未定义时，才设为 0
     useCache = /true|1/i.test($arguments.cache ?? 0);
   }
+  // JSON + cache=false: 不读缓存，但仍写入最新检测结果缓存
+  const shouldWriteCache = true;
   const cache = scriptResourceCache;
   const http_meta_host = $arguments.http_meta_host ?? "127.0.0.1";
   const http_meta_port = $arguments.http_meta_port ?? 9876;
@@ -421,17 +423,19 @@ async function operator(proxies = [], targetPlatform, context) {
         $.info(
           `[${proxy.name}] [${detection.name}] 支持, status=${status}${regionText}`,
         );
-        setCache(id, {
-          [detection.cacheKey]: true,
-          [detection.cacheLatencyKey]: latency,
-          ...(detection.key === "gemini" && geminiCountry3
-            ? { supported_region: geminiCountry3 }
-            : detection.key === "openai" && openaiCountry2
-              ? { supported_region: openaiCountry2 }
-              : detection.key === "claude" && claudeCountry2
-                ? { supported_region: claudeCountry2 }
-                : {}),
-        });
+        if (shouldWriteCache) {
+          setCache(id, {
+            [detection.cacheKey]: true,
+            [detection.cacheLatencyKey]: latency,
+            ...(detection.key === "gemini" && geminiCountry3
+              ? { supported_region: geminiCountry3 }
+              : detection.key === "openai" && openaiCountry2
+                ? { supported_region: openaiCountry2 }
+                : detection.key === "claude" && claudeCountry2
+                  ? { supported_region: claudeCountry2 }
+                  : {}),
+          });
+        }
       } else if (outcome === "unsupported") {
         const locText =
           detection.key === "openai" && openaiCountry2
@@ -444,16 +448,18 @@ async function operator(proxies = [], targetPlatform, context) {
         $.info(
           `[${proxy.name}] [${detection.name}] 不支持(地区限制), status=${status}${locText}`,
         );
-        setCache(id, {
-          unsupported: true,
-          unsupported_message: msg || getUnsupportedMessage(bodyText),
-          unsupported_latency: latency,
-          ...(detection.key === "gemini" && geminiCountry3
-            ? { unsupported_region: geminiCountry3 }
-            : detection.key === "claude" && claudeCountry2
-              ? { unsupported_region: claudeCountry2 }
-              : {}),
-        });
+        if (shouldWriteCache) {
+          setCache(id, {
+            unsupported: true,
+            unsupported_message: msg || getUnsupportedMessage(bodyText),
+            unsupported_latency: latency,
+            ...(detection.key === "gemini" && geminiCountry3
+              ? { unsupported_region: geminiCountry3 }
+              : detection.key === "claude" && claudeCountry2
+                ? { unsupported_region: claudeCountry2 }
+                : {}),
+          });
+        }
       } else {
         const detailText = buildErrorText(
           bodyText,
@@ -471,11 +477,13 @@ async function operator(proxies = [], targetPlatform, context) {
           })
         ) {
           $.info(
-            `[${proxy.name}] [${detection.name}] 超时/临时错误, 跳过缓存更新`,
+            `[${proxy.name}] [${detection.name}] 错误, 跳过缓存更新`,
           );
           return;
         }
-        setCache(id, {});
+        if (shouldWriteCache) {
+          setCache(id, {});
+        }
       }
     } catch (e) {
       const errorStatus = parseInt(
@@ -503,11 +511,13 @@ async function operator(proxies = [], targetPlatform, context) {
         })
       ) {
         $.info(
-          `[${proxy.name}] [${detection.name}] 超时/临时错误, 跳过缓存更新`,
+          `[${proxy.name}] [${detection.name}] 错误, 跳过缓存更新`,
         );
         return;
       }
-      setCache(id, {});
+      if (shouldWriteCache) {
+        setCache(id, {});
+      }
     }
   }
   function applyDetectionSuccess({ proxyIndex, detection, latency }) {

@@ -78,6 +78,8 @@ async function operator(proxies = [], targetPlatform, context) {
     // 只有在 JSON 平台且匹配失败或未定义时，才设为 0
     useCache = /true|1/i.test($arguments.cache ?? 0);
   }
+  // 写缓存与读缓存解耦: JSON 平台 cache=false 时仍写入最新结果。
+  const shouldWriteCache = true;
   const $ = $substore;
   const logBoundary = (phase = "") =>
     $.info(`==================== [SUB-STORE-ENTRANCE ${phase}] ====================`);
@@ -148,8 +150,8 @@ async function operator(proxies = [], targetPlatform, context) {
   const url =
     $arguments.api || `http://ip-api.com/json/{{proxy.server}}?lang=en`;
   const isIpApiUrl = /^https?:\/\/ip-api\.com\/json\//i.test(url);
-  const ipApiRawCacheEnabled =
-    useCache && isIpApiUrl;
+  const ipApiRawCacheReadEnabled = useCache && isIpApiUrl;
+  const ipApiRawCacheWriteEnabled = shouldWriteCache && isIpApiUrl;
   const ipApiInFlight = new Map();
   const ipApiRequestCache = new Map();
   const nodeCount = proxies.length;
@@ -209,12 +211,12 @@ async function operator(proxies = [], targetPlatform, context) {
     // $.info(`检测 ${JSON.stringify(proxy, null, 2)}`)
     let queryServer = String(proxy.server || "").trim();
     const originalServer = queryServer;
-    let id = useCache ? getCacheId(proxy, queryServer) : undefined;
+    let id = shouldWriteCache ? getCacheId(proxy, queryServer) : undefined;
     // $.info(`检测 ${id}`)
     try {
       queryServer = await getQueryServer(proxy);
-      id = useCache ? getCacheId(proxy, queryServer) : undefined;
-      const cached = cache.get(id);
+      id = shouldWriteCache ? getCacheId(proxy, queryServer) : undefined;
+      const cached = useCache ? cache.get(id) : null;
       if (useCache && cached) {
         if (cached.api) {
           const cacheInfo = internal
@@ -263,13 +265,11 @@ async function operator(proxies = [], targetPlatform, context) {
             proxy.name = formatter({ proxy, api, format, regex });
           }
           proxy._entrance = api;
-          if (useCache) {
-            $.info(`[${proxy.name}] 写入成功结果缓存`);
+          if (shouldWriteCache) {
             cache.set(id, { api });
           }
         } else {
-          if (useCache) {
-            $.info(`[${proxy.name}] 写入失败结果缓存`);
+          if (shouldWriteCache) {
             cache.set(id, {});
           }
         }
@@ -301,18 +301,16 @@ async function operator(proxies = [], targetPlatform, context) {
             proxy.name = formatter({ proxy, api, format, regex });
           }
           proxy._entrance = api;
-          if (ipApiRawCacheEnabled && ipApiResult.source === "network") {
-            $.info(`[${proxy.name}] 写入 IP API 缓存: ${queryServer}`);
+          if (ipApiRawCacheWriteEnabled && ipApiResult.source === "network") {
             cache.set(getIpApiCacheId(queryServer), api);
           }
-          if (useCache) {
-            $.info(`[${proxy.name}] 写入成功结果缓存`);
+          if (shouldWriteCache) {
             cache.set(id, { api });
           }
         } else {
           if (isIpApiUrl) {
             $.info(`[${proxy.name}] ip-api status=${status} invalid response, log only`);
-          } else if (useCache) {
+          } else if (shouldWriteCache) {
             $.info(`[${proxy.name}] write failed cache`);
             cache.set(id, {});
           }
@@ -325,7 +323,7 @@ async function operator(proxies = [], targetPlatform, context) {
         $.info(`[${proxy.name}] ip-api error/timeout, log only`);
         return;
       }
-      if (useCache) {
+      if (shouldWriteCache) {
         $.info(`[${proxy.name}] write failed cache`);
         cache.set(id, {});
       }
@@ -387,7 +385,7 @@ async function operator(proxies = [], targetPlatform, context) {
   }
   async function getIpApiResult(proxy, queryServer, startedAt) {
     const ipApiCacheId = getIpApiCacheId(queryServer);
-    const cachedIpApi = ipApiRawCacheEnabled
+    const cachedIpApi = ipApiRawCacheReadEnabled
       ? cache.get(ipApiCacheId, 0, true)
       : null;
     if (cachedIpApi) {
@@ -416,7 +414,7 @@ async function operator(proxies = [], targetPlatform, context) {
           "User-Agent":
             "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Mobile/15E148 Safari/604.1",
         },
-        url: ipApiRawCacheEnabled
+        url: isIpApiUrl
           ? getIpApiUrl(queryServer)
           : formatter({
               proxy: { ...proxy, server: queryServer },
