@@ -1,4 +1,4 @@
-// REFERENCE FOLDER: C:\Users\Admin\BtSoft\wwwroot\Sub-Store
+﻿// REFERENCE FOLDER: C:\Users\Admin\BtSoft\wwwroot\Sub-Store
 /**
  *
  * AI 检测(适配 Sub-Store Node.js 版)
@@ -83,7 +83,7 @@ async function operator(proxies = [], targetPlatform, context) {
   const claudePrefix = $arguments.claude_prefix ?? "";
   const method = $arguments.method || "get";
   const enabledDetectionKeys = parseAiDetectKeys(
-    $arguments.ai_detect ?? "openai,gemini,claude",
+    $arguments.ai_detect ?? "openai,gemini",
   );
   const geminiCountry3AllowSet = toCountryCodeSet(
     $arguments.gemini_country3_allow ?? "",
