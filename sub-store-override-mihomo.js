@@ -1,4 +1,4 @@
-"use strict";
+// REFERENCE FOLDER: C:\Users\Admin\BtSoft\wwwroot\Sub-Store
 
 let enableFallback = $arguments.fallback;
 let regions, allowPatterns, blockPatterns, ai;

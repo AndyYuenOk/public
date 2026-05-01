@@ -19,7 +19,7 @@ if ($arguments?.is_multiple) {
       .replace(/.*NetLab.*/, "NetLab")
       .replace(/.*Hong Kong Telecommunications.*/, "HKT")
       .replace(/.*Alibaba.*/, "Ali")
-      .replace(/Networks?|Technology|Co\.,|Ltd\.|Inc\.|Pty Ltd|,/g, "");
+      .replace(/networks?|technology|(?:co|ltd|inc)\.|pty ltd|,/gi, "");
 
     $server.name = [
       countryFlagMap[$server.name.split(" ")[0]],
