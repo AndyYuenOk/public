@@ -476,9 +476,6 @@ async function operator(proxies = [], targetPlatform, context) {
             detectionKey: detection.key,
           })
         ) {
-          $.info(
-            `[${proxy.name}] [${detection.name}] 错误, 跳过缓存更新`,
-          );
           return;
         }
         if (shouldWriteCache) {
@@ -510,9 +507,6 @@ async function operator(proxies = [], targetPlatform, context) {
           detectionKey: detection.key,
         })
       ) {
-        $.info(
-          `[${proxy.name}] [${detection.name}] 错误, 跳过缓存更新`,
-        );
         return;
       }
       if (shouldWriteCache) {
