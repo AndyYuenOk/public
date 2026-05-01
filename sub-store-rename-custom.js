@@ -28,8 +28,9 @@ if ($arguments?.is_multiple) {
       ipIsp,
       "-",
       $server.name,
-      $server.canAccessGpt ? "GPT" : "",
-      $server.canAccessGm ? "GM" : "",
+      $server.canAccessOpenai ? "GPT" : "",
+      $server.canAccessGemini ? "GM" : "",
+      $server.canAccessClaude ? "CL" : "",
     ]
       .join(" ")
       .replace(/\s{2,}/, " ");

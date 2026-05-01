@@ -96,13 +96,13 @@ async function operator(proxies = [], targetPlatform, context) {
   const aiMethod =
     `${$arguments.ai_method ?? $arguments.method ?? "get"}`.toLowerCase();
   const geminiCountry3AllowSet = toCountryCodeSet(
-    $arguments.gm_country3_allow ?? $arguments.gemini_country3_allow ?? "",
+    $arguments.gemini_country3_allow ?? "",
   );
   const geminiCountry3DenySet = toCountryCodeSet(
-    $arguments.gm_country3_deny ?? $arguments.gemini_country3_deny ?? "CHN",
+    $arguments.gemini_country3_deny ?? "CHN",
   );
-  const gptLocDenySet = toCountryCode2Set(
-    $arguments.gpt_loc_deny ?? $arguments.gpt_country_deny ?? "CN,HK",
+  const openaiCountry2DenySet = toCountryCode2Set(
+    $arguments.openai_country2_deny ?? "CN,HK",
   );
 
   const normalHttpMetaStartDelay = parseInt(
@@ -128,7 +128,9 @@ async function operator(proxies = [], targetPlatform, context) {
   $.info(
     `[gemini-country3] allow=${Array.from(geminiCountry3AllowSet).join("|") || "ANY"}, deny=${Array.from(geminiCountry3DenySet).join("|") || "NONE"}`,
   );
-  $.info(`[gpt-loc] deny=${Array.from(gptLocDenySet).join("|") || "NONE"}`);
+  $.info(
+    `[openai-country2] deny=${Array.from(openaiCountry2DenySet).join("|") || "NONE"}`,
+  );
 
   // Convert to ClashMeta/internal format once, while preserving custom metadata keys.
   const internalProxies = [];
@@ -441,19 +443,22 @@ async function operator(proxies = [], targetPlatform, context) {
 
   function getOutputTags(proxy = {}, name = "") {
     const tags = [];
-    if (proxy._gpt === true || /\sGPT\s*$|\sGPT\s+GM\s*$/i.test(name)) {
-      tags.push("GPT");
+    if (
+      proxy._openai === true ||
+      /\sOPENAI\s*$|\sOPENAI\s+GEMINI\s*$/i.test(name)
+    ) {
+      tags.push("OPENAI");
     }
-    if (proxy._gemini === true || /\sGM\s*$/i.test(name)) {
-      tags.push("GM");
+    if (proxy._gemini === true || /\sGEMINI\s*$/i.test(name)) {
+      tags.push("GEMINI");
     }
     return tags;
   }
 
   function stripOutputTags(name = "") {
     let result = `${name ?? ""}`.trim();
-    while (/\s(?:GPT|GM)\s*$/i.test(result)) {
-      result = result.replace(/\s(?:GPT|GM)\s*$/i, "").trim();
+    while (/\s(?:OPENAI|GEMINI)\s*$/i.test(result)) {
+      result = result.replace(/\s(?:OPENAI|GEMINI)\s*$/i, "").trim();
     }
     return result;
   }
@@ -606,16 +611,16 @@ async function operator(proxies = [], targetPlatform, context) {
       let bodyText = "";
       let body;
       let geminiCountry3 = "";
-      let gptLoc = "";
+      let openaiCountry2 = "";
       const locationHeader = String(getHeaderValue(res.headers, "location") || "");
       if (detection.key === "gemini") {
         bodyText = String(res.body ?? res.rawBody ?? "");
         geminiCountry3 = getGeminiCountry3(bodyText);
-      } else if (detection.key === "gpt") {
+      } else if (detection.key === "openai") {
         const rawBody = String(res.body ?? res.rawBody ?? "");
         bodyText = rawBody;
         const trace = parseTraceFields(rawBody);
-        gptLoc = String(trace.loc || "").toUpperCase();
+        openaiCountry2 = String(trace.loc || "").toUpperCase();
       } else {
         const rawBody = String(res.body ?? res.rawBody ?? "");
         body = rawBody;
@@ -632,7 +637,7 @@ async function operator(proxies = [], targetPlatform, context) {
         bodyText,
         body,
         geminiCountry3,
-        gptLoc,
+        openaiCountry2,
       });
 
       if (outcome === "success") {
@@ -640,8 +645,8 @@ async function operator(proxies = [], targetPlatform, context) {
         const regionText =
           detection.key === "gemini" && geminiCountry3
             ? `, region=${geminiCountry3}`
-            : detection.key === "gpt" && gptLoc
-              ? `, loc=${gptLoc}`
+            : detection.key === "openai" && openaiCountry2
+              ? `, country2=${openaiCountry2}`
               : "";
         $.info(
           `[${proxy.name}] [${detection.name}] 支持, status=${status}${regionText}`,
@@ -650,8 +655,8 @@ async function operator(proxies = [], targetPlatform, context) {
         const regionText =
           detection.key === "gemini" && geminiCountry3
             ? `, region=${geminiCountry3}`
-            : detection.key === "gpt" && gptLoc
-              ? `, loc=${gptLoc}`
+            : detection.key === "openai" && openaiCountry2
+              ? `, country2=${openaiCountry2}`
               : "";
         const locationText =
           detection.key === "gemini" && status === 302 && locationHeader
@@ -786,13 +791,13 @@ async function operator(proxies = [], targetPlatform, context) {
     detection,
     status,
     geminiCountry3 = "",
-    gptLoc = "",
+    openaiCountry2 = "",
   }) {
-    if (detection.key === "gpt") {
+    if (detection.key === "openai") {
       if (status !== 200) return "hard_failure";
-      const loc = `${gptLoc ?? ""}`.toUpperCase();
-      if (!loc) return "hard_failure";
-      return gptLocDenySet.has(loc) ? "unsupported" : "success";
+      const country2 = `${openaiCountry2 ?? ""}`.toUpperCase();
+      if (!country2) return "hard_failure";
+      return openaiCountry2DenySet.has(country2) ? "unsupported" : "success";
     }
     if (detection.key === "gemini") {
       if (status === 302) return "hard_failure";
@@ -920,9 +925,9 @@ async function operator(proxies = [], targetPlatform, context) {
         aiTags.push(detection.appendTag);
       }
     }
-    if (proxy._gpt === true) parsed._gpt = true;
-    if (proxy._gpt_latency !== undefined)
-      parsed._gpt_latency = proxy._gpt_latency;
+    if (proxy._openai === true) parsed._openai = true;
+    if (proxy._openai_latency !== undefined)
+      parsed._openai_latency = proxy._openai_latency;
     if (proxy._gemini === true) parsed._gemini = true;
     if (proxy._gemini_latency !== undefined) {
       parsed._gemini_latency = proxy._gemini_latency;
@@ -1054,7 +1059,7 @@ async function operator(proxies = [], targetPlatform, context) {
   }
 
   function buildAiDetections(options = []) {
-    // Supported short names: GPT, GM/GEMINI.
+    // Supported names: OPENAI, GEMINI.
     const normalized = Array.from(
       new Set(
         options
@@ -1064,28 +1069,27 @@ async function operator(proxies = [], targetPlatform, context) {
     );
 
     const detections = [];
-    const gptEnabled = normalized.includes("GPT");
-    const gmEnabled =
-      normalized.includes("GM") || normalized.includes("GEMINI");
+    const openaiEnabled = normalized.includes("OPENAI");
+    const geminiEnabled = normalized.includes("GEMINI");
 
-    if (gptEnabled) {
+    if (openaiEnabled) {
       detections.push({
-        key: "gpt",
-        name: "GPT",
-        appendTag: "GPT",
+        key: "openai",
+        name: "OPENAI",
+        appendTag: "OPENAI",
         url: "https://chat.openai.com/cdn-cgi/trace",
-        flagKey: "_gpt",
-        latencyKey: "_gpt_latency",
+        flagKey: "_openai",
+        latencyKey: "_openai_latency",
         userAgent:
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
       });
     }
 
-    if (gmEnabled) {
+    if (geminiEnabled) {
       detections.push({
         key: "gemini",
-        name: "GM",
-        appendTag: "GM",
+        name: "GEMINI",
+        appendTag: "GEMINI",
         url: "https://gemini.google.com/app",
         flagKey: "_gemini",
         latencyKey: "_gemini_latency",
@@ -1099,7 +1103,7 @@ async function operator(proxies = [], targetPlatform, context) {
 
   function normalizeAiOptions(rawAi) {
     // Accepts array, JSON array/string, comma list, or a single token.
-    const defaultAi = ["GPT", "GM"];
+    const defaultAi = ["OPENAI", "GEMINI"];
     if (rawAi === undefined || rawAi === null) return defaultAi;
 
     if (Array.isArray(rawAi)) {
