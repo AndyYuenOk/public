@@ -1,10 +1,9 @@
-// REFERENCE FOLDER: C:\Users\Admin\BtSoft\wwwroot\Sub-Store
+﻿// REFERENCE FOLDER: C:\Users\Admin\BtSoft\wwwroot\Sub-Store
 
 const FINAL_PROXIES_CACHE_KEY = "sub-store-free-optimized:final-proxies";
-// 测速文件，需要在超时时间内下载完成，目标，越小越好
-// 由于下载爬坡原因，估算速度 != 实际速度，但保证最低速度
+// 娴嬮€熸枃浠讹紝闇€瑕佸湪瓒呮椂鏃堕棿鍐呬笅杞藉畬鎴愶紝鐩爣锛岃秺灏忚秺濂?// 鐢变簬涓嬭浇鐖潯鍘熷洜锛屼及绠楅€熷害 != 瀹為檯閫熷害锛屼絾淇濊瘉鏈€浣庨€熷害
 // https://github.com/litterinchina/large-file-download-test
-// 并行数量不要太多，避免并发抢带宽
+// 骞惰鏁伴噺涓嶈澶锛岄伩鍏嶅苟鍙戞姠甯﹀
 const DEFAULT_SPEED_TEST_URL =
   "https://github.com/BitDoctor/speed-test-file/raw/refs/heads/master/1mb.txt";
 const DEFAULT_TIMEOUT_MS = 5000;
@@ -34,9 +33,9 @@ async function operator(proxies = [], targetPlatform, context) {
   const appendMeasuredSpeed = /true|1/i.test(`${$arguments.speed ?? 1}`);
 
   // Always cache for the client.
-  let useCache = 1; // 默认为 1 (涵盖了非 JSON 平台)
+  let useCache = 1; // 榛樿涓?1 (娑电洊浜嗛潪 JSON 骞冲彴)
   if (targetPlatform === "JSON") {
-    // 只有在 JSON 平台且匹配失败或未定义时，才设为 0
+    // 鍙湁鍦?JSON 骞冲彴涓斿尮閰嶅け璐ユ垨鏈畾涔夋椂锛屾墠璁句负 0
     useCache = /true|1/i.test($arguments.cache ?? 0);
   }
 
@@ -649,7 +648,7 @@ async function operator(proxies = [], targetPlatform, context) {
               ? `, country2=${openaiCountry2}`
               : "";
         $.info(
-          `[${proxy.name}] [${detection.name}] 支持, status=${status}${regionText}`,
+          `[${proxy.name}] [${detection.name}] 鏀寔, status=${status}${regionText}`,
         );
       } else if (outcome === "unsupported") {
         const regionText =
@@ -663,15 +662,15 @@ async function operator(proxies = [], targetPlatform, context) {
             ? `, location=${locationHeader}`
             : "";
         $.info(
-          `[${proxy.name}] [${detection.name}] 不支持(地区限制), status=${status}${regionText}${locationText}`,
+          `[${proxy.name}] [${detection.name}] 涓嶆敮鎸?鍦板尯闄愬埗), status=${status}${regionText}${locationText}`,
         );
       } else {
-        const detailText =
-          status === 302
-            ? `location=${locationHeader || "<empty>"}`
-            : `body=${bodyText}`;
+        const detailText = buildErrorText(
+          bodyText,
+          status === 302 ? locationHeader : "",
+        );
         $.info(
-          `[${proxy.name}] [${detection.name}] 错误, status=${status}, ${detailText}`,
+          `[${proxy.name}] [${detection.name}] 閿欒, status=${status}, ${detailText}`,
         );
       }
 
@@ -686,12 +685,12 @@ async function operator(proxies = [], targetPlatform, context) {
       );
       const errorMessage = String(e?.message ?? e ?? "");
       const errorBody = String(e?.response?.body ?? e?.response?.rawBody ?? "");
-      const detailText =
-        errorStatus === 302
-          ? `location=${errorLocation || "<empty>"}`
-          : `body=${errorBody || errorMessage}`;
+      const detailText = buildErrorText(
+        errorBody || errorMessage,
+        errorStatus === 302 ? errorLocation : "",
+      );
       $.info(
-        `[${proxy.name}] [${detection.name}] 错误, status=${errorStatus || "ERR"}, ${detailText}`,
+        `[${proxy.name}] [${detection.name}] 閿欒, status=${errorStatus || "ERR"}, ${detailText}`,
       );
       return { outcome: "hard_failure" };
     }
@@ -1204,6 +1203,51 @@ async function operator(proxies = [], targetPlatform, context) {
     }
     return bytes;
   }
+  function buildErrorText(raw = "", location = "", maxLength = 300) {
+    const title = truncateText(extractHtmlTitle(raw), maxLength);
+    const text = truncateText(toPlainText(raw), maxLength);
+    const parts = [];
+    parts.push(`title=${title || "<empty>"}`);
+    parts.push(`text=${text || "<empty>"}`);
+    if (location) parts.push(`location=${location}`);
+    return parts.join(", ");
+  }
+
+  function extractHtmlTitle(raw = "") {
+    const text = String(raw ?? "");
+    if (!text) return "";
+    const matched = text.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    if (!matched?.[1]) return "";
+    return toPlainText(matched[1]);
+  }
+
+  function toPlainText(raw = "") {
+    let text = String(raw ?? "");
+    if (!text) return "";
+    text = text
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+      .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&nbsp;/gi, " ")
+      .replace(/&amp;/gi, "&")
+      .replace(/&lt;/gi, "<")
+      .replace(/&gt;/gi, ">")
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;/gi, "'")
+      .replace(/\s+/g, " ")
+      .trim();
+    return text;
+  }
+
+  function truncateText(text = "", maxLength = 300) {
+    const value = String(text ?? "");
+    if (!value) return "";
+    const max = Math.max(1, parseInt(maxLength, 10) || 300);
+    if (value.length <= max) return value;
+    return `${value.slice(0, max)}...`;
+  }
+
 
   function getGeminiCountry3(bodyText = "") {
     const text = String(bodyText ?? "");

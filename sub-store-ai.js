@@ -453,10 +453,10 @@ async function operator(proxies = [], targetPlatform, context) {
               : {}),
         });
       } else {
-        const detailText =
-          status === 302
-            ? `location=${geminiLocation || "<empty>"}`
-            : `body=${bodyText}`;
+        const detailText = buildErrorText(
+          bodyText,
+          status === 302 ? geminiLocation : "",
+        );
         $.info(
           `[${proxy.name}] [${detection.name}] 错误, status=${status}, ${detailText}`,
         );
@@ -472,10 +472,10 @@ async function operator(proxies = [], targetPlatform, context) {
       );
       const errorMessage = String(e?.message ?? e ?? "");
       const errorBody = String(e?.response?.body ?? e?.response?.rawBody ?? "");
-      const detailText =
-        errorStatus === 302
-          ? `location=${errorLocation || "<empty>"}`
-          : `body=${errorBody || errorMessage}`;
+      const detailText = buildErrorText(
+        errorBody || errorMessage,
+        errorStatus === 302 ? errorLocation : "",
+      );
       $.info(
         `[${proxy.name}] [${detection.name}] 错误, status=${errorStatus || "ERR"}, ${detailText}`,
       );
@@ -624,6 +624,47 @@ async function operator(proxies = [], targetPlatform, context) {
       /unsupported_country_region_territory|unsupported_country|not available in your country|not available in your region|isn't available in your country|location is not supported/i,
     );
     return matched?.[0] || "";
+  }
+  function buildErrorText(raw = "", location = "", maxLength = 300) {
+    const title = truncateText(extractHtmlTitle(raw), maxLength);
+    const text = truncateText(toPlainText(raw), maxLength);
+    const parts = [];
+    parts.push(`title=${title || "<empty>"}`);
+    parts.push(`text=${text || "<empty>"}`);
+    if (location) parts.push(`location=${location}`);
+    return parts.join(", ");
+  }
+  function extractHtmlTitle(raw = "") {
+    const text = String(raw ?? "");
+    if (!text) return "";
+    const matched = text.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    if (!matched?.[1]) return "";
+    return toPlainText(matched[1]);
+  }
+  function toPlainText(raw = "") {
+    let text = String(raw ?? "");
+    if (!text) return "";
+    text = text
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+      .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&nbsp;/gi, " ")
+      .replace(/&amp;/gi, "&")
+      .replace(/&lt;/gi, "<")
+      .replace(/&gt;/gi, ">")
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;/gi, "'")
+      .replace(/\s+/g, " ")
+      .trim();
+    return text;
+  }
+  function truncateText(text = "", maxLength = 300) {
+    const value = String(text ?? "");
+    if (!value) return "";
+    const max = Math.max(1, parseInt(maxLength, 10) || 300);
+    if (value.length <= max) return value;
+    return `${value.slice(0, max)}...`;
   }
   function parseTraceFields(bodyText = "") {
     const trace = {};
