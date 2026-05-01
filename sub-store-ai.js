@@ -395,20 +395,31 @@ async function operator(proxies = [], targetPlatform, context) {
             : {}),
         });
       } else {
-        const locationText =
-          detection.key === "gemini" && geminiLocation
-            ? `, location=${geminiLocation}`
-            : "";
+        const detailText =
+          status === 302
+            ? `location=${geminiLocation || "<empty>"}`
+            : `body=${bodyText}`;
         $.info(
-          `[${proxy.name}] [${detection.name}] 错误, status=${status}${locationText}, body=${bodyText}`,
+          `[${proxy.name}] [${detection.name}] 错误, status=${status}, ${detailText}`,
         );
         setCache(id, {});
       }
     } catch (e) {
+      const errorStatus = parseInt(
+        e?.response?.status || e?.response?.statusCode || 0,
+        10,
+      );
+      const errorLocation = String(
+        getHeaderValue(e?.response?.headers, "location") || "",
+      );
       const errorMessage = String(e?.message ?? e ?? "");
       const errorBody = String(e?.response?.body ?? e?.response?.rawBody ?? "");
+      const detailText =
+        errorStatus === 302
+          ? `location=${errorLocation || "<empty>"}`
+          : `body=${errorBody || errorMessage}`;
       $.info(
-        `[${proxy.name}] [${detection.name}] 错误, status=ERR, body=${errorBody || errorMessage}`,
+        `[${proxy.name}] [${detection.name}] 错误, status=${errorStatus || "ERR"}, ${detailText}`,
       );
       setCache(id, {});
     }
