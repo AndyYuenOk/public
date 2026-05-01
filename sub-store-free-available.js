@@ -607,11 +607,10 @@ async function operator(proxies = [], targetPlatform, context) {
       let body;
       let geminiCountry3 = "";
       let gptLoc = "";
-      let locationHeader = "";
+      const locationHeader = String(getHeaderValue(res.headers, "location") || "");
       if (detection.key === "gemini") {
         bodyText = String(res.body ?? res.rawBody ?? "");
         geminiCountry3 = getGeminiCountry3(bodyText);
-        locationHeader = String(getHeaderValue(res.headers, "location") || "");
       } else if (detection.key === "gpt") {
         const rawBody = String(res.body ?? res.rawBody ?? "");
         bodyText = rawBody;
@@ -662,17 +661,32 @@ async function operator(proxies = [], targetPlatform, context) {
           `[${proxy.name}] [${detection.name}] 不支持(地区限制), status=${status}${regionText}${locationText}`,
         );
       } else {
+        const detailText =
+          status === 302
+            ? `location=${locationHeader || "<empty>"}`
+            : `body=${bodyText}`;
         $.info(
-          `[${proxy.name}] [${detection.name}] 错误, status=${status}, body=${bodyText}`,
+          `[${proxy.name}] [${detection.name}] 错误, status=${status}, ${detailText}`,
         );
       }
 
       return { outcome };
     } catch (e) {
+      const errorStatus = parseInt(
+        e?.response?.status || e?.response?.statusCode || 0,
+        10,
+      );
+      const errorLocation = String(
+        getHeaderValue(e?.response?.headers, "location") || "",
+      );
       const errorMessage = String(e?.message ?? e ?? "");
       const errorBody = String(e?.response?.body ?? e?.response?.rawBody ?? "");
+      const detailText =
+        errorStatus === 302
+          ? `location=${errorLocation || "<empty>"}`
+          : `body=${errorBody || errorMessage}`;
       $.info(
-        `[${proxy.name}] [${detection.name}] 错误, status=ERR, body=${errorBody || errorMessage}`,
+        `[${proxy.name}] [${detection.name}] 错误, status=${errorStatus || "ERR"}, ${detailText}`,
       );
       return { outcome: "hard_failure" };
     }

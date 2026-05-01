@@ -18,20 +18,20 @@ if ($arguments?.is_multiple) {
       .replace(/.*NetLab.*/, "NetLab")
       .replace(/.*Hong Kong Telecommunications.*/, "HKT")
       .replace(/.*Alibaba.*/, "Ali")
-      .replace(/Network|Technology|Co\.,|Ltd\./g, "")
-      .replace(/\s{2,}/, " ")
-      .trim();
+      .replace(/Network|Technology|Co\.,|Ltd\./g, "");
 
     $server.name = [
       countryFlagMap[$server.name.split(" ")[0]],
       $server.ipCountryCode,
-      $server.ipRegion,
+      $server.ipRegion.replace(/^\d+$/, ""),
       // $server.ipCity,
       ipIsp,
       "-",
       $server.name,
       $server.canAccessGpt ? "GPT" : "",
       $server.canAccessGm ? "GM" : "",
-    ].join(" ");
+    ]
+      .join(" ")
+      .replace(/\s{2,}/, " ");
   } catch {}
 }
