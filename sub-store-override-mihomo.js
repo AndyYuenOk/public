@@ -219,13 +219,11 @@ function main(config) {
     };
 
     // Group proxies by the second token in name, e.g. `HK xxx`, `JP xxx`.
-    const airportProxyMap = config.proxies.reduce(
-      (airportProxyMap, { name }) => {
-        (airportProxyMap[name.split(" ")[1]] ??= []).push(name);
-        return airportProxyMap;
-      },
-      {},
-    );
+    const airportProxyMap = config.proxies.reduce((airportProxyMap, proxy) => {
+      proxy.name = proxy.subscriptionName + " " + proxy.name;
+      (airportProxyMap[proxy.subscriptionDisplayName] ??= []).push(proxy.name);
+      return airportProxyMap;
+    }, {});
 
     Object.entries(airportProxyMap).forEach(
       ([airportCode, airportProxies], groupInsertIndex) => {
