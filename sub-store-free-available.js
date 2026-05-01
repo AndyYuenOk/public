@@ -1,13 +1,40 @@
 ﻿// REFERENCE FOLDER: C:\Users\Admin\BtSoft\wwwroot\Sub-Store
 
 const FINAL_PROXIES_CACHE_KEY = "sub-store-free-optimized:final-proxies";
-// 娴嬮€熸枃浠讹紝闇€瑕佸湪瓒呮椂鏃堕棿鍐呬笅杞藉畬鎴愶紝鐩爣锛岃秺灏忚秺濂?// 鐢变簬涓嬭浇鐖潯鍘熷洜锛屼及绠楅€熷害 != 瀹為檯閫熷害锛屼絾淇濊瘉鏈€浣庨€熷害
+// 测速文件，需要在超时时间内下载完成，目标越小越好。
+// 由于下载爬坡等因素，估算速度 != 实际速度，但能保证最低速度。
 // https://github.com/litterinchina/large-file-download-test
-// 骞惰鏁伴噺涓嶈澶锛岄伩鍏嶅苟鍙戞姠甯﹀
+// 并行数量不要太多，避免并发抢带宽。
 const DEFAULT_SPEED_TEST_URL =
   "https://github.com/BitDoctor/speed-test-file/raw/refs/heads/master/1mb.txt";
 const DEFAULT_TIMEOUT_MS = 5000;
 const SPEED_REFERENCE_LABEL = "A";
+const AI_DEFAULT_OPTIONS = ["OPENAI", "GEMINI"];
+const AI_APPEND_TAG_BY_KEY = {
+  openai: "GPT",
+  gemini: "GM",
+};
+const AI_TAGS = Object.values(AI_APPEND_TAG_BY_KEY);
+const AI_DETECTION_CONFIG = {
+  openai: {
+    key: "openai",
+    name: "OPENAI",
+    url: "https://chat.openai.com/cdn-cgi/trace",
+    flagKey: "_openai",
+    latencyKey: "_openai_latency",
+    userAgent:
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
+  },
+  gemini: {
+    key: "gemini",
+    name: "GEMINI",
+    url: "https://gemini.google.com/app",
+    flagKey: "_gemini",
+    latencyKey: "_gemini_latency",
+    userAgent:
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
+  },
+};
 
 async function operator(proxies = [], targetPlatform, context) {
   const $ = $substore;
@@ -33,9 +60,9 @@ async function operator(proxies = [], targetPlatform, context) {
   const appendMeasuredSpeed = /true|1/i.test(`${$arguments.speed ?? 1}`);
 
   // Always cache for the client.
-  let useCache = 1; // 榛樿涓?1 (娑电洊浜嗛潪 JSON 骞冲彴)
+  let useCache = 1; // 默认为 1 (涵盖了非 JSON 平台)
   if (targetPlatform === "JSON") {
-    // 鍙湁鍦?JSON 骞冲彴涓斿尮閰嶅け璐ユ垨鏈畾涔夋椂锛屾墠璁句负 0
+    // 只有在 JSON 平台且匹配失败或未定义时，才设为 0
     useCache = /true|1/i.test($arguments.cache ?? 0);
   }
 
@@ -442,22 +469,32 @@ async function operator(proxies = [], targetPlatform, context) {
 
   function getOutputTags(proxy = {}, name = "") {
     const tags = [];
+    const openaiTag = AI_APPEND_TAG_BY_KEY.openai;
+    const geminiTag = AI_APPEND_TAG_BY_KEY.gemini;
     if (
       proxy._openai === true ||
-      /\sOPENAI\s*$|\sOPENAI\s+GEMINI\s*$/i.test(name)
+      new RegExp(
+        `\\s${openaiTag}\\s*$|\\s${openaiTag}\\s+${geminiTag}\\s*$`,
+        "i",
+      ).test(name)
     ) {
-      tags.push("OPENAI");
+      tags.push(openaiTag);
     }
-    if (proxy._gemini === true || /\sGEMINI\s*$/i.test(name)) {
-      tags.push("GEMINI");
+    if (
+      proxy._gemini === true ||
+      new RegExp(`\\s${geminiTag}\\s*$`, "i").test(name)
+    ) {
+      tags.push(geminiTag);
     }
     return tags;
   }
 
   function stripOutputTags(name = "") {
     let result = `${name ?? ""}`.trim();
-    while (/\s(?:OPENAI|GEMINI)\s*$/i.test(result)) {
-      result = result.replace(/\s(?:OPENAI|GEMINI)\s*$/i, "").trim();
+    const tagPattern = AI_TAGS.join("|");
+    const tagRegex = new RegExp(`\\s(?:${tagPattern})\\s*$`, "i");
+    while (tagRegex.test(result)) {
+      result = result.replace(tagRegex, "").trim();
     }
     return result;
   }
@@ -611,7 +648,9 @@ async function operator(proxies = [], targetPlatform, context) {
       let body;
       let geminiCountry3 = "";
       let openaiCountry2 = "";
-      const locationHeader = String(getHeaderValue(res.headers, "location") || "");
+      const locationHeader = String(
+        getHeaderValue(res.headers, "location") || "",
+      );
       if (detection.key === "gemini") {
         bodyText = String(res.body ?? res.rawBody ?? "");
         geminiCountry3 = getGeminiCountry3(bodyText);
@@ -648,7 +687,7 @@ async function operator(proxies = [], targetPlatform, context) {
               ? `, country2=${openaiCountry2}`
               : "";
         $.info(
-          `[${proxy.name}] [${detection.name}] 鏀寔, status=${status}${regionText}`,
+          `[${proxy.name}] [${detection.name}] 支持, status=${status}${regionText}`,
         );
       } else if (outcome === "unsupported") {
         const regionText =
@@ -662,7 +701,7 @@ async function operator(proxies = [], targetPlatform, context) {
             ? `, location=${locationHeader}`
             : "";
         $.info(
-          `[${proxy.name}] [${detection.name}] 涓嶆敮鎸?鍦板尯闄愬埗), status=${status}${regionText}${locationText}`,
+          `[${proxy.name}] [${detection.name}] 不支持(地区限制), status=${status}${regionText}${locationText}`,
         );
       } else {
         const detailText = buildErrorText(
@@ -670,7 +709,7 @@ async function operator(proxies = [], targetPlatform, context) {
           status === 302 ? locationHeader : "",
         );
         $.info(
-          `[${proxy.name}] [${detection.name}] 閿欒, status=${status}, ${detailText}`,
+          `[${proxy.name}] [${detection.name}] 错误, status=${status}, ${detailText}`,
         );
       }
 
@@ -690,7 +729,7 @@ async function operator(proxies = [], targetPlatform, context) {
         errorStatus === 302 ? errorLocation : "",
       );
       $.info(
-        `[${proxy.name}] [${detection.name}] 閿欒, status=${errorStatus || "ERR"}, ${detailText}`,
+        `[${proxy.name}] [${detection.name}] 错误, status=${errorStatus || "ERR"}, ${detailText}`,
       );
       return { outcome: "hard_failure" };
     }
@@ -921,7 +960,7 @@ async function operator(proxies = [], targetPlatform, context) {
     const aiTags = [];
     for (const detection of aiDetections) {
       if (proxy[detection.flagKey] === true) {
-        aiTags.push(detection.appendTag);
+        aiTags.push(AI_APPEND_TAG_BY_KEY[detection.key] || detection.name);
       }
     }
     if (proxy._openai === true) parsed._openai = true;
@@ -1058,7 +1097,7 @@ async function operator(proxies = [], targetPlatform, context) {
   }
 
   function buildAiDetections(options = []) {
-    // Supported names: OPENAI, GEMINI.
+    // Supported names are configured at the top constants.
     const normalized = Array.from(
       new Set(
         options
@@ -1071,38 +1110,15 @@ async function operator(proxies = [], targetPlatform, context) {
     const openaiEnabled = normalized.includes("OPENAI");
     const geminiEnabled = normalized.includes("GEMINI");
 
-    if (openaiEnabled) {
-      detections.push({
-        key: "openai",
-        name: "OPENAI",
-        appendTag: "OPENAI",
-        url: "https://chat.openai.com/cdn-cgi/trace",
-        flagKey: "_openai",
-        latencyKey: "_openai_latency",
-        userAgent:
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
-      });
-    }
-
-    if (geminiEnabled) {
-      detections.push({
-        key: "gemini",
-        name: "GEMINI",
-        appendTag: "GEMINI",
-        url: "https://gemini.google.com/app",
-        flagKey: "_gemini",
-        latencyKey: "_gemini_latency",
-        userAgent:
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
-      });
-    }
+    if (openaiEnabled) detections.push({ ...AI_DETECTION_CONFIG.openai });
+    if (geminiEnabled) detections.push({ ...AI_DETECTION_CONFIG.gemini });
 
     return detections;
   }
 
   function normalizeAiOptions(rawAi) {
     // Accepts array, JSON array/string, comma list, or a single token.
-    const defaultAi = ["OPENAI", "GEMINI"];
+    const defaultAi = [...AI_DEFAULT_OPTIONS];
     if (rawAi === undefined || rawAi === null) return defaultAi;
 
     if (Array.isArray(rawAi)) {
@@ -1247,7 +1263,6 @@ async function operator(proxies = [], targetPlatform, context) {
     if (value.length <= max) return value;
     return `${value.slice(0, max)}...`;
   }
-
 
   function getGeminiCountry3(bodyText = "") {
     const text = String(bodyText ?? "");

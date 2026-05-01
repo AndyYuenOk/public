@@ -101,6 +101,8 @@ async function operator(proxies = [], targetPlatform, context) {
     /exceeds the timeout|timed out|timeout|client network socket disconnected before secure tls connection was established|socket hang up|econnreset/i;
   const policyTransientFailureRegex =
     /request is not allowed[\s\S]*try again later|try again later|temporarily unavailable|too many requests|rate limit|unusual traffic|recaptcha|captcha/i;
+  const unsupportedTextRegex =
+    /unsupported_country|unsupported_country_region_territory|not available in your country|not available in your region|isn't available in your country|location is not supported|unavailable in (?:your )?region|unavailable in (?:your )?country/i;
   const allDetectionConfigs = [
     {
       key: "openai",
@@ -586,6 +588,10 @@ async function operator(proxies = [], targetPlatform, context) {
   }
   function classifyClaudeCountry2Result({ status, bodyText = "" }) {
     if (status !== 200) return "error";
+    const title = extractHtmlTitle(bodyText);
+    if (/unavailable/i.test(title)) {
+      return "unsupported";
+    }
     const country2 = getClaudeCountry2(bodyText);
     if (!country2) return "error";
     return claudeCountryDenySet.has(country2) ? "unsupported" : "supported";
@@ -620,9 +626,7 @@ async function operator(proxies = [], targetPlatform, context) {
     return "";
   }
   function getUnsupportedMessage(bodyText = "") {
-    const matched = `${bodyText}`.match(
-      /unsupported_country_region_territory|unsupported_country|not available in your country|not available in your region|isn't available in your country|location is not supported/i,
-    );
+    const matched = `${bodyText}`.match(unsupportedTextRegex);
     return matched?.[0] || "";
   }
   function buildErrorText(raw = "", location = "", maxLength = 300) {
