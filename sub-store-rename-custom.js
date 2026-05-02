@@ -12,8 +12,6 @@ function operator(proxies = [], targetPlatform, context) {
     ]),
   );
 
-  let entranceIps = new Set(),
-    egressIps = new Set();
   proxies = proxies
     .map((proxy, originalIndex) => ({ proxy, originalIndex }))
     .sort((leftItem, rightItem) => {
@@ -35,24 +33,26 @@ function operator(proxies = [], targetPlatform, context) {
     .map(({ proxy }) => {
       proxy.subscriptionName = proxy._subName;
 
-      entranceIps.add(proxy.entranceIp);
-      egressIps.add(proxy.egressIp);
+      counters[proxy.entranceCountryCode + proxy.entranceIp] ??= {
+        count: 0,
+        index: 0,
+      };
+      counters[proxy.egressCountryCode + proxy.egressIp] ??= {
+        count: 0,
+        index: 0,
+      };
 
       return proxy;
     });
-
-  entranceIps = [...entranceIps];
-  egressIps = [...egressIps];
 
   let counter, index;
   proxies.forEach((proxy) => {
     let entrance = [];
     if (proxy.entranceIp != proxy.egressIp) {
       index = "";
-      if (entranceIps.length > 1) {
-        index = (entranceIps.indexOf(proxy.entranceIp) + 1)
-          .toString()
-          .padStart(2, "0");
+      counter = counters[proxy.entranceCountryCode + proxy.entranceIp];
+      if (counter.count > 1) {
+        index = (++counter.index).toString().padStart(2, "0");
       }
       entrance = [
         proxy.entranceCountryCode,
@@ -72,10 +72,9 @@ function operator(proxies = [], targetPlatform, context) {
     if (multiplier) multiplier = parseFloat(multiplier) + "\u00D7";
 
     index = "";
-    if (egressIps.length > 1) {
-      index = (egressIps.indexOf(proxy.egressIp) + 1)
-        .toString()
-        .padStart(2, "0");
+    counter = counters[proxy.egressCountryCode + proxy.egressIp];
+    if (counter.count > 1) {
+      index = (++counter.index).toString().padStart(2, "0");
     }
 
     proxy.name = [
