@@ -14,17 +14,25 @@ function operator(proxies = [], targetPlatform, context) {
         proxy.entranceRegion.replace(/^\d+$/, ""),
         proxy.entranceGroup,
         // $server.ipCity,
-        normalizedIsp(proxy.entranceIsp),
+        normalizedIsp(
+          proxy.entranceIsp,
+          proxy.entranceCountry,
+          proxy.entranceCity,
+        ),
         "-",
       ];
     }
+
+    let multiplier = proxy.name.match(/(\d\.\d)x/i)?.[1] || "";
+    if (multiplier) multiplier = parseFloat(multiplier) + "×";
 
     proxy.name = [
       flagMap[proxy.egressCountryCode],
       ...entrance,
       proxy.egressCountryCode,
-      normalizedIsp(proxy.egressIsp),
       proxy.egressGroup,
+      normalizedIsp(proxy.egressIsp, proxy.egressCountry, proxy.egressCity),
+      multiplier,
       proxy?.canAccessOpenai ? "GPT" : "",
       proxy?.canAccessGemini ? "GM" : "",
       proxy?.canAccessClaude ? "CL" : "",
@@ -48,7 +56,7 @@ function operator(proxies = [], targetPlatform, context) {
   return proxies;
 }
 
-function normalizedIsp(isp) {
+function normalizedIsp(isp, country, city) {
   return isp
     .replace(/.*China Mobile.*/, "CM")
     .replace(/.*China Unicom.*/, "CU")
@@ -61,11 +69,12 @@ function normalizedIsp(isp) {
     .replace(/.*NetLab.*/, "NetLab")
     .replace(/.*Hong Kong Telecommunications.*/, "HKT")
     .replace(/.*Alibaba.*/, "Ali")
+    .replace(RegExp(country + "|" + city, "i"), "")
     .replace(
-      /networks?|technolog(y|ies)|(?:co|ltd|inc)\.|ltd|corporation|data|communications|limited|labs|the|link|europe|srl|sas|,/gi,
+      /networks?|technolog(y|ies)|(?:co|ltd|inc|pte)\.|k\.k|s\.a\.|ltd|llc|information|corporation|data|communications|limited|labs|the|link|europe|srl|sas|,/gi,
       "",
     )
-    .trim()
-    .split(" ")
-    .at(-1);
+    .trim();
+  // .split(" ")
+  // .at(-1);
 }
