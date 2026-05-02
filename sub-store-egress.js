@@ -497,11 +497,15 @@ async function operator(proxies = [], targetPlatform, context) {
   }
 
   function formatIpApiInfo(api = {}) {
+    const hostingValue =
+      typeof api.hosting === "boolean"
+        ? `hosting ${api.hosting}`
+        : String(api.hosting ?? "").trim();
     const parts = [
       api.country || "",
       api.regionName || "",
       api.city || "",
-      api.hosting ?? "",
+      hostingValue,
       api.isp || "",
       api.as || "",
     ].filter((v) => String(v).trim() !== "");
