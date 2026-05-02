@@ -1,3 +1,5 @@
+$server.subscriptionName = $server._subName;
+
 let ipIsp = $server.ipIsp
   .replace(/.*China Mobile.*/, "CM")
   .replace(/.*China Unicom.*/, "CU")
