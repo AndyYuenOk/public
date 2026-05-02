@@ -4,16 +4,44 @@ const flagMap = {"HK":"🇭🇰","MO":"🇲🇴","TW":"🇹🇼","JP":"🇯🇵"
 function operator(proxies = [], targetPlatform, context) {
   let counters = {};
 
-  proxies.forEach((proxy) => {
-    proxy.subscriptionName = proxy._subName;
+  const preferredCountryCodeOrder = ["HK", "SG", "TW", "JP", "US"];
+  const countryCodeToSortIndex = Object.fromEntries(
+    preferredCountryCodeOrder.map((countryCode, sortIndex) => [
+      countryCode,
+      sortIndex,
+    ]),
+  );
 
-    counters[proxy.name] ??= { count: 0, index: 0 };
-    counters[proxy.name].count++;
-    counters[proxy.entranceIsp] ??= { count: 0, index: 0 };
-    counters[proxy.entranceIsp].count++;
-    counters[proxy.egressIsp] ??= { count: 0, index: 0 };
-    counters[proxy.egressIsp].count++;
-  });
+  proxies = proxies
+    .map((proxy, originalIndex) => {
+      proxy.subscriptionName = proxy._subName;
+
+      counters[proxy.name] ??= { count: 0, index: 0 };
+      counters[proxy.name].count++;
+      counters[proxy.entranceIsp] ??= { count: 0, index: 0 };
+      counters[proxy.entranceIsp].count++;
+      counters[proxy.egressIsp] ??= { count: 0, index: 0 };
+      counters[proxy.egressIsp].count++;
+
+      return { proxy, originalIndex };
+    })
+    .sort((leftItem, rightItem) => {
+      const leftCountryCode = leftItem.proxy?.egressCountryCode;
+      const rightCountryCode = rightItem.proxy?.egressCountryCode;
+
+      const leftSortIndex =
+        countryCodeToSortIndex[leftCountryCode] ??
+        preferredCountryCodeOrder.length;
+      const rightSortIndex =
+        countryCodeToSortIndex[rightCountryCode] ??
+        preferredCountryCodeOrder.length;
+
+      return (
+        leftSortIndex - rightSortIndex ||
+        leftItem.originalIndex - rightItem.originalIndex
+      );
+    })
+    .map(({ proxy }) => proxy);
 
   let counter, index;
   proxies.forEach((proxy) => {
