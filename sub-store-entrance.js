@@ -1,4 +1,3 @@
-// REFERENCE FOLDER: C:\Users\Admin\BtSoft\wwwroot\Sub-Store
 /**
  * 节点信息(入口版)
  *
@@ -82,7 +81,9 @@ async function operator(proxies = [], targetPlatform, context) {
   const shouldWriteCache = true;
   const $ = $substore;
   const logBoundary = (phase = "") =>
-    $.info(`==================== [SUB-STORE-ENTRANCE ${phase}] ====================`);
+    $.info(
+      `==================== [SUB-STORE-ENTRANCE ${phase}] ====================`,
+    );
   logBoundary("START");
   const { isNode } = $.env;
   const internal = /true|1/.test($arguments.internal ?? 0);
@@ -309,7 +310,9 @@ async function operator(proxies = [], targetPlatform, context) {
           }
         } else {
           if (isIpApiUrl) {
-            $.info(`[${proxy.name}] ip-api status=${status} invalid response, log only`);
+            $.info(
+              `[${proxy.name}] ip-api status=${status} invalid response, log only`,
+            );
           } else if (shouldWriteCache) {
             $.info(`[${proxy.name}] write failed cache`);
             cache.set(id, {});

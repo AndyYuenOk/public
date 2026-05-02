@@ -1,21 +1,8 @@
-const configText =
-  typeof $content === "string"
-    ? $content
-    : Array.isArray($files)
-      ? $files.join("\n")
-      : "";
-
-const targetCollectionName = "Fallback";
+﻿const targetCollectionName = "Fallback";
 const sourceMap = context?.source ?? {};
-const fallbackSubs = await loadCollectionSubscriptions(targetCollectionName);
-const subscriptions = fallbackSubs.length
-  ? fallbackSubs
-  : loadSubscriptionsFromContext(sourceMap, targetCollectionName);
+const subscriptions = await loadCollectionSubscriptions(targetCollectionName);
 
-const baseUrl = normalizeBaseUrl(
-  $arguments?.base_url || $arguments?.sub_store_base || "https://sub.store",
-);
-
+const baseUrl = $arguments?.base_url;
 const remoteProxyItems = buildRemoteProxyItems(subscriptions, sourceMap);
 
 const remoteProxyLines = remoteProxyItems.map(({ subName, remoteName }) => {
@@ -23,32 +10,9 @@ const remoteProxyLines = remoteProxyItems.map(({ subName, remoteName }) => {
   return `${remoteName} = ${subUrl},enabled=true`;
 });
 
-let nextContent = replaceSection(configText, "Remote Proxy", remoteProxyLines);
+let nextContent = replaceSection($content, "Remote Proxy", remoteProxyLines);
 nextContent = replaceAutoProxyGroups(nextContent, remoteProxyItems);
 $content = nextContent;
-
-function sanitizeAlias(value) {
-  return String(value || "")
-    .replace(/[\r\n]/g, " ")
-    .replace(/\s+/g, " ")
-    .replace(/[=,]/g, " ")
-    .trim();
-}
-
-function normalizeBaseUrl(input) {
-  const raw = String(input || "").trim();
-  if (!raw) return "https://sub.store";
-  const withProtocol = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
-  return withProtocol.replace(/\/+$/, "");
-}
-
-function sanitizeGroupToken(value) {
-  return String(value || "")
-    .replace(/\s+/g, "_")
-    .replace(/[^0-9A-Za-z_.-]/g, "_")
-    .replace(/_+/g, "_")
-    .replace(/^_+|_+$/g, "");
-}
 
 function buildRemoteProxyItems(subscriptions, sourceMap) {
   const usedNames = new Set();
@@ -56,15 +20,16 @@ function buildRemoteProxyItems(subscriptions, sourceMap) {
   for (const subInfo of Array.isArray(subscriptions) ? subscriptions : []) {
     const subName = subInfo.name;
     const sub = sourceMap?.[subName] ?? {};
-    const alias = sanitizeAlias(
+    const alias =
       subInfo.displayName ||
-        sub.displayName ||
-        sub["display-name"] ||
-        sub.name ||
-        subName,
+      sub.displayName ||
+      sub["display-name"] ||
+      sub.name ||
+      subName;
+    const remoteName = makeUniqueName(
+      `Auto_${alias || subName || "Sub"}`,
+      usedNames,
     );
-    const token = sanitizeGroupToken(alias) || sanitizeGroupToken(subName) || "Sub";
-    const remoteName = makeUniqueName(`Auto_${token}`, usedNames);
     items.push({ subName, alias, remoteName });
   }
   return items;
@@ -116,75 +81,121 @@ function replaceAutoProxyGroups(text, items) {
     return `${autoName} = ${buildAutoUrlTestRhs(templateRhs, autoName)}`;
   });
 
-  const autoAiIndex = keptLines.findIndex((line) => /^\s*Auto_AI\s*=/i.test(line));
+  const autoAiIndex = keptLines.findIndex((line) =>
+    /^\s*Auto_AI\s*=/i.test(line),
+  );
   if (autoAiIndex >= 0) {
     keptLines.splice(autoAiIndex, 0, ...generatedAutoLines);
   } else {
     keptLines.push(...generatedAutoLines);
   }
 
-  const fallbackIndex = keptLines.findIndex((line) => /^\s*Fallback\s*=/i.test(line));
+  const fallbackIndex = keptLines.findIndex((line) =>
+    /^\s*Fallback\s*=/i.test(line),
+  );
   if (fallbackIndex >= 0) {
     const current = keptLines[fallbackIndex];
     const suffix =
       current.match(/,\s*url\s*=.*$/i)?.[0] ||
       ", url=http://www.gstatic.com/generate_204, interval=300, max-timeout=3000";
-    keptLines[fallbackIndex] = `Fallback = fallback, ${autoNames.join(", ")}${suffix}`;
+    keptLines[fallbackIndex] =
+      `Fallback = fallback, ${autoNames.join(", ")}${suffix}`;
+  }
+  const proxyIndex = keptLines.findIndex((line) =>
+    /^\s*Proxy\s*=\s*select\s*,/i.test(line),
+  );
+  if (proxyIndex >= 0) {
+    keptLines[proxyIndex] = mergeRemoteIntoProxySelectLine(
+      keptLines[proxyIndex],
+      autoNames,
+    );
   }
 
   const rebuiltSection = [sectionHeader, ...keptLines].join(eol);
   return text.replace(sectionRegex, rebuiltSection);
 }
 
+function mergeRemoteIntoProxySelectLine(line, remoteNames) {
+  const eqIndex = line.indexOf("=");
+  if (eqIndex < 0) return line;
+  const left = line.slice(0, eqIndex + 1);
+  const right = line.slice(eqIndex + 1).trim();
+  const parts = right
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!parts.length) return line;
+
+  const head = parts.shift();
+  const optionsStart = parts.findIndex((p) => /=/.test(p));
+  const policyParts =
+    optionsStart >= 0 ? parts.slice(0, optionsStart) : parts.slice();
+  const optionParts = optionsStart >= 0 ? parts.slice(optionsStart) : [];
+
+  const allFilterIndex = policyParts.findIndex((p) => /^All_Filter$/i.test(p));
+  const insertAt = allFilterIndex >= 0 ? allFilterIndex : policyParts.length;
+
+  const remoteMap = new Map(
+    remoteNames.map((n) => [String(n).toLowerCase(), n]),
+  );
+  const filteredPolicies = policyParts.filter(
+    (p) => !remoteMap.has(String(p).toLowerCase()),
+  );
+
+  filteredPolicies.splice(insertAt, 0, ...remoteNames);
+
+  const dedupedPolicies = [];
+  const seen = new Set();
+  for (const p of filteredPolicies) {
+    const key = String(p).toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    dedupedPolicies.push(p);
+  }
+
+  const rebuilt = [head, ...dedupedPolicies, ...optionParts].join(", ");
+  return `${left} ${rebuilt}`;
+}
+
 function buildAutoUrlTestRhs(rhs, alias) {
-  const cleanAlias = sanitizeAlias(alias);
+  const cleanAlias = alias;
   const urlMatch = rhs.match(/,\s*url\s*=/i);
   if (!urlMatch) return rhs;
 
   const cutIndex = urlMatch.index;
   const left = rhs.slice(0, cutIndex).trim();
   const right = rhs.slice(cutIndex + 1).trim();
-  const leftPayload = left.replace(/^url-test\s*,?\s*/i, "").trim().replace(/,\s*$/, "");
+  const leftPayload = left
+    .replace(/^url-test\s*,?\s*/i, "")
+    .trim()
+    .replace(/,\s*$/, "");
   const mergedLeft = leftPayload ? `${leftPayload}, ${cleanAlias}` : cleanAlias;
   return `url-test, ${mergedLeft}, ${right}`;
 }
 
-function loadSubscriptionsFromContext(source, expectedName) {
-  const collection = source?._collection ?? {};
-  if (collection.name !== expectedName) return [];
-  const names = Array.isArray(collection.subscriptions)
-    ? collection.subscriptions.filter(Boolean)
-    : [];
-  return names.map((name) => {
-    const sub = source?.[name] ?? {};
-    return {
-      name,
-      displayName: sub.displayName || sub["display-name"] || sub.name || name,
-    };
-  });
-}
-
 async function loadCollectionSubscriptions(collectionName) {
-  try {
-    const proxies = await produceArtifact({
-      type: "collection",
-      name: collectionName,
-      platform: "ClashMeta",
-      produceType: "internal",
-    });
-    const seen = new Map();
-    for (const proxy of Array.isArray(proxies) ? proxies : []) {
-      const name = proxy?._subName || proxy?.subscriptionName;
-      if (!name || seen.has(name)) continue;
-      seen.set(name, proxy?._subDisplayName || proxy?.subscriptionDisplayName || name);
-    }
-    return Array.from(seen.entries()).map(([name, displayName]) => ({
+  const proxies = await produceArtifact({
+    type: "collection",
+    name: collectionName,
+    platform: "ClashMeta",
+    produceType: "internal",
+  });
+  const seen = new Map();
+  for (const proxy of Array.isArray(proxies) ? proxies : []) {
+    const name = proxy?._subName || proxy?.subscriptionName;
+    if (!name || seen.has(name)) continue;
+    seen.set(
       name,
-      displayName,
-    }));
-  } catch (e) {
-    return [];
+      proxy?._subDisplayName || proxy?.subscriptionDisplayName || name,
+    );
   }
+  const list = Array.from(seen.entries()).map(([name, displayName]) => ({
+    name,
+    displayName,
+  }));
+  if (!list.length)
+    throw new Error(`collection ${collectionName} has no subscriptions`);
+  return list;
 }
 
 function replaceSection(text, sectionName, lines) {

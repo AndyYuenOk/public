@@ -1,6 +1,4 @@
-// REFERENCE FOLDER: C:\Users\Admin\BtSoft\wwwroot\Sub-Store
-
-const FINAL_PROXIES_CACHE_KEY = "sub-store-free-optimized:final-proxies";
+﻿const FINAL_PROXIES_CACHE_KEY = "sub-store-free-optimized:final-proxies";
 // 测速文件，需要在超时时间内下载完成，目标越小越好。
 // 由于下载爬坡等因素，估算速度 != 实际速度，但能保证最低速度。
 // https://github.com/litterinchina/large-file-download-test

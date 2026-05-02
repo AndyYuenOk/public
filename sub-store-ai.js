@@ -1,5 +1,4 @@
-﻿// REFERENCE FOLDER: C:\Users\Admin\BtSoft\wwwroot\Sub-Store
-/**
+﻿/**
  *
  * AI 检测(适配 Sub-Store Node.js 版)
  *
