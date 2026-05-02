@@ -31,6 +31,7 @@ function operator(proxies = [], targetPlatform, context) {
       ...entrance,
       proxy.egressCountryCode,
       proxy.egressGroup,
+      proxy.egressHosting ? "" : "HBB",
       normalizedIsp(proxy.egressIsp, proxy.egressCountry, proxy.egressCity),
       multiplier,
       proxy?.canAccessOpenai ? "GPT" : "",

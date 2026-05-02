@@ -53,7 +53,8 @@ async function operator(proxies = [], targetPlatform, context) {
   let valid = $arguments.valid || `ProxyUtils.isIP('{{api.ip || api.query}}')`;
   const shouldRename = Boolean($arguments.format);
   let format = $arguments.format || "";
-  let url = "http://ip-api.com/json?lang=en";
+  let url =
+    "http://ip-api.com/json?lang=en&fields=country,countryCode,region,regionName,city,isp,as,query,hosting";
   const method = $arguments.method || "get";
 
   let utils;
@@ -480,6 +481,7 @@ async function operator(proxies = [], targetPlatform, context) {
     proxy.egressRegionName = api.regionName ?? "";
     proxy.egressCity = api.city ?? "";
     proxy.egressIsp = api.isp ?? "";
+    proxy.egressHosting = api.hosting ?? "";
   }
 
   function applyEgressGroup(proxy = {}, api = {}) {
@@ -568,7 +570,7 @@ async function operator(proxies = [], targetPlatform, context) {
   }
 
   function getIpApiUrl(ip) {
-    return "http://ip-api.com/json?lang=en";
+    return "http://ip-api.com/json?lang=en&fields=country,countryCode,region,regionName,city,isp,as,query,hosting";
   }
 
   function lodash_get(source, path, defaultValue = undefined) {
