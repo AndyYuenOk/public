@@ -473,19 +473,18 @@ async function operator(proxies = [], targetPlatform, context) {
   }
 
   function applyEgressInfo(proxy = {}, api = {}) {
-    proxy.egressIp = getReturnedIp(api);
-    proxy.egressCountryCode = api.countryCode;
-    proxy.egressCountry = api.country;
-    proxy.egressRegion = api.region;
-    proxy.egressRegionName = api.regionName;
-    proxy.egressCity = api.city;
-    proxy.egressIsp = api.isp;
+    proxy.egressIp = getReturnedIp(api) ?? "";
+    proxy.egressCountryCode = api.countryCode ?? "";
+    proxy.egressCountry = api.country ?? "";
+    proxy.egressRegion = api.region ?? "";
+    proxy.egressRegionName = api.regionName ?? "";
+    proxy.egressCity = api.city ?? "";
+    proxy.egressIsp = api.isp ?? "";
   }
 
   function applyEgressGroup(proxy = {}, api = {}) {
     const groupCode = getOrCreateGroupCode(getReturnedIp(api));
-    if (!groupCode) return;
-    proxy.egressGroup = groupCode;
+    proxy.egressGroup = groupCode || "";
   }
 
   function formatIpApiInfo(api = {}) {
