@@ -190,9 +190,9 @@ async function operator(proxies = [], targetPlatform, context) {
         } else if (cached?.unsupported) {
           const regionText =
             detection.key === "gemini" && cached.unsupported_region
-              ? `, region=${cached.unsupported_region}`
+              ? `, country3=${cached.unsupported_region}`
               : detection.key === "claude" && cached.unsupported_region
-                ? `, country=${cached.unsupported_region}`
+                ? `, country2=${cached.unsupported_region}`
                 : "";
           $.info(
             `使用缓存 [${proxy.name}] ${aiName} 不支持(地区限制)${regionText}`,
@@ -413,11 +413,11 @@ async function operator(proxies = [], targetPlatform, context) {
         });
         const regionText =
           detection.key === "gemini" && geminiCountry3
-            ? `, region=${geminiCountry3}`
+            ? `, country3=${geminiCountry3}`
             : detection.key === "openai" && openaiCountry2
               ? `, country2=${openaiCountry2}`
               : detection.key === "claude" && claudeCountry2
-                ? `, country=${claudeCountry2}`
+                ? `, country2=${claudeCountry2}`
                 : "";
         $.info(
           `[${proxy.name}] [${detection.name}] 支持, status=${status}${regionText}`,
@@ -440,9 +440,9 @@ async function operator(proxies = [], targetPlatform, context) {
           detection.key === "openai" && openaiCountry2
             ? `, country2=${openaiCountry2}`
             : detection.key === "gemini" && geminiCountry3
-              ? `, region=${geminiCountry3}`
+              ? `, country3=${geminiCountry3}`
               : detection.key === "claude" && claudeCountry2
-                ? `, country=${claudeCountry2}`
+                ? `, country2=${claudeCountry2}`
                 : "";
         $.info(
           `[${proxy.name}] [${detection.name}] 不支持(地区限制), status=${status}${locText}`,
@@ -650,8 +650,8 @@ async function operator(proxies = [], targetPlatform, context) {
     const region = String(cached?.supported_region || "");
     if (!region) return "";
     if (detection.key === "openai") return `, country2=${region}`;
-    if (detection.key === "gemini") return `, region=${region}`;
-    if (detection.key === "claude") return `, country=${region}`;
+    if (detection.key === "gemini") return `, country3=${region}`;
+    if (detection.key === "claude") return `, country2=${region}`;
     return "";
   }
   function getUnsupportedMessage(bodyText = "") {
