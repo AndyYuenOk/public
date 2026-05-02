@@ -7,12 +7,27 @@ function operator(proxies = [], targetPlatform, context) {
   proxies.forEach((proxy) => {
     proxy.subscriptionName = proxy._subName;
 
+    counters[proxy.name] ??= { count: 0, index: 0 };
+    counters[proxy.name].count++;
+    counters[proxy.entranceIsp] ??= { count: 0, index: 0 };
+    counters[proxy.entranceIsp].count++;
+    counters[proxy.egressIsp] ??= { count: 0, index: 0 };
+    counters[proxy.egressIsp].count++;
+  });
+
+  let counter, index;
+  proxies.forEach((proxy) => {
     let entrance = [];
     if (proxy.entranceIp != proxy.egressIp) {
+      index = "";
+      if (counter.count > 1) {
+        counter = counters[proxy.entranceIsp];
+        index = (++counter.index).toString().padStart(2, "0");
+      }
       entrance = [
         proxy.entranceCountryCode,
         proxy.entranceRegion.replace(/^\d+$/, ""),
-        proxy.entranceGroup,
+        index,
         // $server.ipCity,
         normalizedIsp(
           proxy.entranceIsp,
@@ -26,11 +41,17 @@ function operator(proxies = [], targetPlatform, context) {
     let multiplier = proxy.name.match(/(\d\.\d)x/i)?.[1] || "";
     if (multiplier) multiplier = parseFloat(multiplier) + "\u00D7";
 
+    index = "";
+    if (counter.count > 1) {
+      counter = counters[proxy.egressIsp];
+      index = (++counter.index).toString().padStart(2, "0");
+    }
+
     proxy.name = [
       flagMap[proxy.egressCountryCode],
       ...entrance,
       proxy.egressCountryCode,
-      proxy.egressGroup,
+      index,
       proxy.egressHosting ? "" : "HBB",
       normalizedIsp(proxy.egressIsp, proxy.egressCountry, proxy.egressCity),
       multiplier,
@@ -42,11 +63,6 @@ function operator(proxies = [], targetPlatform, context) {
       .replace(/\s{2,}/g, " ")
       .trim();
 
-    counters[proxy.name] ??= { count: 0, index: 0 };
-    counters[proxy.name].count++;
-  });
-
-  proxies.forEach((proxy) => {
     let counter = counters[proxy.name];
     if (counter.count > 1) {
       let index = (++counter.index).toString().padStart(2, "0");
