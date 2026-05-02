@@ -39,7 +39,7 @@ function operator(proxies = [], targetPlatform, context) {
       proxy?.canAccessClaude ? "CL" : "",
     ]
       .join(" ")
-      .replace(/\s{2,}/, " ")
+      .replace(/\s{2,}/g, " ")
       .trim();
 
     counters[proxy.name] ??= { count: 0, index: 0 };
