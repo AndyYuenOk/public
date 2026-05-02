@@ -7,23 +7,6 @@ function operator(proxies = [], targetPlatform, context) {
   proxies.forEach((proxy) => {
     proxy.subscriptionName = proxy._subName;
 
-    let isp = proxy.entranceIsp
-      .replace(/.*China Mobile.*/, "CM")
-      .replace(/.*China Unicom.*/, "CU")
-      .replace(/.*Chinanet.*/, "CT")
-      .replace(/.*Amazon.*/, "AMZ")
-      .replace(/.*Microsoft.*/, "Azure")
-      .replace(/.*Cloudflare.*/, "CF")
-      .replace(/.*Chunghwa Telecom.*/, "HiNet")
-      .replace(/.*HostPapa.*/, "HPAPA")
-      .replace(/.*NetLab.*/, "NetLab")
-      .replace(/.*Hong Kong Telecommunications.*/, "HKT")
-      .replace(/.*Alibaba.*/, "Ali")
-      .replace(/networks?|technology|(?:co|ltd|inc)\.|pty ltd|,/gi, "")
-      .trim()
-      .split(" ")
-      .at(-1);
-
     let entrance = [];
     if (proxy.entranceIp != proxy.egressIp) {
       entrance = [
@@ -31,7 +14,7 @@ function operator(proxies = [], targetPlatform, context) {
         proxy.entranceRegion.replace(/^\d+$/, ""),
         proxy.entranceGroup,
         // $server.ipCity,
-        isp,
+        normalizedIsp(proxy.entranceIsp),
         "-",
       ];
     }
@@ -40,6 +23,7 @@ function operator(proxies = [], targetPlatform, context) {
       flagMap[proxy.egressCountryCode],
       ...entrance,
       proxy.egressCountryCode,
+      normalizedIsp(proxy.egressIsp),
       proxy.egressGroup,
       proxy?.canAccessOpenai ? "GPT" : "",
       proxy?.canAccessGemini ? "GM" : "",
@@ -62,4 +46,26 @@ function operator(proxies = [], targetPlatform, context) {
   });
 
   return proxies;
+}
+
+function normalizedIsp(isp) {
+  return isp
+    .replace(/.*China Mobile.*/, "CM")
+    .replace(/.*China Unicom.*/, "CU")
+    .replace(/.*Chinanet.*/, "CT")
+    .replace(/.*Amazon.*/, "AMZ")
+    .replace(/.*Microsoft.*/, "Azure")
+    .replace(/.*Cloudflare.*/, "CF")
+    .replace(/.*Chunghwa Telecom.*/, "HiNet")
+    .replace(/.*HostPapa.*/, "HPAPA")
+    .replace(/.*NetLab.*/, "NetLab")
+    .replace(/.*Hong Kong Telecommunications.*/, "HKT")
+    .replace(/.*Alibaba.*/, "Ali")
+    .replace(
+      /networks?|technolog(y|ies)|(?:co|ltd|inc)\.|ltd|corporation|data|communications|limited|labs|the|link|europe|srl|sas|,/gi,
+      "",
+    )
+    .trim()
+    .split(" ")
+    .at(-1);
 }

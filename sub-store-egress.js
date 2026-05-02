@@ -220,9 +220,9 @@ async function operator(proxies = [], targetPlatform, context) {
     const id = shouldWriteCache ? getCacheId(proxy, queryServer) : undefined;
 
     try {
-      const cached = useCache ? cache.get(id) : null;
-      if (useCache && cached) {
-        if (cached.api) {
+      if (useCache) {
+        const cached = cache.get(id);
+        if (cached?.api) {
           const cachedGroupCode = getOrCreateGroupCode(
             getReturnedIp(cached.api),
           );
@@ -245,12 +245,17 @@ async function operator(proxies = [], targetPlatform, context) {
           proxies[proxy._proxies_index]._egress = cached.api;
           return;
         }
-        if (disableFailedCache) {
-          info(`[${proxy.name}] skip failed cache`);
+
+        if (cached) {
+          if (disableFailedCache) {
+            info(`[${proxy.name}] skip failed cache`);
+          } else {
+            info(`USE CACHE, [${proxy.name}] error`);
+          }
         } else {
-          info(`USE CACHE, [${proxy.name}] error`);
-          return;
+          info(`USE CACHE, [${proxy.name}] miss`);
         }
+        return;
       }
 
       const startedAt = Date.now();
@@ -267,7 +272,6 @@ async function operator(proxies = [], targetPlatform, context) {
           url,
         });
 
-        const status = parseInt(res.status || res.statusCode || 200, 10);
         const ip = String(lodash_get(res, "body", "")).trim();
         api = {
           countryCode: utils.geoip(ip) || "",
@@ -297,12 +301,11 @@ async function operator(proxies = [], targetPlatform, context) {
           if (shouldWriteCache) {
             cache.set(id, { api });
           }
-        } else if (shouldWriteCache) {
-          cache.set(id, {});
         }
       } else {
         const ipApiResult = await getIpApiResult(
           proxy,
+          serverWithPort,
           queryServer,
           startedAt,
           index,
@@ -341,7 +344,7 @@ async function operator(proxies = [], targetPlatform, context) {
             );
           }
           if (ipApiRawCacheWriteEnabled && ipApiResult.source === "network") {
-            cache.set(getIpApiCacheId(queryServer), api);
+            cache.set(getIpApiCacheId(serverWithPort), api);
           }
           if (shouldWriteCache) {
             cache.set(id, { api });
@@ -351,9 +354,8 @@ async function operator(proxies = [], targetPlatform, context) {
             info(
               `[${proxy.name}] ip-api status=${status} invalid response, log only`,
             );
-          } else if (shouldWriteCache) {
-            info(`[${proxy.name}] write failed cache`);
-            cache.set(id, {});
+          } else {
+            info(`[${proxy.name}] invalid response, skip cache update`);
           }
         }
       }
@@ -363,34 +365,40 @@ async function operator(proxies = [], targetPlatform, context) {
         info(`[${proxy.name}] ip-api error/timeout, log only`);
         return;
       }
-      if (shouldWriteCache) {
-        info(`[${proxy.name}] write failed cache`);
-        cache.set(id, {});
-      }
+      info(`[${proxy.name}] request failed, skip cache update`);
     }
   }
 
-  async function getIpApiResult(proxy, queryServer, startedAt, index) {
-    const ipApiCacheId = getIpApiCacheId(queryServer);
-    const cachedIpApi = ipApiRawCacheReadEnabled
-      ? cache.get(ipApiCacheId, 0, true)
-      : null;
-    if (cachedIpApi) {
-      return {
-        api: cachedIpApi,
-        status: 200,
-        latency: "",
-        source: "persistent-cache",
-      };
-    }
+  async function getIpApiResult(
+    proxy,
+    serverWithPort,
+    queryServer,
+    startedAt,
+    index,
+  ) {
+    const requestKey = String(serverWithPort || queryServer || "").trim();
+    if (useCache) {
+      const ipApiCacheId = getIpApiCacheId(requestKey);
+      const cachedIpApi = ipApiRawCacheReadEnabled
+        ? cache.get(ipApiCacheId, 0, true)
+        : null;
+      if (cachedIpApi) {
+        return {
+          api: cachedIpApi,
+          status: 200,
+          latency: "",
+          source: "persistent-cache",
+        };
+      }
 
-    if (useCache && ipApiRequestCache.has(queryServer)) {
-      return { ...ipApiRequestCache.get(queryServer), source: "shared-cache" };
-    }
+      if (ipApiRequestCache.has(requestKey)) {
+        return { ...ipApiRequestCache.get(requestKey), source: "shared-cache" };
+      }
 
-    if (ipApiInFlight.has(queryServer)) {
-      const sharedResult = await ipApiInFlight.get(queryServer);
-      return { ...sharedResult, source: "shared-inflight" };
+      if (ipApiInFlight.has(requestKey)) {
+        const sharedResult = await ipApiInFlight.get(requestKey);
+        return { ...sharedResult, source: "shared-inflight" };
+      }
     }
 
     const requestTask = (async () => {
@@ -419,18 +427,23 @@ async function operator(proxies = [], targetPlatform, context) {
         latency: `${Date.now() - startedAt}`,
       };
       if (useCache) {
-        ipApiRequestCache.set(queryServer, payload);
+        ipApiRequestCache.set(requestKey, payload);
       }
       return payload;
     })();
 
-    ipApiInFlight.set(queryServer, requestTask);
-    try {
-      const networkResult = await requestTask;
-      return { ...networkResult, source: "network" };
-    } finally {
-      ipApiInFlight.delete(queryServer);
+    if (useCache) {
+      ipApiInFlight.set(requestKey, requestTask);
+      try {
+        const networkResult = await requestTask;
+        return { ...networkResult, source: "network" };
+      } finally {
+        ipApiInFlight.delete(requestKey);
+      }
     }
+
+    const networkResult = await requestTask;
+    return { ...networkResult, source: "network" };
   }
 
   async function http(opt = {}) {
