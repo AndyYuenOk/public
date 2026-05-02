@@ -10,7 +10,9 @@ let ipIsp = $server.ipIsp
   .replace(/.*NetLab.*/, "NetLab")
   .replace(/.*Hong Kong Telecommunications.*/, "HKT")
   .replace(/.*Alibaba.*/, "Ali")
-  .replace(/networks?|technology|(?:co|ltd|inc)\.|pty ltd|,/gi, "");
+  .replace(/networks?|technology|(?:co|ltd|inc)\.|pty ltd|,/gi, "")
+  .split(" ")
+  .at(-1);
 
 $server.name = [
   $server.ipCountryCode,
@@ -24,4 +26,5 @@ $server.name = [
   $server?.canAccessClaude ? "CL" : "",
 ]
   .join(" ")
-  .replace(/\s{2,}/, " ");
+  .replace(/\s{2,}/, " ")
+  .trim();

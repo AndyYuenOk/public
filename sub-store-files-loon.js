@@ -15,7 +15,8 @@ nextContent = replaceAutoProxyGroups(nextContent, remoteProxyItems);
 $content = nextContent;
 
 function buildRemoteProxyItems(subscriptions, sourceMap) {
-  const usedNames = new Set();
+  const usedRemoteNames = new Set();
+  const usedAutoNames = new Set();
   const items = [];
   for (const subInfo of Array.isArray(subscriptions) ? subscriptions : []) {
     const subName = subInfo.name;
@@ -26,11 +27,10 @@ function buildRemoteProxyItems(subscriptions, sourceMap) {
       sub["display-name"] ||
       sub.name ||
       subName;
-    const remoteName = makeUniqueName(
-      `Auto_${alias || subName || "Sub"}`,
-      usedNames,
-    );
-    items.push({ subName, alias, remoteName });
+    const baseName = alias || subName || "Sub";
+    const remoteName = makeUniqueName(baseName, usedRemoteNames);
+    const autoName = makeUniqueName(`Auto_${baseName}`, usedAutoNames);
+    items.push({ subName, alias, remoteName, autoName });
   }
   return items;
 }
@@ -60,30 +60,42 @@ function replaceAutoProxyGroups(text, items) {
   const section = text.match(sectionRegex)?.[0];
   if (!section) return text;
 
-  const autoNames = items.map((item) => item.remoteName);
+  const remoteNames = items.map((item) => item.remoteName);
+  const autoNames = items.map((item) => item.autoName);
 
   const rawLines = section.split(/\r?\n/);
   const sectionHeader = rawLines[0];
   const bodyLines = rawLines.slice(1);
 
-  const removableAutoRegex = /^Auto_[^=\s]+\s*=\s*url-test,/i;
+  const urlTestLineRegex = /^\s*([^=\s][^=]*?)\s*=\s*url-test\s*,/i;
   const templateLine = bodyLines.find(
-    (line) => removableAutoRegex.test(line) && !/AI_Filter/i.test(line),
+    (line) => urlTestLineRegex.test(line) && !/^\s*Auto_AI\s*=/i.test(line),
   );
   const templateRhs =
     templateLine?.split("=").slice(1).join("=").trim() ||
     "url-test, url=http://www.gstatic.com/generate_204, interval=300, tolerance=50, img-url=https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Auto.png";
 
-  const keptLines = bodyLines.filter(
-    (line) => !(removableAutoRegex.test(line) && !/AI_Filter/i.test(line)),
-  );
-  const generatedAutoLines = autoNames.map((autoName, idx) => {
-    return `${autoName} = ${buildAutoUrlTestRhs(templateRhs, autoName)}`;
-  });
+  const removedUrlTestGroups = new Set();
+  const keptLines = [];
+  for (const line of bodyLines) {
+    const match = line.match(urlTestLineRegex);
+    if (!match) {
+      keptLines.push(line);
+      continue;
+    }
+    const groupName = String(match[1] || "").trim();
+    if (/^Auto_AI$/i.test(groupName)) {
+      keptLines.push(line);
+      continue;
+    }
+    removedUrlTestGroups.add(groupName.toLowerCase());
+  }
 
-  const autoAiIndex = keptLines.findIndex((line) =>
-    /^\s*Auto_AI\s*=/i.test(line),
+  const generatedAutoLines = items.map(
+    (item) =>
+      `${item.autoName} = ${buildAutoUrlTestRhs(templateRhs, item.remoteName)}`,
   );
+  const autoAiIndex = keptLines.findIndex((line) => /^\s*Auto_AI\s*=/i.test(line));
   if (autoAiIndex >= 0) {
     keptLines.splice(autoAiIndex, 0, ...generatedAutoLines);
   } else {
@@ -94,12 +106,11 @@ function replaceAutoProxyGroups(text, items) {
     /^\s*Fallback\s*=/i.test(line),
   );
   if (fallbackIndex >= 0) {
-    const current = keptLines[fallbackIndex];
-    const suffix =
-      current.match(/,\s*url\s*=.*$/i)?.[0] ||
-      ", url=http://www.gstatic.com/generate_204, interval=300, max-timeout=3000";
-    keptLines[fallbackIndex] =
-      `Fallback = fallback, ${autoNames.join(", ")}${suffix}`;
+    keptLines[fallbackIndex] = rewriteFallbackLineKeepingOnlyAutoAi(
+      keptLines[fallbackIndex],
+      removedUrlTestGroups,
+      autoNames,
+    );
   }
   const proxyIndex = keptLines.findIndex((line) =>
     /^\s*Proxy\s*=\s*select\s*,/i.test(line),
@@ -107,7 +118,7 @@ function replaceAutoProxyGroups(text, items) {
   if (proxyIndex >= 0) {
     keptLines[proxyIndex] = mergeRemoteIntoProxySelectLine(
       keptLines[proxyIndex],
-      autoNames,
+      remoteNames,
     );
   }
 
@@ -171,6 +182,59 @@ function buildAutoUrlTestRhs(rhs, alias) {
     .replace(/,\s*$/, "");
   const mergedLeft = leftPayload ? `${leftPayload}, ${cleanAlias}` : cleanAlias;
   return `url-test, ${mergedLeft}, ${right}`;
+}
+
+function rewriteFallbackLineKeepingOnlyAutoAi(
+  line,
+  removedUrlTestGroups,
+  autoNames,
+) {
+  const eqIndex = line.indexOf("=");
+  if (eqIndex < 0) return line;
+
+  const name = line.slice(0, eqIndex).trim() || "Fallback";
+  const rhs = line.slice(eqIndex + 1).trim();
+  const parts = rhs
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!parts.length) return line;
+
+  const type = parts.shift();
+  if (!/^fallback$/i.test(type)) return line;
+
+  const optionsStart = parts.findIndex((p) => /=/.test(p));
+  const members = optionsStart >= 0 ? parts.slice(0, optionsStart) : parts.slice();
+  const options = optionsStart >= 0 ? parts.slice(optionsStart) : [];
+
+  const autoSet = new Set(
+    (Array.isArray(autoNames) ? autoNames : []).map((n) =>
+      String(n).toLowerCase(),
+    ),
+  );
+  const filteredMembers = members.filter(
+    (m) =>
+      !removedUrlTestGroups.has(String(m).toLowerCase()) &&
+      !/^Auto_AI$/i.test(String(m).trim()),
+  );
+  const mergedMembers = [
+    ...(Array.isArray(autoNames)
+      ? autoNames.filter((n) => !/^Auto_AI$/i.test(String(n).trim()))
+      : []),
+    ...filteredMembers.filter((m) => !autoSet.has(String(m).toLowerCase())),
+  ];
+
+  const dedupedMembers = [];
+  const seen = new Set();
+  for (const m of mergedMembers) {
+    const key = String(m).toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    dedupedMembers.push(m);
+  }
+
+  const rebuilt = [type, ...dedupedMembers, ...options].join(", ");
+  return `${name} = ${rebuilt}`;
 }
 
 async function loadCollectionSubscriptions(collectionName) {
