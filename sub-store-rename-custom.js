@@ -12,17 +12,10 @@ function operator(proxies = [], targetPlatform, context) {
     ]),
   );
 
-  let entranceIpSet = new Set(),
-    egressIpSet = new Set();
+  let entranceIps = new Set(),
+    egressIps = new Set();
   proxies = proxies
-    .map((proxy, originalIndex) => {
-      proxy.subscriptionName = proxy._subName;
-
-      entranceIpSet.add(proxy.entranceIp);
-      egressIpSet.add(proxy.egressIp);
-
-      return { proxy, originalIndex };
-    })
+    .map((proxy, originalIndex) => ({ proxy, originalIndex }))
     .sort((leftItem, rightItem) => {
       const leftCountryCode = leftItem.proxy?.egressCountryCode;
       const rightCountryCode = rightItem.proxy?.egressCountryCode;
@@ -39,18 +32,27 @@ function operator(proxies = [], targetPlatform, context) {
         leftItem.originalIndex - rightItem.originalIndex
       );
     })
-    .map(({ proxy }) => proxy);
+    .map(({ proxy }) => {
+      proxy.subscriptionName = proxy._subName;
 
-  let counter,
-    index,
-    entranceCount = 0,
-    egressCount = 0;
+      entranceIps.add(proxy.entranceIp);
+      egressIps.add(proxy.egressIp);
+
+      return proxy;
+    });
+
+  entranceIps = [...entranceIps];
+  egressIps = [...egressIps];
+
+  let counter, index;
   proxies.forEach((proxy) => {
     let entrance = [];
     if (proxy.entranceIp != proxy.egressIp) {
       index = "";
-      if (entranceIpSet.size > 1) {
-        index = (++entranceCount).toString().padStart(2, "0");
+      if (entranceIps.length > 1) {
+        index = (entranceIps.indexOf(proxy.entranceIp) + 1)
+          .toString()
+          .padStart(2, "0");
       }
       entrance = [
         proxy.entranceCountryCode,
@@ -70,8 +72,10 @@ function operator(proxies = [], targetPlatform, context) {
     if (multiplier) multiplier = parseFloat(multiplier) + "\u00D7";
 
     index = "";
-    if (egressIpSet.count > 1) {
-      index = (++egressCount).toString().padStart(2, "0");
+    if (egressIps.length > 1) {
+      index = (egressIps.indexOf(proxy.egressIp) + 1)
+        .toString()
+        .padStart(2, "0");
     }
 
     proxy.name = [
