@@ -48,7 +48,7 @@ function operator(proxies = [], targetPlatform, context) {
   proxies.forEach((proxy) => {
     let counter = counters[proxy.name];
     if (counter.count > 1) {
-      let index = (counter.index++).toString().padStart(2, "0");
+      let index = (++counter.index).toString().padStart(2, "0");
       proxy.name += " - " + index;
     }
   });
