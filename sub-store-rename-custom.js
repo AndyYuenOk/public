@@ -71,7 +71,7 @@ function normalizedIsp(isp, country, city) {
     .replace(/.*Alibaba.*/, "Ali")
     .replace(RegExp(country + "|" + city, "i"), "")
     .replace(
-      /networks?|technolog(y|ies)|(?:co|ltd|inc|pte)\.|k\.k|s\.a\.|ltd|llc|information|corporation|data|communications|limited|labs|the|link|europe|srl|sas|,/gi,
+      /networks?|technolog(y|ies)|(?:co|ltd|inc|pte)\.|k\.k|s\.a\.|ltd|llc|pty|information|corporation|data|communications|limited|labs|the|link|europe|srl|sas|,/gi,
       "",
     )
     .trim();
