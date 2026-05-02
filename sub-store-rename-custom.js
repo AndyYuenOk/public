@@ -11,6 +11,7 @@ let ipIsp = $server.ipIsp
   .replace(/.*Hong Kong Telecommunications.*/, "HKT")
   .replace(/.*Alibaba.*/, "Ali")
   .replace(/networks?|technology|(?:co|ltd|inc)\.|pty ltd|,/gi, "")
+  .trim()
   .split(" ")
   .at(-1);
 
