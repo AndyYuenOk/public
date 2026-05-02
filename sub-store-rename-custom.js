@@ -12,16 +12,14 @@ function operator(proxies = [], targetPlatform, context) {
     ]),
   );
 
+  let entranceIpSet = new Set(),
+    egressIpSet = new Set();
   proxies = proxies
     .map((proxy, originalIndex) => {
       proxy.subscriptionName = proxy._subName;
 
-      counters[proxy.name] ??= { count: 0, index: 0 };
-      counters[proxy.name].count++;
-      counters[proxy.entranceIsp] ??= { count: 0, index: 0 };
-      counters[proxy.entranceIsp].count++;
-      counters[proxy.egressIsp] ??= { count: 0, index: 0 };
-      counters[proxy.egressIsp].count++;
+      entranceIpSet.add(proxy.entranceIp);
+      egressIpSet.add(proxy.egressIp);
 
       return { proxy, originalIndex };
     })
@@ -43,14 +41,16 @@ function operator(proxies = [], targetPlatform, context) {
     })
     .map(({ proxy }) => proxy);
 
-  let counter, index;
+  let counter,
+    index,
+    entranceCount = 0,
+    egressCount = 0;
   proxies.forEach((proxy) => {
     let entrance = [];
     if (proxy.entranceIp != proxy.egressIp) {
       index = "";
-      if (counter.count > 1) {
-        counter = counters[proxy.entranceIsp];
-        index = (++counter.index).toString().padStart(2, "0");
+      if (entranceIpSet.size > 1) {
+        index = (++entranceCount).toString().padStart(2, "0");
       }
       entrance = [
         proxy.entranceCountryCode,
@@ -70,9 +70,8 @@ function operator(proxies = [], targetPlatform, context) {
     if (multiplier) multiplier = parseFloat(multiplier) + "\u00D7";
 
     index = "";
-    if (counter.count > 1) {
-      counter = counters[proxy.egressIsp];
-      index = (++counter.index).toString().padStart(2, "0");
+    if (egressIpSet.count > 1) {
+      index = (++egressCount).toString().padStart(2, "0");
     }
 
     proxy.name = [
@@ -91,9 +90,14 @@ function operator(proxies = [], targetPlatform, context) {
       .replace(/\s{2,}/g, " ")
       .trim();
 
-    let counter = counters[proxy.name];
+    counters[proxy.name] ??= { count: 0, index: 0 };
+    counters[proxy.name].count++;
+  });
+
+  proxies.forEach((proxy) => {
+    counter = counters[proxy.name];
     if (counter.count > 1) {
-      let index = (++counter.index).toString().padStart(2, "0");
+      index = (++counter.index).toString().padStart(2, "0");
       proxy.name += " - " + index;
     }
   });
