@@ -219,6 +219,13 @@ async function operator(proxies = [], targetPlatform, context) {
     const serverWithPort = getServerWithPort(proxy);
     const queryServer = String(proxy.server || "").trim();
     const id = shouldWriteCache ? getCacheId(proxy, queryServer) : undefined;
+    const targetProxy = proxies[proxy._proxies_index];
+
+    // cache=false 模式下先挂空字段，后续成功请求会覆盖为真实值
+    if (!useCache) {
+      applyEgressInfo(targetProxy, {});
+      applyEgressGroup(targetProxy, {});
+    }
 
     try {
       if (useCache) {
@@ -233,17 +240,17 @@ async function operator(proxies = [], targetPlatform, context) {
           info(
             `USE CACHE, [${proxy.name}] ${cachedGroupCode ? `${cachedGroupCode}, ` : ""}${formatServerWithIp(serverWithPort, cached.api)}, ${cacheInfo}`,
           );
-          applyEgressInfo(proxies[proxy._proxies_index], cached.api);
-          applyEgressGroup(proxies[proxy._proxies_index], cached.api);
+          applyEgressInfo(targetProxy, cached.api);
+          applyEgressGroup(targetProxy, cached.api);
           if (shouldRename) {
-            proxies[proxy._proxies_index].name = formatter({
-              proxy: proxies[proxy._proxies_index],
+            targetProxy.name = formatter({
+              proxy: targetProxy,
               api: cached.api,
               format,
               regex,
             });
           }
-          proxies[proxy._proxies_index]._egress = cached.api;
+          targetProxy._egress = cached.api;
           return;
         }
 
@@ -285,17 +292,17 @@ async function operator(proxies = [], targetPlatform, context) {
           eval(formatter({ api, format: valid, regex }))
         ) {
           const groupCode = getOrCreateGroupCode(getReturnedIp(api));
-          applyEgressInfo(proxies[proxy._proxies_index], api);
-          applyEgressGroup(proxies[proxy._proxies_index], api);
+          applyEgressInfo(targetProxy, api);
+          applyEgressGroup(targetProxy, api);
           if (shouldRename) {
-            proxies[proxy._proxies_index].name = formatter({
-              proxy: proxies[proxy._proxies_index],
+            targetProxy.name = formatter({
+              proxy: targetProxy,
               api,
               format,
               regex,
             });
           }
-          proxies[proxy._proxies_index]._egress = api;
+          targetProxy._egress = api;
           info(
             `[${proxy.name}] ${groupCode ? `${groupCode}, ` : ""}${formatServerWithIp(serverWithPort, api)}, ${formatCountryAsoAsInfo(api)}`,
           );
@@ -317,17 +324,17 @@ async function operator(proxies = [], targetPlatform, context) {
         const validApi = eval(formatter({ api, format: valid, regex }));
         if (status === 200 && validApi) {
           const groupCode = getOrCreateGroupCode(getReturnedIp(api));
-          applyEgressInfo(proxies[proxy._proxies_index], api);
-          applyEgressGroup(proxies[proxy._proxies_index], api);
+          applyEgressInfo(targetProxy, api);
+          applyEgressGroup(targetProxy, api);
           if (shouldRename) {
-            proxies[proxy._proxies_index].name = formatter({
-              proxy: proxies[proxy._proxies_index],
+            targetProxy.name = formatter({
+              proxy: targetProxy,
               api,
               format,
               regex,
             });
           }
-          proxies[proxy._proxies_index]._egress = api;
+          targetProxy._egress = api;
           if (ipApiResult.source === "persistent-cache") {
             info(
               `[${proxy.name}] ${groupCode ? `${groupCode}, ` : ""}${formatServerWithIp(serverWithPort, api)}, using IP API persistent cache, ${formatIpApiInfo(api)}`,
@@ -494,6 +501,7 @@ async function operator(proxies = [], targetPlatform, context) {
       api.country || "",
       api.regionName || "",
       api.city || "",
+      api.hosting ?? "",
       api.isp || "",
       api.as || "",
     ].filter((v) => String(v).trim() !== "");
