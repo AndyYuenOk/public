@@ -53,7 +53,7 @@ async function operator(proxies = [], targetPlatform, context) {
   let valid = $arguments.valid || `ProxyUtils.isIP('{{api.ip || api.query}}')`;
   const shouldRename = Boolean($arguments.format);
   let format = $arguments.format || "";
-  let url = $arguments.api || "http://ip-api.com/json/{{proxy.server}}?lang=en";
+  let url = "http://ip-api.com/json?lang=en";
   const method = $arguments.method || "get";
 
   let utils;
@@ -73,7 +73,7 @@ async function operator(proxies = [], targetPlatform, context) {
     url = $arguments.api || "http://checkip.amazonaws.com";
   }
 
-  const isIpApiUrl = /^https?:\/\/ip-api\.com\/json\//i.test(url);
+  const isIpApiUrl = /^https?:\/\/ip-api\.com\/json(?:\/|\?|$)/i.test(url);
   const ipApiRawCacheReadEnabled = useCache && isIpApiUrl;
   const ipApiRawCacheWriteEnabled = shouldWriteCache && isIpApiUrl;
   const ipApiInFlight = new Map();
@@ -554,8 +554,7 @@ async function operator(proxies = [], targetPlatform, context) {
   }
 
   function getIpApiUrl(ip) {
-    const query = String(url).split("?")[1];
-    return `http://ip-api.com/json/${encodeURIComponent(ip)}${query ? `?${query}` : ""}`;
+    return "http://ip-api.com/json?lang=en";
   }
 
   function lodash_get(source, path, defaultValue = undefined) {
