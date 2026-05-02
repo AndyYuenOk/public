@@ -2,3 +2,4 @@ captures/
 sub-store-source/
 *.log
 node_modules/
+proxy/
