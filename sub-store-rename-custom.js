@@ -24,7 +24,7 @@ function operator(proxies = [], targetPlatform, context) {
     }
 
     let multiplier = proxy.name.match(/(\d\.\d)x/i)?.[1] || "";
-    if (multiplier) multiplier = parseFloat(multiplier) + "×";
+    if (multiplier) multiplier = parseFloat(multiplier) + "\u00D7";
 
     proxy.name = [
       flagMap[proxy.egressCountryCode],

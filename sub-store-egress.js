@@ -221,11 +221,10 @@ async function operator(proxies = [], targetPlatform, context) {
     const id = shouldWriteCache ? getCacheId(proxy, queryServer) : undefined;
     const targetProxy = proxies[proxy._proxies_index];
 
-    // cache=false 模式下先挂空字段，后续成功请求会覆盖为真实值
-    if (!useCache) {
-      applyEgressInfo(targetProxy, {});
-      applyEgressGroup(targetProxy, {});
-    }
+    // Always prefill egress fields to empty values.
+    // This keeps downstream scripts stable when cache is miss/failed-only.
+    applyEgressInfo(targetProxy, {});
+    applyEgressGroup(targetProxy, {});
 
     try {
       if (useCache) {
