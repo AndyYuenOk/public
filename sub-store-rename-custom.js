@@ -82,8 +82,8 @@ function operator(proxies = [], targetPlatform, context) {
       ...entrance,
       proxy.egressCountryCode,
       index,
-      proxy.egressIsResidential ? "Resi" : "",
       normalizedIsp(proxy.egressIsp, proxy.egressCountry, proxy.egressCity),
+      proxy.egressIsResidential ? "Resi" : "",
       multiplier,
       proxy?.canAccessOpenai ? "GPT" : "",
       proxy?.canAccessGemini ? "GM" : "",
@@ -122,8 +122,9 @@ function normalizedIsp(isp, country, city) {
     .replace(/.*Hong Kong Telecommunications.*/, "HKT")
     .replace(/.*Alibaba.*/, "Ali")
     .replace(RegExp(country + "|" + city, "i"), "")
+    .replace(/,|\./g, "")
     .replace(
-      /,|(?:co|ltd|inc|pte)\.|k\.k|s\.a\.|networks?|technolog(y|ies)|ltd|llc|pty|information|corporation|data|communications|limited|labs|the|link|europe|srl|sas|servers/gi,
+      /\b(?:co|ltd|inc|pte|kk|sa|networks?|technolog(?:y|ies)|llc|pty|information|corporation|data|communications|limited|labs|the|link|europe|srl|sas|servers)\b/gi,
       "",
     )
     .trim();
