@@ -245,13 +245,15 @@ function main(config) {
     fullNodeGroupNames.unshift("Auto");
   }
 
-  strategyGroups.unshift(
-    mainProxyGroup.proxies.concat(
-      autoSelectGroup.name,
-      enableFallback ? autoSelectGroup.proxies : [],
-    ),
-    { ...autoSelectGroup, ...healthCheck },
+  mainProxyGroup.proxies.push(
+    autoSelectGroup.name,
+    ...(enableFallback ? autoSelectGroup.proxies : []),
   );
+
+  strategyGroups.unshift(mainProxyGroup, {
+    ...autoSelectGroup,
+    ...healthCheck,
+  });
 
   let allProxyNames = config.proxies.map((proxy) => proxy.name);
 
