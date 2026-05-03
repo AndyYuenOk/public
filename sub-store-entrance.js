@@ -1,83 +1,32 @@
-/**
- * 节点信息(入口版)
+﻿/**
+ * Sub-Store Entrance Script (Node.js)
  *
- * 用途:
- * - 查询节点入口 IP 所在地区/ASN 信息
- * - 按自定义格式重命名节点
- * - 可选附加 _entrance 字段, 便于后续脚本继续使用查询结果
+ * Purpose:
+ * - Query entrance IP geo/ASN information for each proxy
+ * - Optionally rename proxies using response fields
+ * - Optionally attach `_entrance` payload for downstream scripts
  *
- * 当前默认行为:
- * - [internal] 默认开启, 优先使用内部 GeoIP/MMDB 方法查询
- * - [resolve_domain] 默认开启, 在 Node.js 环境下会先用本地 DNS 解析域名再查询
+ * Notes:
+ * - With `internal=true`, lookup target must be an IP
+ * - With `resolve_domain=true`, Node.js environment is required
+ * - Domain resolution failures are treated as failed nodes
  *
- * ⚠️ 注意
- * - 当 [internal] 开启时, 查询目标最终必须是 IP
- * - 当 [resolve_domain] 开启时, 仅支持 Node.js 环境
- * - 域名解析失败时不会回退原域名, 会按失败节点处理
- * - 脚本不会修改原始 proxy.server, 解析得到的 IP 仅用于查询和缓存
- *
- * 查看说明: https://t.me/zhetengsha/1358
- *
- * 落地版脚本请查看: https://t.me/zhetengsha/1269
- *
- * 欢迎加入 Telegram 群组 https://t.me/zhetengsha
- *
- * 参数
- * - [retries] 重试次数 默认 1
- * - [retry_delay] 重试延时(单位: 毫秒) 默认 1000
- * - [concurrency] 并发数 默认 10
- * - [internal] 使用内部方法获取 IP 信息. 默认 true
- *              支持以下几种运行环境:
- *              1. Surge/Loon(build >= 692) 等有 $utils.ipaso 和 $utils.geoip API 的 App
- *              2. Node.js 版 Sub-Store, 设置环境变量 SUB_STORE_MMDB_COUNTRY_PATH 和 SUB_STORE_MMDB_ASN_PATH, 或 传入 mmdb_country_path 和 mmdb_asn_path 参数(分别为 MaxMind GeoLite2 Country 和 GeoLite2 ASN 数据库 的路径)
- *              数据来自 GeoIP 数据库
- *              ⚠️ 若节点服务器为域名, 请配合 resolve_domain 使用
- * - [method] 请求方法. 默认 get
- * - [timeout] 请求超时(单位: 毫秒) 默认 5000
- * - [api] 测入口的 API . 默认为 http://ip-api.com/json/{{proxy.server}}?lang=zh-CN
- * - [format] 自定义格式, 从 节点(proxy) 和 入口(api)中取数据. 默认为: {{api.country}} {{api.isp}} - {{proxy.name}}
- *            当使用 internal 时, 默认为 {{api.countryCode}} {{api.aso}} - {{proxy.name}}
- *            当 api.country 或 api.countryCode 为空时, 格式化输出会自动使用 ?? 作为占位符
- * - [regex] 使用正则表达式从落地 API 响应(api)中取数据. 格式为 a:x;b:y 此时将使用正则表达式 x 和 y 来从 api 中取数据, 赋值给 a 和 b. 然后可在 format 中使用 {{api.a}} 和 {{api.b}}
- * - [valid] 验证 api 请求是否合法. 默认: ProxyUtils.isIP('{{api.ip || api.query}}')
- *           当使用 internal 时, 默认为 "{{api.countryCode || api.aso}}".length > 0
- * - [uniq_key] 设置缓存唯一键名包含的节点数据字段名匹配正则. 默认为 ^server$ 即服务器地址相同的节点共享缓存
- * - [entrance] 在节点上附加 _entrance 字段(API 响应数据), 默认不附加
- * - [remove_failed] 移除失败的节点. 默认不移除.
- * - [mmdb_country_path] 见 internal
- * - [mmdb_asn_path] 见 internal
- * - [resolve_domain] 使用本地 DNS 解析节点域名后再查询. 默认 true
- *                    仅支持 Node.js 环境, 优先使用 IPv4, 若无 IPv4 则回退到系统返回的首个可用地址
- *                    解析失败时按失败节点处理, 不回退原域名
- * - [cache] 使用缓存, 默认使用缓存
- * - [disable_failed_cache/ignore_failed_error] 禁用失败缓存. 即不缓存失败结果
- *
- * 示例
- * - 内部查询 + 本地 DNS 解析:
- *   SubStoreEntrance.js#internal=true&resolve_domain=true&cache=true
- * - 关闭本地 DNS 解析, 直接使用节点 server 查询:
- *   SubStoreEntrance.js#resolve_domain=false
- * - 使用 HTTP API 查询入口地区:
- *   SubStoreEntrance.js#internal=false&api=http://ip-api.com/json/{{proxy.server}}?lang=zh-CN
- *
- * 关于缓存时长
- * 当使用相关脚本时, 若在对应的脚本中使用参数(⚠ 别忘了这个, 一般为 cache, 值设为 true 即可)开启缓存
- * 可在前端(>=2.16.0) 配置各项缓存的默认时长
- * 持久化缓存数据在 JSON 里
- * 可以在脚本的前面添加一个脚本操作, 实现保留 1 小时的缓存. 这样比较灵活
- * async function operator() {
- *     scriptResourceCache._cleanup(undefined, 1 * 3600 * 1000);
- * }
+ * Common params:
+ * - retries, retry_delay, concurrency
+ * - internal, resolve_domain
+ * - method, timeout, api
+ * - format, regex, valid
+ * - uniq_key, entrance, remove_failed
+ * - cache, disable_failed_cache / ignore_failed_error
  */
-
 async function operator(proxies = [], targetPlatform, context) {
   // Always cache for the client.
-  let useCache = 1; // 默认为 1 (涵盖了非 JSON 平台)
+  let useCache = 1; // Default for all non-JSON platforms
   if (targetPlatform === "JSON") {
-    // 只有在 JSON 平台且匹配失败或未定义时，才设为 0
+    // For JSON platform, cache is controlled by script argument
     useCache = /true|1/i.test($arguments.cache ?? 0);
   }
-  // 写缓存与读缓存解耦: JSON 平台 cache=false 时仍写入最新结果。
+  // Read/write cache are decoupled: cache=false still writes latest result
   const shouldWriteCache = true;
   const $ = $substore;
   const info = (msg = "") => console.log(`[entrance] ${msg}`);
@@ -101,7 +50,7 @@ async function operator(proxies = [], targetPlatform, context) {
   if (resolveDomain) {
     if (!isNode) {
       logBoundary("END");
-      throw new Error("resolve_domain 仅支持 Node.js 环境");
+      throw new Error("resolve_domain is only supported in Node.js environment");
     }
     dns = require("dns").promises;
   }
@@ -112,30 +61,25 @@ async function operator(proxies = [], targetPlatform, context) {
         asn: mmdb_asn_path,
       });
       info(
-        `[MMDB] GeoLite2 Country 数据库文件路径: ${mmdb_country_path || eval("process.env.SUB_STORE_MMDB_COUNTRY_PATH")}`,
+        `[MMDB] GeoLite2 Country database path: ${mmdb_country_path || eval("process.env.SUB_STORE_MMDB_COUNTRY_PATH")}`,
       );
       info(
-        `[MMDB] GeoLite2 ASN 数据库文件路径: ${mmdb_asn_path || eval("process.env.SUB_STORE_MMDB_ASN_PATH")}`,
+        `[MMDB] GeoLite2 ASN database path: ${mmdb_asn_path || eval("process.env.SUB_STORE_MMDB_ASN_PATH")}`,
       );
     } else {
-      // if (isSurge) {
-      //   //
-      // } else if (isLoon) {
-      //   const build = $loon.match(/\((\d+)\)$/)?.[1]
-      //   if (build < 692) throw new Error('Loon 版本过低, 请升级到 build 692 及以上版本')
-      // } else {
-      //   throw new Error('仅 Surge/Loon 支持使用内部方法获取 IP 信息')
-      // }
+      // Non-Node runtime fallback requires platform utilities ($utils).
       if (
         typeof $utils === "undefined" ||
         typeof $utils.geoip === "undefined" ||
         typeof $utils.ipaso === "undefined"
       ) {
         error(
-          `目前仅支持 Surge/Loon(build >= 692) 等有 $utils.ipaso 和 $utils.geoip API 的 App`,
+          `Only Surge/Loon (build >= 692) apps with $utils.ipaso and $utils.geoip are supported`,
         );
         logBoundary("END");
-        throw new Error("不支持使用内部方法获取 IP 信息, 请查看日志");
+        throw new Error(
+          "Unsupported internal IP lookup in current environment, check logs",
+        );
       }
       utils = $utils;
     }
@@ -155,11 +99,9 @@ async function operator(proxies = [], targetPlatform, context) {
   const isIpApiUrl = /^https?:\/\/ip-api\.com\/json\//i.test(url);
   const ipApiRawCacheReadEnabled = useCache && isIpApiUrl;
   const ipApiRawCacheWriteEnabled = shouldWriteCache && isIpApiUrl;
-  const ipApiInFlight = new Map();
-  const ipApiRequestCache = new Map();
   const nodeCount = proxies.length;
   let ipApiRequestCount = 0;
-  const concurrency = parseInt($arguments.concurrency || 10); // 一组并发数
+  const concurrency = parseInt($arguments.concurrency || 10); // Batch concurrency
   const shouldLogResolveDns =
     resolveDomain &&
     proxies.some((proxy) => {
@@ -169,22 +111,37 @@ async function operator(proxies = [], targetPlatform, context) {
   if (shouldLogResolveDns) {
     info("Resolve DNS locally");
   }
+  const proxyContexts = new Array(proxies.length);
   await executeAsyncTasks(
-    proxies.map((proxy) => () => check(proxy)),
+    proxies.map((proxy, index) => async () => {
+      proxyContexts[index] = await buildProxyContext(proxy);
+    }),
     { concurrency },
   );
   if (shouldLogResolveDns) {
     info("Resolve DNS locally completed");
   }
 
-  // const batches = []
-  // for (let i = 0; i < proxies.length; i += concurrency) {
-  //   const batch = proxies.slice(i, i + concurrency)
-  //   batches.push(batch)
-  // }
-  // for (const batch of batches) {
-  //   await Promise.all(batch.map(check))
-  // }
+  const groupedByQueryServer = new Map();
+  for (const context of proxyContexts) {
+    if (!context) continue;
+    if (context.resolveError) {
+      handleContextFailure(context, context.resolveError);
+      continue;
+    }
+    const key = String(context.queryServer || "");
+    if (!groupedByQueryServer.has(key)) {
+      groupedByQueryServer.set(key, []);
+    }
+    groupedByQueryServer.get(key).push(context);
+  }
+
+  await executeAsyncTasks(
+    Array.from(groupedByQueryServer.values()).map((groupContexts) => async () =>
+      processQueryServerGroup(groupContexts),
+    ),
+    { concurrency },
+  );
 
   if (remove_failed) {
     proxies = proxies.filter((p) => {
@@ -216,17 +173,41 @@ async function operator(proxies = [], targetPlatform, context) {
   logBoundary("END");
   return proxies;
 
-  async function check(proxy) {
-    // $.info(`[${proxy.name}] 检测`)
-    // $.info(`检测 ${JSON.stringify(proxy, null, 2)}`)
+  async function buildProxyContext(proxy = {}) {
     let queryServer = String(proxy.server || "").trim();
     const serverWithPort = getServerWithPort(proxy);
     const originalServer = queryServer;
     let id = shouldWriteCache ? getCacheId(proxy, queryServer) : undefined;
-    // $.info(`检测 ${id}`)
     try {
       queryServer = await getQueryServer(proxy);
       id = shouldWriteCache ? getCacheId(proxy, queryServer) : undefined;
+      return {
+        proxy,
+        queryServer,
+        originalServer,
+        serverWithPort,
+        id,
+        resolveError: null,
+      };
+    } catch (e) {
+      return {
+        proxy,
+        queryServer,
+        originalServer,
+        serverWithPort,
+        id,
+        resolveError: e,
+      };
+    }
+  }
+
+  async function processQueryServerGroup(groupContexts = []) {
+    if (!groupContexts.length) return;
+    const queryServer = groupContexts[0]?.queryServer ?? "";
+    const pendingContexts = [];
+
+    for (const context of groupContexts) {
+      const { proxy, id, serverWithPort } = context;
       const cached = useCache ? cache.get(id) : null;
       if (useCache && cached) {
         if (cached.api) {
@@ -236,38 +217,41 @@ async function operator(proxies = [], targetPlatform, context) {
           info(
             `USE CACHE, [${proxy.name}] ${formatServerWithIp(serverWithPort, cached.api, queryServer)}, ${cacheInfo}`,
           );
-          // $.info(`[${proxy.name}] 使用成功结果缓存`);
           applyEntranceInfo(proxy, cached.api);
           if (shouldRename) {
             proxy.name = formatter({ proxy, api: cached.api, format, regex });
           }
           proxy._entrance = cached.api;
-          return;
-        } else {
-          if (disableFailedCache) {
-            info(`[${proxy.name}] skip failed cache`);
-          } else {
-            info(`USE CACHE, [${proxy.name}] error`);
-            return;
-          }
+          continue;
         }
+        if (disableFailedCache) {
+          info(`[${proxy.name}] skip failed cache`);
+          pendingContexts.push(context);
+        } else {
+          info(`USE CACHE, [${proxy.name}] error`);
+        }
+        continue;
       }
-      // 请求
-      const startedAt = Date.now();
-      let api = {};
-      if (internal) {
-        api = {
-          countryCode: utils.geoip(queryServer) || "",
-          aso: utils.ipaso(queryServer) || "",
-        };
-        const queryText =
-          originalServer && originalServer !== queryServer
-            ? `${originalServer} -> ${queryServer}`
-            : `${queryServer}`;
-        if (
-          (api.countryCode || api.aso) &&
-          eval(formatter({ api, format: valid, regex }))
-        ) {
+      pendingContexts.push(context);
+    }
+
+    if (!pendingContexts.length) return;
+
+    if (internal) {
+      const api = {
+        countryCode: utils.geoip(queryServer) || "",
+        aso: utils.ipaso(queryServer) || "",
+      };
+      const validApi =
+        (api.countryCode || api.aso) &&
+        eval(formatter({ api, format: valid, regex }));
+      for (const context of pendingContexts) {
+        const { proxy, originalServer, serverWithPort, id } = context;
+        if (validApi) {
+          const queryText =
+            originalServer && originalServer !== queryServer
+              ? `${originalServer} -> ${queryServer}`
+              : `${queryServer}`;
           applyEntranceInfo(proxy, api);
           if (shouldRename) {
             proxy.name = formatter({ proxy, api, format, regex });
@@ -279,18 +263,31 @@ async function operator(proxies = [], targetPlatform, context) {
           if (shouldWriteCache) {
             cache.set(id, { api });
           }
-        } else {
-          if (shouldWriteCache) {
-            cache.set(id, {});
-          }
+        } else if (shouldWriteCache) {
+          cache.set(id, {});
         }
-      } else {
-        const ipApiResult = await getIpApiResult(proxy, queryServer, startedAt);
-        api = ipApiResult.api;
-        const status = ipApiResult.status;
+      }
+      return;
+    }
 
-        const validApi = eval(formatter({ api, format: valid, regex }));
-        if (status == 200 && validApi) {
+    try {
+      const ipApiResult = await getIpApiResult(
+        groupContexts[0].proxy,
+        queryServer,
+        Date.now(),
+      );
+      const api = ipApiResult.api;
+      const status = ipApiResult.status;
+      const validApi = eval(formatter({ api, format: valid, regex }));
+
+      if (status == 200 && validApi) {
+        if (ipApiRawCacheWriteEnabled && ipApiResult.source === "network") {
+          cache.set(getIpApiCacheId(queryServer), api);
+        }
+        const deduplicatedByGroup =
+          ipApiResult.source === "network" && pendingContexts.length > 1;
+        for (const context of pendingContexts) {
+          const { proxy, serverWithPort, id } = context;
           applyEntranceInfo(proxy, api);
           if (shouldRename) {
             proxy.name = formatter({ proxy, api, format, regex });
@@ -300,10 +297,7 @@ async function operator(proxies = [], targetPlatform, context) {
             info(
               `[${proxy.name}] ${formatServerWithIp(serverWithPort, api, queryServer)}, using IP API persistent cache, ${formatIpApiInfo(api)}`,
             );
-          } else if (
-            ipApiResult.source === "shared-cache" ||
-            ipApiResult.source === "shared-inflight"
-          ) {
+          } else if (deduplicatedByGroup) {
             info(
               `[${proxy.name}] ${formatServerWithIp(serverWithPort, api, queryServer)}, deduplicated, ${formatIpApiInfo(api)}`,
             );
@@ -312,13 +306,13 @@ async function operator(proxies = [], targetPlatform, context) {
               `[${proxy.name}] ${formatServerWithIp(serverWithPort, api, queryServer)}, ${formatIpApiInfo(api)}, status: ${status}`,
             );
           }
-          if (ipApiRawCacheWriteEnabled && ipApiResult.source === "network") {
-            cache.set(getIpApiCacheId(queryServer), api);
-          }
           if (shouldWriteCache) {
             cache.set(id, { api });
           }
-        } else {
+        }
+      } else {
+        for (const context of pendingContexts) {
+          const { proxy, id } = context;
           if (isIpApiUrl) {
             info(
               `[${proxy.name}] ip-api status=${status} invalid response, log only`,
@@ -330,18 +324,25 @@ async function operator(proxies = [], targetPlatform, context) {
         }
       }
     } catch (e) {
-      error(`[${proxy.name}] ${e.message ?? e}`);
-      if (isIpApiUrl && !internal) {
-        info(`[${proxy.name}] ip-api error/timeout, log only`);
-        return;
-      }
-      if (shouldWriteCache) {
-        info(`[${proxy.name}] write failed cache`);
-        cache.set(id, {});
+      for (const context of pendingContexts) {
+        handleContextFailure(context, e);
       }
     }
   }
-  // 请求
+
+  function handleContextFailure(context = {}, err) {
+    const { proxy = {}, id } = context;
+    error(`[${proxy.name}] ${err?.message ?? err}`);
+    if (isIpApiUrl && !internal) {
+      info(`[${proxy.name}] ip-api error/timeout, log only`);
+      return;
+    }
+    if (shouldWriteCache && id !== undefined) {
+      info(`[${proxy.name}] write failed cache`);
+      cache.set(id, {});
+    }
+  }
+  // HTTP request helper
   async function http(opt = {}) {
     const METHOD = opt.method || "get";
     const TIMEOUT = parseFloat(opt.timeout || $arguments.timeout || 5000);
@@ -359,7 +360,7 @@ async function operator(proxies = [], targetPlatform, context) {
         if (count < RETRIES) {
           count++;
           const delay = RETRY_DELAY * count;
-          // $.info(`第 ${count} 次请求失败: ${e.message || e}, 等待 ${delay / 1000}s 后重试`)
+          // $.info(`Request failed ${count} time(s): ${e.message || e}, retry in ${delay / 1000}s`)
           await $.wait(delay);
           return await fn();
         } else {
@@ -408,53 +409,30 @@ async function operator(proxies = [], targetPlatform, context) {
         source: "persistent-cache",
       };
     }
-
-    if (useCache && ipApiRequestCache.has(queryServer)) {
-      return { ...ipApiRequestCache.get(queryServer), source: "shared-cache" };
-    }
-
-    if (ipApiInFlight.has(queryServer)) {
-      const sharedResult = await ipApiInFlight.get(queryServer);
-      return { ...sharedResult, source: "shared-inflight" };
-    }
-
-    const requestTask = (async () => {
-      ipApiRequestCount += 1;
-      const res = await http({
-        method,
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Mobile/15E148 Safari/604.1",
-        },
-        url: isIpApiUrl
-          ? getIpApiUrl(queryServer)
-          : formatter({
-              proxy: { ...proxy, server: queryServer },
-              format: url,
-            }),
-      });
-      let api = String(lodash_get(res, "body"));
-      try {
-        api = JSON.parse(api);
-      } catch (e) {}
-      const payload = {
-        api,
-        status: parseInt(res.status || res.statusCode || 200),
-        latency: `${Date.now() - startedAt}`,
-      };
-      if (useCache) {
-        ipApiRequestCache.set(queryServer, payload);
-      }
-      return payload;
-    })();
-
-    ipApiInFlight.set(queryServer, requestTask);
+    ipApiRequestCount += 1;
+    const res = await http({
+      method,
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Mobile/15E148 Safari/604.1",
+      },
+      url: isIpApiUrl
+        ? getIpApiUrl(queryServer)
+        : formatter({
+            proxy: { ...proxy, server: queryServer },
+            format: url,
+          }),
+    });
+    let api = String(lodash_get(res, "body"));
     try {
-      const networkResult = await requestTask;
-      return { ...networkResult, source: "network" };
-    } finally {
-      ipApiInFlight.delete(queryServer);
-    }
+      api = JSON.parse(api);
+    } catch (e) {}
+    return {
+      api,
+      status: parseInt(res.status || res.statusCode || 200),
+      latency: `${Date.now() - startedAt}`,
+      source: "network",
+    };
   }
   function formatIpApiInfo(api = {}) {
     const parts = [
@@ -498,11 +476,11 @@ async function operator(proxies = [], targetPlatform, context) {
       const fallback = addresses.find((item) => item?.address)?.address;
       const resolved = ipv4 || fallback;
       if (!resolved) {
-        throw new Error("未返回可用 IP");
+        throw new Error("No usable IP returned");
       }
       return resolved;
     } catch (e) {
-      throw new Error(`本地 DNS 解析失败: ${server} (${e.message ?? e})`);
+      throw new Error(`Local DNS resolve failed: ${server} (${e.message ?? e})`);
     }
   }
   function lodash_get(source, path, defaultValue = undefined) {
@@ -544,7 +522,7 @@ async function operator(proxies = [], targetPlatform, context) {
               .match(reg)?.[1]
               ?.trim();
           } catch (e) {
-            error(`正则表达式解析错误: ${e.message}`);
+            error(`Regex parse error: ${e.message}`);
           }
         }
       }
@@ -620,3 +598,5 @@ async function operator(proxies = [], targetPlatform, context) {
     });
   }
 }
+
+
