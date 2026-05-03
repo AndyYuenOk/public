@@ -9,7 +9,7 @@ const DEFAULT_TIMEOUT_MS = 5000;
 const SPEED_REFERENCE_LABEL = "A";
 const BROWSER_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36";
-const AI_DEFAULT_OPTIONS = ["openai", "gemini", "claude"];
+const AI_DEFAULT_OPTIONS = ["openai", "gemini"];
 const AI_APPEND_TAG_DEFAULT_BY_KEY = {
   openai: "GPT",
   gemini: "GM",
@@ -75,6 +75,17 @@ async function operator(proxies = [], targetPlatform, context) {
   // Runtime knobs from script arguments.
   const take = parseInt($arguments.take ?? 10, 10);
   const appendMeasuredSpeed = /true|1/i.test(`${$arguments.speed ?? 1}`);
+  const aiTagByKey = {
+    openai: $arguments.openai_prefix ?? AI_APPEND_TAG_DEFAULT_BY_KEY.openai,
+    gemini: $arguments.gemini_prefix ?? AI_APPEND_TAG_DEFAULT_BY_KEY.gemini,
+    claude: $arguments.claude_prefix ?? AI_APPEND_TAG_DEFAULT_BY_KEY.claude,
+  };
+  const aiTagFieldByKey = {
+    openai: "tagOpenai",
+    gemini: "tagGemini",
+    claude: "tagClaude",
+  };
+  const aiTags = Object.values(aiTagByKey).filter(Boolean);
 
   // Always cache for the client.
   let useCache = 1; // 默认为 1 (涵盖了非 JSON 平台)
@@ -151,12 +162,6 @@ async function operator(proxies = [], targetPlatform, context) {
   const claudeCountry2DenySet = toCountryCode2Set(
     $arguments.claude_country2_deny ?? "CN,HK",
   );
-  const aiTagByKey = {
-    openai: $arguments.openai_prefix ?? AI_APPEND_TAG_DEFAULT_BY_KEY.openai,
-    gemini: $arguments.gemini_prefix ?? AI_APPEND_TAG_DEFAULT_BY_KEY.gemini,
-    claude: $arguments.claude_prefix ?? AI_APPEND_TAG_DEFAULT_BY_KEY.claude,
-  };
-  const aiTags = Object.values(aiTagByKey).filter(Boolean);
   const networkTransientFailureRegex =
     /exceeds the timeout|timed out|timeout|client network socket disconnected before secure tls connection was established|socket hang up|econnreset/i;
   const policyTransientFailureRegex =
@@ -410,7 +415,6 @@ async function operator(proxies = [], targetPlatform, context) {
     const cachedProxies = Array.isArray(cached.proxies)
       ? cloneProxyList(cached.proxies)
       : [];
-    if (!cachedProxies.length) return null;
 
     const { proxies: normalizedProxies, changed } =
       normalizeFinalProxyNames(cachedProxies);
@@ -431,7 +435,6 @@ async function operator(proxies = [], targetPlatform, context) {
     const proxiesForCache = Array.isArray(records)
       ? normalizeFinalProxyNames(records).proxies
       : [];
-    if (!proxiesForCache.length) return;
 
     cache.set(FINAL_PROXIES_CACHE_KEY, {
       proxies: proxiesForCache,
@@ -455,26 +458,87 @@ async function operator(proxies = [], targetPlatform, context) {
         delete nextProxy._latency;
       }
       if (
-        nextProxy._avg_speed_kb === undefined &&
-        nextProxy._speed_kb !== undefined &&
-        nextProxy._base_name_speed === undefined
+        nextProxy.measuredSpeed === undefined &&
+        nextProxy._speed_kb !== undefined
       ) {
         changed = true;
         nextProxy = {
           ...nextProxy,
-          _avg_speed_kb: nextProxy._speed_kb,
+          measuredSpeed: formatLabeledSpeedText(nextProxy._speed_kb, "A"),
         };
-        delete nextProxy._speed_kb;
       }
       if (
-        nextProxy._avg_speed_kb === undefined &&
+        nextProxy.guaranteedSpeed === undefined &&
+        nextProxy._avg_speed_kb !== undefined
+      ) {
+        changed = true;
+        nextProxy = {
+          ...nextProxy,
+          guaranteedSpeed: formatLabeledSpeedText(nextProxy._avg_speed_kb, "B"),
+        };
+      }
+      if (
+        nextProxy.guaranteedSpeed === undefined &&
         nextProxy._speed !== undefined
       ) {
         changed = true;
         nextProxy = {
           ...nextProxy,
-          _avg_speed_kb: Math.round(Number(nextProxy._speed) * 128),
+          guaranteedSpeed: formatLabeledSpeedText(
+            Math.round(Number(nextProxy._speed) * 128) || 0,
+            "B",
+          ),
         };
+      }
+      const normalizedMeasuredSpeed = formatLabeledSpeedText(
+        toSpeedKbFromAny(nextProxy.measuredSpeed, "A"),
+        "A",
+      );
+      if (
+        `${nextProxy.measuredSpeed ?? ""}` !== normalizedMeasuredSpeed
+      ) {
+        changed = true;
+        nextProxy = {
+          ...nextProxy,
+          measuredSpeed: normalizedMeasuredSpeed,
+        };
+      }
+      const normalizedGuaranteedSpeed = formatLabeledSpeedText(
+        toSpeedKbFromAny(nextProxy.guaranteedSpeed, "B"),
+        "B",
+      );
+      if (
+        `${nextProxy.guaranteedSpeed ?? ""}` !== normalizedGuaranteedSpeed
+      ) {
+        changed = true;
+        nextProxy = {
+          ...nextProxy,
+          guaranteedSpeed: normalizedGuaranteedSpeed,
+        };
+      }
+      const { proxy: taggedProxy, changed: tagChanged } = applyAiTagsToProxy(
+        nextProxy,
+        getOutputTags(nextProxy, `${nextProxy.name ?? ""}`),
+      );
+      if (tagChanged) {
+        changed = true;
+        nextProxy = taggedProxy;
+      }
+      const { proxy: cleanedProxy, changed: cleanedChanged } =
+        cleanupOutputAiStatusFields(nextProxy);
+      if (cleanedChanged) {
+        changed = true;
+        nextProxy = cleanedProxy;
+      }
+      if (
+        nextProxy._avg_speed_kb !== undefined ||
+        nextProxy._speed_kb !== undefined ||
+        nextProxy._speed !== undefined
+      ) {
+        changed = true;
+        nextProxy = { ...nextProxy };
+        delete nextProxy._avg_speed_kb;
+        delete nextProxy._speed_kb;
         delete nextProxy._speed;
       }
       const normalizedName = normalizeFinalProxyName(nextProxy);
@@ -488,13 +552,15 @@ async function operator(proxies = [], targetPlatform, context) {
   }
 
   function normalizeFinalProxyName(proxy = {}) {
-    const measuredSpeedKb = Number(
-      proxy._avg_speed_kb ?? (proxy._speed ? Number(proxy._speed) * 128 : 0),
+    const measuredSpeedKb = toSpeedKbFromAny(
+      proxy.guaranteedSpeed,
+      "B",
+    ) || toSpeedKbFromAny(proxy._avg_speed_kb) || toSpeedKbFromAny(
+      proxy._speed ? Number(proxy._speed) * 128 : 0,
     );
     const rawName = `${proxy.name ?? ""}`.trim();
     if (!rawName) return rawName;
 
-    const tags = getOutputTags(proxy, rawName);
     let baseName = stripOutputTags(rawName);
     baseName = stripMeasuredSpeedSuffix(baseName);
     baseName = normalizeProxyName(baseName).displayName;
@@ -504,7 +570,6 @@ async function operator(proxies = [], targetPlatform, context) {
       baseName,
       measuredSpeedKb,
       proxy._duration_ms ?? proxy._latency,
-      tags,
     );
   }
 
@@ -513,7 +578,11 @@ async function operator(proxies = [], targetPlatform, context) {
     const openaiTag = aiTagByKey.openai;
     const geminiTag = aiTagByKey.gemini;
     const claudeTag = aiTagByKey.claude;
+    const openaiTagField = `${proxy[aiTagFieldByKey.openai] ?? ""}`.trim();
+    const geminiTagField = `${proxy[aiTagFieldByKey.gemini] ?? ""}`.trim();
+    const claudeTagField = `${proxy[aiTagFieldByKey.claude] ?? ""}`.trim();
     if (
+      openaiTagField ||
       proxy.canAccessOpenai === true ||
       proxy._openai === true ||
       (openaiTag &&
@@ -525,6 +594,7 @@ async function operator(proxies = [], targetPlatform, context) {
       if (openaiTag) tags.push(openaiTag);
     }
     if (
+      geminiTagField ||
       proxy.canAccessGemini === true ||
       proxy._gemini === true ||
       (geminiTag &&
@@ -533,6 +603,7 @@ async function operator(proxies = [], targetPlatform, context) {
       if (geminiTag) tags.push(geminiTag);
     }
     if (
+      claudeTagField ||
       proxy.canAccessClaude === true ||
       proxy._claude === true ||
       (claudeTag &&
@@ -792,7 +863,7 @@ async function operator(proxies = [], targetPlatform, context) {
                 ? `, country2=${claudeCountry2}`
               : "";
         logInfo(
-          `[${proxy.name}] [${detection.name}] 支持, status=${status}${regionText}`,
+          `[${detection.name}] [${proxy.name}] 支持, status=${status}${regionText}`,
         );
         if (shouldWriteAiCache) {
           setAiCache(cacheId, {
@@ -821,7 +892,7 @@ async function operator(proxies = [], targetPlatform, context) {
             ? `, location=${geminiLocation}`
             : "";
         logInfo(
-          `[${proxy.name}] [${detection.name}] 不支持(地区限制), status=${status}${regionText}${locationText}`,
+          `[${detection.name}] [${proxy.name}] 不支持(地区限制), status=${status}${regionText}${locationText}`,
         );
         if (shouldWriteAiCache) {
           setAiCache(cacheId, {
@@ -841,7 +912,7 @@ async function operator(proxies = [], targetPlatform, context) {
           status === 302 ? locationHeader : "",
         );
         logInfo(
-          `[${proxy.name}] [${detection.name}] 错误, status=${status}, ${detailText}`,
+          `[${detection.name}] [${proxy.name}] 错误, status=${status}, ${detailText}`,
         );
         if (
           isTransientFailure({
@@ -874,7 +945,7 @@ async function operator(proxies = [], targetPlatform, context) {
         errorStatus === 302 ? errorLocation : "",
       );
       logInfo(
-        `[${proxy.name}] [${detection.name}] 错误, status=${errorStatus || "ERR"}, ${detailText}`,
+        `[${detection.name}] [${proxy.name}] 错误, status=${errorStatus || "ERR"}, ${detailText}`,
       );
       if (
         isTransientFailure({
@@ -908,7 +979,7 @@ async function operator(proxies = [], targetPlatform, context) {
       const status = parseInt(res.status || res.statusCode || 200, 10);
       const latencyMs = Date.now() - startedAt;
       logInfo(
-        `[${proxy.name}] [speed-latency] status=${status}, latency=${latencyMs}`,
+        `[speed-latency] [${proxy.name}] status=${status}, latency=${latencyMs}`,
       );
 
       if (validStatus.test(`${status}`)) {
@@ -920,7 +991,7 @@ async function operator(proxies = [], targetPlatform, context) {
 
       return { ok: false };
     } catch (e) {
-      logError(`[${proxy.name}] [speed-latency] ${e.message ?? e}`);
+      logError(`[speed-latency] [${proxy.name}] ${e.message ?? e}`);
       return { ok: false };
     }
   }
@@ -959,7 +1030,7 @@ async function operator(proxies = [], targetPlatform, context) {
           : 0;
       const withinEffectiveTimeout = effectiveDurationMs <= DEFAULT_TIMEOUT_MS;
       logInfo(
-        `[${proxy.name}] [speed] status=${status}, duration=${durationMs}, latency=${latencyMs}, effective_duration=${effectiveDurationMs}, effective_timeout=${DEFAULT_TIMEOUT_MS}, bytes=${responseBytes}, max_speed=${formatSpeedText(maxMeasuredSpeedKb)}, speed=${formatSpeedText(measuredSpeedKb)}`,
+        `[speed] [${proxy.name}] status=${status}, duration=${durationMs}, latency=${latencyMs}, effective_duration=${effectiveDurationMs}, effective_timeout=${DEFAULT_TIMEOUT_MS}, bytes=${responseBytes}, max_speed=${formatSpeedText(maxMeasuredSpeedKb)}, speed=${formatSpeedText(measuredSpeedKb)}`,
       );
 
       if (
@@ -978,7 +1049,7 @@ async function operator(proxies = [], targetPlatform, context) {
 
       return { ok: false };
     } catch (e) {
-      logError(`[${proxy.name}] [speed] ${e.message ?? e}`);
+      logError(`[speed] [${proxy.name}] ${e.message ?? e}`);
       return { ok: false };
     }
   }
@@ -1143,37 +1214,47 @@ async function operator(proxies = [], targetPlatform, context) {
   }
 
   function toAiProxyOutput(proxy, measuredSpeedKb = 0, durationMs = 0) {
-    // Keep AI capability metadata for downstream rules/inspection.
-    const parsed = safeParseProxy(proxy);
+    let parsed = safeParseProxy(proxy);
     const baseName = getBaseNameWithSpeed(proxy);
-    const aiTags = [];
+    const tags = [];
     for (const detection of aiDetections) {
       if (proxy[detection.flagKey] === true) {
-        aiTags.push(aiTagByKey[detection.key] || detection.name);
+        const tag = aiTagByKey[detection.key];
+        const tagField = aiTagFieldByKey[detection.key];
+        if (tag && tagField) tags.push(tag);
       }
     }
-    if (proxy.canAccessOpenai === true) parsed.canAccessOpenai = true;
-    if (proxy.openaiLatency !== undefined) parsed.openaiLatency = proxy.openaiLatency;
-    if (proxy.canAccessGemini === true) parsed.canAccessGemini = true;
-    if (proxy.geminiLatency !== undefined) parsed.geminiLatency = proxy.geminiLatency;
-    if (proxy.canAccessClaude === true) parsed.canAccessClaude = true;
-    if (proxy.claudeLatency !== undefined) parsed.claudeLatency = proxy.claudeLatency;
-    if (measuredSpeedKb > 0) parsed._avg_speed_kb = measuredSpeedKb;
+    const taggedParsed = { ...parsed };
+    for (const key of Object.keys(aiTagFieldByKey)) {
+      const field = aiTagFieldByKey[key];
+      delete taggedParsed[field];
+    }
+    for (const key of Object.keys(aiTagByKey)) {
+      const tag = aiTagByKey[key];
+      const field = aiTagFieldByKey[key];
+      if (!tag || !field) continue;
+      if (tags.includes(tag)) {
+        taggedParsed[field] = tag;
+      }
+    }
+    parsed = cleanupOutputAiStatusFields(taggedParsed).proxy;
+    parsed.measuredSpeed = formatLabeledSpeedText(proxy._speed_kb, "A");
+    parsed.guaranteedSpeed = formatLabeledSpeedText(measuredSpeedKb, "B");
     if (durationMs > 0) parsed._duration_ms = `${durationMs}`;
     parsed.name = formatMeasuredName(
       baseName,
       measuredSpeedKb,
       durationMs,
-      aiTags,
     );
     return parsed;
   }
 
   function toNormalProxyOutput(proxy, measuredSpeedKb, durationMs) {
-    const parsed = safeParseProxy(proxy);
+    const parsed = cleanupOutputAiStatusFields(safeParseProxy(proxy)).proxy;
     const baseName = getBaseNameWithSpeed(proxy);
     parsed.name = formatMeasuredName(baseName, measuredSpeedKb, durationMs);
-    parsed._avg_speed_kb = measuredSpeedKb;
+    parsed.measuredSpeed = formatLabeledSpeedText(proxy._speed_kb, "A");
+    parsed.guaranteedSpeed = formatLabeledSpeedText(measuredSpeedKb, "B");
     parsed._duration_ms = `${durationMs}`;
     return parsed;
   }
@@ -1182,14 +1263,91 @@ async function operator(proxies = [], targetPlatform, context) {
     name,
     measuredSpeedKb = 0,
     durationMs = 0,
-    suffixTags = [],
   ) {
     const speedSuffix =
       appendMeasuredSpeed && measuredSpeedKb > 0
         ? ` ${formatEstimatedSpeedNameText(measuredSpeedKb)}`
         : "";
-    const tagSuffix = suffixTags.length ? ` ${suffixTags.join(" ")}` : "";
-    return `${name}${speedSuffix}${tagSuffix}`;
+    return `${name}${speedSuffix}`;
+  }
+
+  function applyAiTagsToProxy(proxy = {}, tags = []) {
+    const uniqueTags = new Set(tags.filter(Boolean));
+    let changed = false;
+    let nextProxy = proxy;
+
+    for (const key of Object.keys(aiTagFieldByKey)) {
+      const field = aiTagFieldByKey[key];
+      const tag = aiTagByKey[key];
+      const currentValue = `${nextProxy[field] ?? ""}`;
+      const nextValue = tag && uniqueTags.has(tag) ? tag : "";
+      if ((nextValue && currentValue !== nextValue) || (!nextValue && currentValue)) {
+        if (!changed) {
+          nextProxy = { ...nextProxy };
+          changed = true;
+        }
+        if (nextValue) {
+          nextProxy[field] = nextValue;
+        } else {
+          delete nextProxy[field];
+        }
+      }
+    }
+
+    return { proxy: nextProxy, changed };
+  }
+
+  function cleanupOutputAiStatusFields(proxy = {}) {
+    const statusKeys = [
+      "canAccessOpenai",
+      "openaiLatency",
+      "canAccessGemini",
+      "geminiLatency",
+      "canAccessClaude",
+      "claudeLatency",
+      "_openai",
+      "_openai_latency",
+      "_gemini",
+      "_gemini_latency",
+      "_claude",
+      "_claude_latency",
+    ];
+    let changed = false;
+    const nextProxy = { ...proxy };
+    for (const key of statusKeys) {
+      if (nextProxy[key] !== undefined) {
+        delete nextProxy[key];
+        changed = true;
+      }
+    }
+    return { proxy: changed ? nextProxy : proxy, changed };
+  }
+
+  function formatLabeledSpeedText(speedKb = 0, label = "") {
+    const speedText = formatSpeedNameText(speedKb);
+    if (!speedText) return "";
+    const normalizedLabel = `${label ?? ""}`.trim().toUpperCase();
+    return normalizedLabel ? `${normalizedLabel}${speedText}` : speedText;
+  }
+
+  function toSpeedKbFromAny(value, label = "") {
+    if (typeof value === "number") {
+      return Number.isFinite(value) && value > 0 ? value : 0;
+    }
+    const text = `${value ?? ""}`.trim();
+    if (!text) return 0;
+
+    const normalizedLabel = `${label ?? ""}`.trim().toUpperCase();
+    if (normalizedLabel) {
+      const labeledSpeed = parseLabeledSpeedToKb(text, normalizedLabel);
+      if (labeledSpeed > 0) return labeledSpeed;
+    }
+
+    const plainSpeed = parseSpeedTextToKb(text);
+    if (plainSpeed > 0) return plainSpeed;
+
+    const numericValue = Number(text);
+    return Number.isFinite(numericValue) && numericValue > 0 ? numericValue : 0;
   }
 
   function formatSpeedText(speedKb = 0) {

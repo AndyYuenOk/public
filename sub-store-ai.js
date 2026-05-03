@@ -21,14 +21,14 @@
  * - [take] 并发数 默认 10
  * - [client] OpenAI 检测的客户端类型(兼容保留). 不再影响 OpenAI URL
  * - [method] 请求方法. 默认 get
- * - [ai_detect] 启用检测项, 逗号分隔. 允许值: openai,gemini,claude. 默认空表示全部启用
- * - [openai_prefix] OpenAI 显示前缀. 默认不追加
+ * - [ai_detect] 启用检测项, 逗号分隔. 允许值: openai,gemini,claude. 默认 openai,gemini
+ * - [openai_prefix] 已弃用(仅兼容保留). 脚本不再改名, 只挂载 tagOpenai/tagGemini/tagClaude
  * - [openai_country2_deny] OpenAI 两位国家码黑名单, 逗号分隔. 默认 CN,HK
  * - OpenAI 当前检测端点为 https://chat.openai.com/cdn-cgi/trace, 规则为 status=200 且 country2 不在黑名单
- * - [gemini_prefix] Gemini 显示前缀. 默认不追加
+ * - [gemini_prefix] 已弃用(仅兼容保留). 脚本不再改名, 只挂载 tagOpenai/tagGemini/tagClaude
  * - [gemini_country3_allow] Gemini 三位国家码允许列表, 逗号分隔. 默认空表示任意非拒绝国家
  * - [gemini_country3_deny] Gemini 三位国家码拒绝列表, 逗号分隔. 默认 CHN
- * - [claude_prefix] Claude 显示前缀. 默认不追加
+ * - [claude_prefix] 已弃用(仅兼容保留). 脚本不再改名, 只挂载 tagOpenai/tagGemini/tagClaude
  * - [claude_country2_deny] Claude 两位国家码黑名单, 逗号分隔. 默认 CN,HK
  * 注:
  * - 节点上会按需添加 canAccessOpenai/openaiLatency, 指 OpenAI 检测结果与响应延迟
@@ -49,6 +49,16 @@
 
 const BROWSER_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36";
+const AI_TAG_FIELD_BY_KEY = {
+  openai: "tagOpenai",
+  gemini: "tagGemini",
+  claude: "tagClaude",
+};
+const AI_TAG_VALUE_BY_KEY = {
+  openai: "tagOpenai",
+  gemini: "tagGemini",
+  claude: "tagClaude",
+};
 
 async function operator(proxies = [], targetPlatform, context) {
   const $ = $substore;
@@ -77,9 +87,6 @@ async function operator(proxies = [], targetPlatform, context) {
   const http_meta_proxy_timeout = parseFloat(
     $arguments.http_meta_proxy_timeout ?? 10000,
   );
-  const openaiPrefix = $arguments.openai_prefix ?? "";
-  const geminiPrefix = $arguments.gemini_prefix ?? "";
-  const claudePrefix = $arguments.claude_prefix ?? "";
   const method = $arguments.method || "get";
   const enabledDetectionKeys = parseAiDetectKeys(
     $arguments.ai_detect ?? "openai,gemini",
@@ -110,7 +117,6 @@ async function operator(proxies = [], targetPlatform, context) {
       cacheAiName: "openai",
       name: "OpenAI",
       url: openaiUrl,
-      prefix: openaiPrefix,
       flagKey: "canAccessOpenai",
       latencyKey: "openaiLatency",
       cacheKey: "canAccessOpenai",
@@ -125,7 +131,6 @@ async function operator(proxies = [], targetPlatform, context) {
       cacheAiName: "gemini",
       name: "Gemini",
       url: "https://gemini.google.com/app",
-      prefix: geminiPrefix,
       flagKey: "canAccessGemini",
       latencyKey: "geminiLatency",
       cacheKey: "canAccessGemini",
@@ -137,7 +142,6 @@ async function operator(proxies = [], targetPlatform, context) {
       cacheAiName: "claude",
       name: "Claude",
       url: "https://claude.ai/",
-      prefix: claudePrefix,
       flagKey: "canAccessClaude",
       latencyKey: "claudeLatency",
       cacheKey: "canAccessClaude",
@@ -167,7 +171,7 @@ async function operator(proxies = [], targetPlatform, context) {
   }
 
   for (const proxy of proxies) {
-    clearLegacyAiFields(proxy);
+    clearOutputAiFields(proxy);
   }
 
   if (useCache) {
@@ -514,11 +518,19 @@ async function operator(proxies = [], targetPlatform, context) {
     }
   }
   function applyDetectionSuccess({ proxyIndex, detection, latency }) {
-    proxies[proxyIndex].name = `${proxies[proxyIndex].name}${detection.prefix}`;
-    proxies[proxyIndex][detection.flagKey] = true;
-    proxies[proxyIndex][detection.latencyKey] = latency;
+    const proxy = proxies[proxyIndex];
+    const tagField = AI_TAG_FIELD_BY_KEY[detection.key];
+    const tagValue = AI_TAG_VALUE_BY_KEY[detection.key];
+    if (tagField && tagValue) {
+      proxy[tagField] = tagValue;
+    }
+    proxy[detection.flagKey] = true;
+    proxy[detection.latencyKey] = latency;
   }
-  function clearLegacyAiFields(proxy = {}) {
+  function clearOutputAiFields(proxy = {}) {
+    delete proxy.tagOpenai;
+    delete proxy.tagGemini;
+    delete proxy.tagClaude;
     delete proxy._openai;
     delete proxy._openai_latency;
     delete proxy._gemini;

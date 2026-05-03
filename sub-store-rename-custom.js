@@ -4,46 +4,48 @@ const flagMap = {"HK":"🇭🇰","MO":"🇲🇴","TW":"🇹🇼","JP":"🇯🇵"
 function operator(proxies = [], targetPlatform, context) {
   let counters = {};
 
-  const preferredCountryCodeOrder = ["HK", "SG", "TW", "JP", "US"];
-  const countryCodeToSortIndex = Object.fromEntries(
-    preferredCountryCodeOrder.map((countryCode, sortIndex) => [
-      countryCode,
-      sortIndex,
-    ]),
-  );
+  if (/true|1/.test($arguments.sort ?? 1)) {
+    const preferredCountryCodeOrder = ["HK", "SG", "TW", "JP", "US"];
+    const countryCodeToSortIndex = Object.fromEntries(
+      preferredCountryCodeOrder.map((countryCode, sortIndex) => [
+        countryCode,
+        sortIndex,
+      ]),
+    );
 
-  proxies = proxies
-    .map((proxy, originalIndex) => ({ proxy, originalIndex }))
-    .sort((leftItem, rightItem) => {
-      const leftCountryCode = leftItem.proxy?.egressCountryCode;
-      const rightCountryCode = rightItem.proxy?.egressCountryCode;
+    proxies = proxies
+      .map((proxy, originalIndex) => ({ proxy, originalIndex }))
+      .sort((leftItem, rightItem) => {
+        const leftCountryCode = leftItem.proxy?.egressCountryCode;
+        const rightCountryCode = rightItem.proxy?.egressCountryCode;
 
-      const leftSortIndex =
-        countryCodeToSortIndex[leftCountryCode] ??
-        preferredCountryCodeOrder.length;
-      const rightSortIndex =
-        countryCodeToSortIndex[rightCountryCode] ??
-        preferredCountryCodeOrder.length;
+        const leftSortIndex =
+          countryCodeToSortIndex[leftCountryCode] ??
+          preferredCountryCodeOrder.length;
+        const rightSortIndex =
+          countryCodeToSortIndex[rightCountryCode] ??
+          preferredCountryCodeOrder.length;
 
-      return (
-        leftSortIndex - rightSortIndex ||
-        leftItem.originalIndex - rightItem.originalIndex
-      );
-    })
-    .map(({ proxy }) => {
-      proxy.subscriptionName = proxy._subName;
+        return (
+          leftSortIndex - rightSortIndex ||
+          leftItem.originalIndex - rightItem.originalIndex
+        );
+      })
+      .map(({ proxy }) => proxy);
+  }
 
-      counters[proxy.entranceCountryCode + proxy.entranceIp] ??= {
-        count: 0,
-        index: 0,
-      };
-      counters[proxy.egressCountryCode + proxy.egressIp] ??= {
-        count: 0,
-        index: 0,
-      };
+  proxies.forEach((proxy) => {
+    proxy.subscriptionName = proxy._subName;
 
-      return proxy;
-    });
+    counters[proxy.entranceCountryCode + proxy.entranceIp] ??= {
+      count: 0,
+      index: 0,
+    };
+    counters[proxy.egressCountryCode + proxy.egressIp] ??= {
+      count: 0,
+      index: 0,
+    };
+  });
 
   let counter, index;
   proxies.forEach((proxy) => {
@@ -85,9 +87,11 @@ function operator(proxies = [], targetPlatform, context) {
       normalizedIsp(proxy.egressIsp, proxy.egressCountry, proxy.egressCity),
       proxy.egressIsResidential ? "Resi" : "",
       multiplier,
-      proxy?.canAccessOpenai ? "GPT" : "",
-      proxy?.canAccessGemini ? "GM" : "",
-      proxy?.canAccessClaude ? "CL" : "",
+      proxy?.measuredSpeed ?? "",
+      proxy?.guaranteedSpeed ?? "",
+      proxy?.tagOpenai ?? "",
+      proxy?.tagGemini ?? "",
+      proxy?.tagClaude ?? "",
     ]
       .join(" ")
       .replace(/\s{2,}/g, " ")
