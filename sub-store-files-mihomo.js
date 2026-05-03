@@ -246,9 +246,9 @@ function main(config) {
   }
 
   strategyGroups.unshift(
-    mainProxyGroup.proxies.push(
+    mainProxyGroup.proxies.concat(
       autoSelectGroup.name,
-      ...(enableFallback ? autoSelectGroup.proxies : []),
+      enableFallback ? autoSelectGroup.proxies : [],
     ),
     { ...autoSelectGroup, ...healthCheck },
   );
