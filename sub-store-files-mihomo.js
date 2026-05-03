@@ -117,12 +117,6 @@ let strategyGroups = [
     proxies: [],
   },
   {
-    name: "Proxy",
-    icon: "Static.png",
-    type: "select",
-    proxies: [],
-  },
-  {
     name: "AI",
     icon: "OpenAI.png",
     type: "select",
@@ -198,7 +192,12 @@ function main(config) {
     );
   }
 
-  let proxyProxies = strategyGroups.find(({ name }) => name == "Proxy").proxies;
+  let mainProxyGroup = {
+    name: "Proxy",
+    icon: "Static.png",
+    type: "select",
+    proxies: [],
+  };
   let fullNodeGroupNames = ["Proxy", "AI", "Netflix"];
 
   let autoSelectGroup,
@@ -246,12 +245,13 @@ function main(config) {
     fullNodeGroupNames.unshift("Auto");
   }
 
-  strategyGroups.unshift({ ...autoSelectGroup, ...healthCheck });
-
-  proxyProxies.push(autoSelectGroup.name);
-  if (enableFallback) {
-    proxyProxies.push(...autoSelectGroup.proxies);
-  }
+  strategyGroups.unshift(
+    mainProxyGroup.proxies.push(
+      autoSelectGroup.name,
+      ...(enableFallback ? autoSelectGroup.proxies : []),
+    ),
+    { ...autoSelectGroup, ...healthCheck },
+  );
 
   let allProxyNames = config.proxies.map((proxy) => proxy.name);
 
