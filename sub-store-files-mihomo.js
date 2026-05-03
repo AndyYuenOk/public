@@ -201,6 +201,7 @@ function main(config) {
   let fullNodeGroupNames = ["Proxy", "AI", "Netflix"];
 
   let autoSelectGroup,
+    airportGroups = [],
     healthCheck = {
       url: "http://www.gstatic.com/generate_204",
       interval: 300,
@@ -221,17 +222,18 @@ function main(config) {
       return airportProxyMap;
     }, {});
 
-    Object.entries(airportProxyMap).forEach(
+    airportGroups = Object.entries(airportProxyMap).map(
       ([airportCode, airportProxies], groupInsertIndex) => {
         let name = "Auto_" + airportCode;
-        // Create one url-test group per airport.
-        strategyGroups.splice(groupInsertIndex, 0, {
+
+        autoSelectGroup.proxies.push(name);
+
+        return {
           name,
           icon: "Urltest.png",
           type: "url-test",
           proxies: airportProxies,
-        });
-        autoSelectGroup.proxies.push(name);
+        };
       },
     );
   } else {
@@ -250,7 +252,7 @@ function main(config) {
     ...(enableFallback ? autoSelectGroup.proxies : []),
   );
 
-  strategyGroups.unshift(mainProxyGroup, {
+  strategyGroups.unshift(mainProxyGroup, ...airportGroups, {
     ...autoSelectGroup,
     ...healthCheck,
   });
