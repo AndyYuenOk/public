@@ -55,9 +55,9 @@ const AI_TAG_FIELD_BY_KEY = {
   claude: "tagClaude",
 };
 const AI_TAG_VALUE_BY_KEY = {
-  openai: "tagOpenai",
-  gemini: "tagGemini",
-  claude: "tagClaude",
+  openai: "GPT",
+  gemini: "GM",
+  claude: "CL",
 };
 
 async function operator(proxies = [], targetPlatform, context) {
