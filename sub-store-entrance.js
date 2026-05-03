@@ -159,8 +159,6 @@ async function operator(proxies = [], targetPlatform, context) {
   const ipApiRequestCache = new Map();
   const nodeCount = proxies.length;
   let ipApiRequestCount = 0;
-  const entranceGroupMap = new Map();
-  let entranceGroupSeq = 0;
   const concurrency = parseInt($arguments.concurrency || 10); // 一组并发数
   const shouldLogResolveDns =
     resolveDomain &&
@@ -206,8 +204,13 @@ async function operator(proxies = [], targetPlatform, context) {
     });
   }
 
+  const uniqueEntranceIpCount = new Set(
+    proxies
+      .map((proxy) => String(proxy?.entranceIp ?? "").trim())
+      .filter(Boolean),
+  ).size;
   info(
-    `[stats] nodes: ${nodeCount}, ip-api requests: ${ipApiRequestCount}, groups: ${entranceGroupMap.size}`,
+    `[stats] nodes: ${nodeCount}, ip-api requests: ${ipApiRequestCount}, unique entrance ip: ${uniqueEntranceIpCount}`,
   );
 
   logBoundary("END");
@@ -227,16 +230,14 @@ async function operator(proxies = [], targetPlatform, context) {
       const cached = useCache ? cache.get(id) : null;
       if (useCache && cached) {
         if (cached.api) {
-          const cachedGroupCode = getOrCreateGroupCode(getReturnedIp(cached.api));
           const cacheInfo = internal
             ? formatCountryAsoAsInfo(cached.api)
             : formatIpApiInfo(cached.api);
           info(
-            `USE CACHE, [${proxy.name}] ${cachedGroupCode ? `${cachedGroupCode}, ` : ""}${formatServerWithIp(serverWithPort, cached.api, queryServer)}, ${cacheInfo}`,
+            `USE CACHE, [${proxy.name}] ${formatServerWithIp(serverWithPort, cached.api, queryServer)}, ${cacheInfo}`,
           );
           // $.info(`[${proxy.name}] 使用成功结果缓存`);
           applyEntranceInfo(proxy, cached.api);
-          applyEntranceGroup(proxy, cached.api);
           if (shouldRename) {
             proxy.name = formatter({ proxy, api: cached.api, format, regex });
           }
@@ -267,15 +268,13 @@ async function operator(proxies = [], targetPlatform, context) {
           (api.countryCode || api.aso) &&
           eval(formatter({ api, format: valid, regex }))
         ) {
-          const groupCode = getOrCreateGroupCode(getReturnedIp(api));
           applyEntranceInfo(proxy, api);
-          applyEntranceGroup(proxy, api);
           if (shouldRename) {
             proxy.name = formatter({ proxy, api, format, regex });
           }
           proxy._entrance = api;
           info(
-            `[${proxy.name}] ${groupCode ? `${groupCode}, ` : ""}${formatServerWithIp(serverWithPort, api, queryText)}, ${formatCountryAsoAsInfo(api)}`,
+            `[${proxy.name}] ${formatServerWithIp(serverWithPort, api, queryText)}, ${formatCountryAsoAsInfo(api)}`,
           );
           if (shouldWriteCache) {
             cache.set(id, { api });
@@ -292,27 +291,25 @@ async function operator(proxies = [], targetPlatform, context) {
 
         const validApi = eval(formatter({ api, format: valid, regex }));
         if (status == 200 && validApi) {
-          const groupCode = getOrCreateGroupCode(getReturnedIp(api));
           applyEntranceInfo(proxy, api);
-          applyEntranceGroup(proxy, api);
           if (shouldRename) {
             proxy.name = formatter({ proxy, api, format, regex });
           }
           proxy._entrance = api;
           if (ipApiResult.source === "persistent-cache") {
             info(
-              `[${proxy.name}] ${groupCode ? `${groupCode}, ` : ""}${formatServerWithIp(serverWithPort, api, queryServer)}, using IP API persistent cache, ${formatIpApiInfo(api)}`,
+              `[${proxy.name}] ${formatServerWithIp(serverWithPort, api, queryServer)}, using IP API persistent cache, ${formatIpApiInfo(api)}`,
             );
           } else if (
             ipApiResult.source === "shared-cache" ||
             ipApiResult.source === "shared-inflight"
           ) {
             info(
-              `[${proxy.name}] ${groupCode ? `${groupCode}, ` : ""}${formatServerWithIp(serverWithPort, api, queryServer)}, deduplicated, ${formatIpApiInfo(api)}`,
+              `[${proxy.name}] ${formatServerWithIp(serverWithPort, api, queryServer)}, deduplicated, ${formatIpApiInfo(api)}`,
             );
           } else {
             info(
-              `[${proxy.name}] ${groupCode ? `${groupCode}, ` : ""}${formatServerWithIp(serverWithPort, api, queryServer)}, ${formatIpApiInfo(api)}, status: ${status}`,
+              `[${proxy.name}] ${formatServerWithIp(serverWithPort, api, queryServer)}, ${formatIpApiInfo(api)}, status: ${status}`,
             );
           }
           if (ipApiRawCacheWriteEnabled && ipApiResult.source === "network") {
@@ -483,11 +480,7 @@ async function operator(proxies = [], targetPlatform, context) {
     proxy.entranceCity = api.city;
     proxy.entranceRegionName = api.regionName;
     proxy.entranceIsp = api.isp;
-  }
-  function applyEntranceGroup(proxy = {}, api = {}) {
-    const groupCode = getOrCreateGroupCode(getReturnedIp(api));
-    if (!groupCode) return;
-    proxy.entranceGroup = groupCode;
+    delete proxy.entranceGroup;
   }
   async function getQueryServer(proxy) {
     const server = String(proxy.server || "").trim();
@@ -525,17 +518,6 @@ async function operator(proxies = [], targetPlatform, context) {
   }
   function getReturnedIp(api = {}, fallback = "") {
     return api?.query || api?.ip || fallback || "";
-  }
-  function getOrCreateGroupCode(ip = "") {
-    const key = String(ip || "").trim();
-    if (!key) return "";
-    if (entranceGroupMap.has(key)) {
-      return entranceGroupMap.get(key);
-    }
-    entranceGroupSeq += 1;
-    const groupCode = String(entranceGroupSeq).padStart(2, "0");
-    entranceGroupMap.set(key, groupCode);
-    return groupCode;
   }
   function getServerWithPort(proxy = {}) {
     const server = String(proxy?.server ?? "").trim();

@@ -83,8 +83,6 @@ async function operator(proxies = [], targetPlatform, context) {
   const ipApiRequestCache = new Map();
   const nodeCount = proxies.length;
   let ipApiRequestCount = 0;
-  const egressGroupMap = new Map();
-  let egressGroupSeq = 0;
 
   const internalProxies = [];
   proxies.map((proxy, index) => {
@@ -208,8 +206,13 @@ async function operator(proxies = [], targetPlatform, context) {
     });
   }
 
+  const uniqueEgressIpCount = new Set(
+    proxies
+      .map((proxy) => String(proxy?.egressIp ?? "").trim())
+      .filter(Boolean),
+  ).size;
   info(
-    `[stats] nodes: ${nodeCount}, dual-api requests: ${ipApiRequestCount}, groups: ${egressGroupMap.size}`,
+    `[stats] nodes: ${nodeCount}, dual-api requests: ${ipApiRequestCount}, unique egress ip: ${uniqueEgressIpCount}`,
   );
   logBoundary("END");
   return proxies;
@@ -226,23 +229,18 @@ async function operator(proxies = [], targetPlatform, context) {
     // Always prefill egress fields to empty values.
     // This keeps downstream scripts stable when cache is miss/failed-only.
     applyEgressInfo(targetProxy, {});
-    applyEgressGroup(targetProxy, {});
 
     try {
       if (useCache) {
         const cached = cache.get(id);
         if (cached?.api) {
-          const cachedGroupCode = getOrCreateGroupCode(
-            getReturnedIp(cached.api),
-          );
           const cacheInfo = internal
             ? formatCountryAsoAsInfo(cached.api)
             : formatIpApiInfo(cached.api);
           info(
-            `USE CACHE, [${proxy.name}] ${cachedGroupCode ? `${cachedGroupCode}, ` : ""}${formatServerWithIp(serverWithPort, cached.api)}, ${cacheInfo}`,
+            `USE CACHE, [${proxy.name}] ${formatServerWithIp(serverWithPort, cached.api)}, ${cacheInfo}`,
           );
           applyEgressInfo(targetProxy, cached.api);
-          applyEgressGroup(targetProxy, cached.api);
           if (shouldRename) {
             targetProxy.name = formatter({
               proxy: targetProxy,
@@ -292,9 +290,7 @@ async function operator(proxies = [], targetPlatform, context) {
           (api.countryCode || api.aso) &&
           eval(formatter({ api, format: valid, regex }))
         ) {
-          const groupCode = getOrCreateGroupCode(getReturnedIp(api));
           applyEgressInfo(targetProxy, api);
-          applyEgressGroup(targetProxy, api);
           if (shouldRename) {
             targetProxy.name = formatter({
               proxy: targetProxy,
@@ -305,7 +301,7 @@ async function operator(proxies = [], targetPlatform, context) {
           }
           targetProxy._egress = api;
           info(
-            `[${proxy.name}] ${groupCode ? `${groupCode}, ` : ""}${formatServerWithIp(serverWithPort, api)}, ${formatCountryAsoAsInfo(api)}`,
+            `[${proxy.name}] ${formatServerWithIp(serverWithPort, api)}, ${formatCountryAsoAsInfo(api)}`,
           );
           if (shouldWriteCache) {
             cache.set(id, { api });
@@ -324,9 +320,7 @@ async function operator(proxies = [], targetPlatform, context) {
 
         const validApi = eval(formatter({ api, format: valid, regex }));
         if (status === 200 && validApi) {
-          const groupCode = getOrCreateGroupCode(getReturnedIp(api));
           applyEgressInfo(targetProxy, api);
-          applyEgressGroup(targetProxy, api);
           if (shouldRename) {
             targetProxy.name = formatter({
               proxy: targetProxy,
@@ -338,18 +332,18 @@ async function operator(proxies = [], targetPlatform, context) {
           targetProxy._egress = api;
           if (ipApiResult.source === "persistent-cache") {
             info(
-              `[${proxy.name}] ${groupCode ? `${groupCode}, ` : ""}${formatServerWithIp(serverWithPort, api)}, using persistent cache, ${formatIpApiInfo(api)}`,
+              `[${proxy.name}] ${formatServerWithIp(serverWithPort, api)}, using persistent cache, ${formatIpApiInfo(api)}`,
             );
           } else if (
             ipApiResult.source === "shared-cache" ||
             ipApiResult.source === "shared-inflight"
           ) {
             info(
-              `[${proxy.name}] ${groupCode ? `${groupCode}, ` : ""}${formatServerWithIp(serverWithPort, api)}, deduplicated, ${formatIpApiInfo(api)}`,
+              `[${proxy.name}] ${formatServerWithIp(serverWithPort, api)}, deduplicated, ${formatIpApiInfo(api)}`,
             );
           } else {
             info(
-              `[${proxy.name}] ${groupCode ? `${groupCode}, ` : ""}${formatServerWithIp(serverWithPort, api)}, ${formatIpApiInfo(api)}, status: ${status}`,
+              `[${proxy.name}] ${formatServerWithIp(serverWithPort, api)}, ${formatIpApiInfo(api)}, status: ${status}`,
             );
           }
           if (shouldWriteCache) {
@@ -540,11 +534,7 @@ async function operator(proxies = [], targetPlatform, context) {
     proxy.egressIsp = api.isp ?? "";
     proxy.egressIsResidential =
       typeof api.isResidential === "boolean" ? api.isResidential : "";
-  }
-
-  function applyEgressGroup(proxy = {}, api = {}) {
-    const groupCode = getOrCreateGroupCode(getReturnedIp(api));
-    proxy.egressGroup = groupCode || "";
+    delete proxy.egressGroup;
   }
 
   function formatIpApiInfo(api = {}) {
@@ -576,18 +566,6 @@ async function operator(proxies = [], targetPlatform, context) {
 
   function getReturnedIp(api = {}) {
     return api?.query || api?.ip || "";
-  }
-
-  function getOrCreateGroupCode(ip = "") {
-    const key = String(ip || "").trim();
-    if (!key) return "";
-    if (egressGroupMap.has(key)) {
-      return egressGroupMap.get(key);
-    }
-    egressGroupSeq += 1;
-    const groupCode = String(egressGroupSeq).padStart(2, "0");
-    egressGroupMap.set(key, groupCode);
-    return groupCode;
   }
 
   function getServerWithPort(proxy = {}) {
