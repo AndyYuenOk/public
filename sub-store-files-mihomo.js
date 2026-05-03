@@ -198,7 +198,7 @@ function main(config) {
     );
   }
 
-  let ProxyProxies = strategyGroups.find(({ name }) => name == "Proxy").proxies;
+  let proxyProxies = strategyGroups.find(({ name }) => name == "Proxy").proxies;
   let fullNodeGroupNames = ["Proxy", "AI", "Netflix"];
 
   let autoSelectGroup,
@@ -248,7 +248,10 @@ function main(config) {
 
   strategyGroups.unshift({ ...autoSelectGroup, ...healthCheck });
 
-  ProxyProxies.push(autoSelectGroup.name);
+  proxyProxies.push(autoSelectGroup.name);
+  if (enableFallback) {
+    proxyProxies.push(...autoSelectGroup.proxies);
+  }
 
   let allProxyNames = config.proxies.map((proxy) => proxy.name);
 

@@ -133,12 +133,15 @@ function normalizedIsp(isp, country, city) {
     .replace(/.*NetLab.*/, "NetLab")
     .replace(/.*Hong Kong Telecommunications.*/, "HKT")
     .replace(/.*Alibaba.*/, "Ali")
-    .replace(RegExp(country + "|" + city, "i"), "")
     .replace(/,|\./g, "")
+    .replace(/Telecommunications/, "TC")
+    .replace(/Television/, "TV")
+    .replace(/and/, "&")
     .replace(
-      /\b(?:co|ltd|inc|pte|kk|sa|networks?|technolog(?:y|ies)|llc|pty|information|corporation|data|communications|limited|labs|the|link|europe|srl|sas|servers)\b/gi,
+      /\b(?:networks?|technolog(?:y|ies)|cloud|servers|services|group|company|co|ltd|inc|pte|kk|sa|llc|pty|information|corporation|data|communications|limited|labs|the|link|europe|srl|sas|servers)\b/gi,
       "",
     )
+    .replace(RegExp(country + "|" + city, "i"), "")
     .trim();
   // .split(" ")
   // .at(-1);
