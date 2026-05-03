@@ -62,11 +62,7 @@ const AI_TAG_VALUE_BY_KEY = {
 
 async function operator(proxies = [], targetPlatform, context) {
   const $ = $substore;
-  const logBoundary = (phase = "") =>
-    $.info(`==================== [SUB-STORE-AI ${phase}] ====================`);
-  const logHttpMetaBoundary = (phase = "") =>
-    $.info(`==================== [HTTP META ${phase}] ====================`);
-  logBoundary("START");
+  const log = (...args) => console.log("[ai]", ...args);
   // Always cache for the client.
   let useCache = 1; // 默认为 1 (涵盖了非 JSON 平台)
   if (targetPlatform === "JSON") {
@@ -152,21 +148,20 @@ async function operator(proxies = [], targetPlatform, context) {
   const detectionConfigs = allDetectionConfigs.filter((detection) =>
     enabledDetectionKeys.has(detection.key),
   );
-  $.info(
+  log(
     `[gemini-country3] allow=${Array.from(geminiCountry3AllowSet).join("|") || "ANY"}, deny=${Array.from(geminiCountry3DenySet).join("|") || "NONE"}`,
   );
-  $.info(
+  log(
     `[openai-country2] deny=${Array.from(openaiCountry2DenySet).join("|") || "NONE"}`,
   );
-  $.info(
+  log(
     `[claude-country2] deny=${Array.from(claudeCountryDenySet).join("|") || "NONE"}`,
   );
-  $.info(
+  log(
     `[ai-detect] enabled=${detectionConfigs.map((item) => item.key).join("|") || "NONE"}`,
   );
   if (!detectionConfigs.length) {
-    $.info("[ai-detect] 未匹配到可用检测项, 跳过检测");
-    logBoundary("END");
+    log("[ai-detect] 未匹配到可用检测项, 跳过检测");
     return proxies;
   }
 
@@ -190,7 +185,7 @@ async function operator(proxies = [], targetPlatform, context) {
             detection,
             cached,
           });
-          $.info(`使用缓存 [${proxy.name}] ${aiName} 支持${regionText}`);
+          log(`使用缓存 [${proxy.name}] ${aiName} 支持${regionText}`);
         } else if (cached?.unsupported) {
           const regionText =
             detection.key === "gemini" && cached.unsupported_region
@@ -198,17 +193,16 @@ async function operator(proxies = [], targetPlatform, context) {
               : detection.key === "claude" && cached.unsupported_region
                 ? `, country2=${cached.unsupported_region}`
                 : "";
-          $.info(
+          log(
             `使用缓存 [${proxy.name}] ${aiName} 不支持(地区限制)${regionText}`,
           );
         } else if (cached) {
-          $.info(`使用缓存 [${proxy.name}] ${aiName} 错误`);
+          log(`使用缓存 [${proxy.name}] ${aiName} 错误`);
         } else {
-          $.info(`使用缓存 [${proxy.name}] ${aiName} 未检测(未命中缓存)`);
+          log(`使用缓存 [${proxy.name}] ${aiName} 未检测(未命中缓存)`);
         }
       }
     }
-    logBoundary("END");
     return proxies;
   }
 
@@ -229,16 +223,15 @@ async function operator(proxies = [], targetPlatform, context) {
         // Keep original endpoint for stable cache key.
         node._origin_server = proxy.server;
         node._origin_port = proxy.port;
-        // $.info(JSON.stringify(node, null, 2))
+        // log(JSON.stringify(node, null, 2))
         internalProxies.push({ ...node, _proxies_index: index });
       }
     } catch (e) {
-      $.error(e);
+      log(e);
     }
   });
-  $.info(`核心支持节点数: ${internalProxies.length}/${proxies.length}`);
+  log(`核心支持节点数: ${internalProxies.length}/${proxies.length}`);
   if (!internalProxies.length) {
-    logBoundary("END");
     return proxies;
   }
 
@@ -268,17 +261,14 @@ async function operator(proxies = [], targetPlatform, context) {
   } catch (e) {}
   const { ports, pid } = body;
   if (!pid || !ports) {
-    logHttpMetaBoundary("ERROR");
-    logBoundary("END");
     throw new Error(`HTTP META 启动失败\n${body}`);
   }
   http_meta_pid = pid;
   http_meta_ports = ports;
-  logHttpMetaBoundary("START");
-  $.info(
+  log(
     `HTTP META 启动: 端口数量=${Array.isArray(ports) ? ports.length : 0}, PID=${pid}, 超时=${Math.round(http_meta_timeout / 60 / 10) / 100} 分钟后自动关闭`,
   );
-  $.info(`等待 ${http_meta_start_delay / 1000} 秒后开始检测`);
+  log(`等待 ${http_meta_start_delay / 1000} 秒后开始检测`);
   await $.wait(http_meta_start_delay);
 
   const concurrency = Math.max(1, parseInt($arguments.take ?? 10, 10) || 10); // 一组并发数
@@ -311,19 +301,15 @@ async function operator(proxies = [], targetPlatform, context) {
     });
     const stopStatus = String(res?.status ?? res?.statusCode ?? "");
     const stopBody = String(res?.body ?? "");
-    $.info(`HTTP META 关闭响应: status=${stopStatus}, body=${stopBody}`);
-    logHttpMetaBoundary("END");
+    log(`HTTP META 关闭响应: status=${stopStatus}, body=${stopBody}`);
   } catch (e) {
-    $.error(e);
-    logHttpMetaBoundary("END");
+    log(e);
   }
-
-  logBoundary("END");
   return proxies;
 
   async function check(proxy) {
-    // $.info(`[${proxy.name}] 检测`)
-    // $.info(`检测 ${JSON.stringify(proxy, null, 2)}`)
+    // log(`[${proxy.name}] 检测`)
+    // log(`检测 ${JSON.stringify(proxy, null, 2)}`)
     for (const detection of detectionConfigs) {
       await runDetection({ proxy, detection });
     }
@@ -423,7 +409,7 @@ async function operator(proxies = [], targetPlatform, context) {
               : detection.key === "claude" && claudeCountry2
                 ? `, country2=${claudeCountry2}`
                 : "";
-        $.info(
+        log(
           `[${proxy.name}] [${detection.name}] 支持, status=${status}${regionText}`,
         );
         if (shouldWriteCache) {
@@ -448,7 +434,7 @@ async function operator(proxies = [], targetPlatform, context) {
               : detection.key === "claude" && claudeCountry2
                 ? `, country2=${claudeCountry2}`
                 : "";
-        $.info(
+        log(
           `[${proxy.name}] [${detection.name}] 不支持(地区限制), status=${status}${locText}`,
         );
         if (shouldWriteCache) {
@@ -468,7 +454,7 @@ async function operator(proxies = [], targetPlatform, context) {
           bodyText,
           status === 302 ? geminiLocation : "",
         );
-        $.info(
+        log(
           `[${proxy.name}] [${detection.name}] 错误, status=${status}, ${detailText}`,
         );
         if (
@@ -499,7 +485,7 @@ async function operator(proxies = [], targetPlatform, context) {
         errorBody || errorMessage,
         errorStatus === 302 ? errorLocation : "",
       );
-      $.info(
+      log(
         `[${proxy.name}] [${detection.name}] 错误, status=${errorStatus || "ERR"}, ${detailText}`,
       );
       if (
@@ -793,11 +779,11 @@ async function operator(proxies = [], targetPlatform, context) {
       try {
         return await $.http[METHOD]({ ...opt, timeout: TIMEOUT });
       } catch (e) {
-        // $.error(e)
+        // log(e)
         if (count < RETRIES) {
           count++;
           const delay = RETRY_DELAY * count;
-          // $.info(`第 ${count} 次请求失败: ${e.message || e}, 等待 ${delay / 1000}s 后重试`)
+          // log(`第 ${count} 次请求失败: ${e.message || e}, 等待 ${delay / 1000}s 后重试`)
           await $.wait(delay);
           return await fn();
         } else {
@@ -855,3 +841,6 @@ async function operator(proxies = [], targetPlatform, context) {
     });
   }
 }
+
+
+
