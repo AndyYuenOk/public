@@ -299,7 +299,7 @@ async function operator(proxies = [], targetPlatform, context) {
             );
           } else if (deduplicatedByGroup) {
             info(
-              `[${proxy.name}] ${formatServerWithIp(serverWithPort, api, queryServer)}, deduplicated, ${formatIpApiInfo(api)}`,
+              `[${proxy.name}] ${formatServerWithIp(serverWithPort, api, queryServer)}, ${formatIpApiInfo(api)}, deduplicated`,
             );
           } else {
             info(

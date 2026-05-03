@@ -90,7 +90,7 @@ function operator(proxies = [], targetPlatform, context) {
     proxy.name = [
       flagMap[proxy.egressCountryCode],
       ...entrance,
-      proxy.egressCountryCode,
+      proxy.egressCountryCode ?? "ERR",
       index,
       normalizedIsp(proxy.egressIsp, proxy.egressCountry, proxy.egressCity),
       proxy.egressIsResidential ? "Resi" : "",
