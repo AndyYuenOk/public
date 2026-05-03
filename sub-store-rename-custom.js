@@ -41,10 +41,14 @@ function operator(proxies = [], targetPlatform, context) {
   proxies.forEach((proxy) => {
     proxy.subscriptionName = proxy._subName;
 
-    counters[proxy.entranceCountryCode + proxy.entranceIp] ??= {
-      count: 0,
-      index: 0,
-    };
+    proxy.entranceIp ??= "";
+
+    if (proxy.entranceIp) {
+      counters[proxy.entranceCountryCode + proxy.entranceIp] ??= {
+        count: 0,
+        index: 0,
+      };
+    }
     counters[proxy.egressCountryCode + proxy.egressIp] ??= {
       count: 0,
       index: 0,
@@ -54,7 +58,7 @@ function operator(proxies = [], targetPlatform, context) {
   let counter, index;
   proxies.forEach((proxy) => {
     let entrance = [];
-    if (proxy.entranceIp != proxy.egressIp) {
+    if (proxy.entranceIp && proxy.entranceIp != proxy.egressIp) {
       index = "";
       counter = counters[proxy.entranceCountryCode + proxy.entranceIp];
       if (counter.count > 1) {
