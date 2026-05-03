@@ -4,6 +4,10 @@ const flagMap = {"HK":"🇭🇰","MO":"🇲🇴","TW":"🇹🇼","JP":"🇯🇵"
 function operator(proxies = [], targetPlatform, context) {
   let counters = {};
 
+  if (Object.values(context.source)[0].displayName.includes("Free")) {
+    $arguments.sort = 0;
+  }
+
   if (/true|1/.test($arguments.sort ?? 1)) {
     const preferredCountryCodeOrder = ["HK", "SG", "TW", "JP", "US"];
     const countryCodeToSortIndex = Object.fromEntries(
