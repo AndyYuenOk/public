@@ -7,42 +7,61 @@ const DEFAULT_SPEED_TEST_URL =
   "https://github.com/BitDoctor/speed-test-file/raw/refs/heads/master/1mb.txt";
 const DEFAULT_TIMEOUT_MS = 5000;
 const SPEED_REFERENCE_LABEL = "A";
-const AI_DEFAULT_OPTIONS = ["OPENAI", "GEMINI"];
-const AI_APPEND_TAG_BY_KEY = {
+const BROWSER_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36";
+const AI_DEFAULT_OPTIONS = ["openai", "gemini", "claude"];
+const AI_APPEND_TAG_DEFAULT_BY_KEY = {
   openai: "GPT",
   gemini: "GM",
+  claude: "CL",
 };
-const AI_TAGS = Object.values(AI_APPEND_TAG_BY_KEY);
 const AI_DETECTION_CONFIG = {
   openai: {
     key: "openai",
-    name: "OPENAI",
+    cacheAiName: "openai",
+    name: "OpenAI",
     url: "https://chat.openai.com/cdn-cgi/trace",
-    flagKey: "_openai",
-    latencyKey: "_openai_latency",
-    userAgent:
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
+    flagKey: "canAccessOpenai",
+    latencyKey: "openaiLatency",
+    cacheKey: "canAccessOpenai",
+    cacheLatencyKey: "openaiLatency",
+    userAgent: BROWSER_UA,
   },
   gemini: {
     key: "gemini",
-    name: "GEMINI",
+    cacheAiName: "gemini",
+    name: "Gemini",
     url: "https://gemini.google.com/app",
-    flagKey: "_gemini",
-    latencyKey: "_gemini_latency",
-    userAgent:
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
+    flagKey: "canAccessGemini",
+    latencyKey: "geminiLatency",
+    cacheKey: "canAccessGemini",
+    cacheLatencyKey: "geminiLatency",
+    userAgent: BROWSER_UA,
+  },
+  claude: {
+    key: "claude",
+    cacheAiName: "claude",
+    name: "Claude",
+    url: "https://claude.ai/",
+    flagKey: "canAccessClaude",
+    latencyKey: "claudeLatency",
+    cacheKey: "canAccessClaude",
+    cacheLatencyKey: "claudeLatency",
+    userAgent: BROWSER_UA,
   },
 };
 
 async function operator(proxies = [], targetPlatform, context) {
   const $ = $substore;
   const cache = scriptResourceCache;
+  const logInfo = (...args) => console.log(...args);
+  const logError = (...args) => console.error(...args);
   const logBoundary = (phase = "") =>
-    $.info(
+    logInfo(
       `==================== [SUB-STORE-FREE-AVAILABLE ${phase}] ====================`,
     );
   const logHttpMetaBoundary = (phase = "", label = "") =>
-    $.info(
+    logInfo(
       `==================== [HTTP META ${phase}${label ? ` ${label}` : ""}] ====================`,
     );
   logBoundary("START");
@@ -74,7 +93,7 @@ async function operator(proxies = [], targetPlatform, context) {
       logBoundary("END");
       return cachedFinalProxies;
     }
-    $.info("[cache-final] miss, cache=1 return empty proxies");
+    logInfo("[cache-final] miss, cache=1 return empty proxies");
     logBoundary("END");
     return [];
   }
@@ -89,10 +108,11 @@ async function operator(proxies = [], targetPlatform, context) {
     };
   });
 
-  const aiOptions = normalizeAiOptions($arguments.ai);
+  const aiOptions = normalizeAiOptions($arguments.ai_detect);
   const aiDetections = buildAiDetections(aiOptions);
   const aiTarget = aiDetections.length ? Math.ceil(take / 2) : 0;
   const batchSize = Math.max(1, take);
+  const shouldWriteAiCache = true;
 
   // Shared http-meta service config used to spawn per-batch local proxy ports.
   const httpMeta = {
@@ -128,6 +148,21 @@ async function operator(proxies = [], targetPlatform, context) {
   const openaiCountry2DenySet = toCountryCode2Set(
     $arguments.openai_country2_deny ?? "CN,HK",
   );
+  const claudeCountry2DenySet = toCountryCode2Set(
+    $arguments.claude_country2_deny ?? "CN,HK",
+  );
+  const aiTagByKey = {
+    openai: $arguments.openai_prefix ?? AI_APPEND_TAG_DEFAULT_BY_KEY.openai,
+    gemini: $arguments.gemini_prefix ?? AI_APPEND_TAG_DEFAULT_BY_KEY.gemini,
+    claude: $arguments.claude_prefix ?? AI_APPEND_TAG_DEFAULT_BY_KEY.claude,
+  };
+  const aiTags = Object.values(aiTagByKey).filter(Boolean);
+  const networkTransientFailureRegex =
+    /exceeds the timeout|timed out|timeout|client network socket disconnected before secure tls connection was established|socket hang up|econnreset/i;
+  const policyTransientFailureRegex =
+    /request is not allowed[\s\S]*try again later|try again later|temporarily unavailable|too many requests|rate limit|unusual traffic|recaptcha|captcha/i;
+  const unsupportedTextRegex =
+    /unsupported_country|unsupported_country_region_territory|not available in your country|not available in your region|isn't available in your country|location is not supported|unavailable in (?:your )?region|unavailable in (?:your )?country/i;
 
   const normalHttpMetaStartDelay = parseInt(
     $arguments.normal_http_meta_start_delay ??
@@ -149,11 +184,17 @@ async function operator(proxies = [], targetPlatform, context) {
       "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Mobile/15E148 Safari/604.1",
   );
 
-  $.info(
+  logInfo(
     `[gemini-country3] allow=${Array.from(geminiCountry3AllowSet).join("|") || "ANY"}, deny=${Array.from(geminiCountry3DenySet).join("|") || "NONE"}`,
   );
-  $.info(
+  logInfo(
     `[openai-country2] deny=${Array.from(openaiCountry2DenySet).join("|") || "NONE"}`,
+  );
+  logInfo(
+    `[claude-country2] deny=${Array.from(claudeCountry2DenySet).join("|") || "NONE"}`,
+  );
+  logInfo(
+    `[ai-detect] enabled=${aiDetections.map((item) => item.key).join("|") || "NONE"}`,
   );
 
   // Convert to ClashMeta/internal format once, while preserving custom metadata keys.
@@ -171,20 +212,22 @@ async function operator(proxies = [], targetPlatform, context) {
           node[key] = proxy[key];
         }
       }
+      node._origin_server = proxy.server;
+      node._origin_port = proxy.port;
       internalProxies.push({
         ...node,
         _sorted_index: sortedIndex,
       });
     } catch (e) {
-      $.error(e);
+      logError(e);
     }
   });
 
-  $.info(
+  logInfo(
     `[setup] total=${sortedOriginalProxies.length}, core_supported=${internalProxies.length}, take=${take}, ai_target=${aiTarget}, batch_size=${batchSize}`,
   );
-  $.info(`[mode] cache=${useCache ? 1 : 0}`);
-  $.info(
+  logInfo(`[mode] cache=${useCache ? 1 : 0}`);
+  logInfo(
     `[speed-test] url=${normalUrl}, method=${normalMethod}, size=actual_body, status=${validStatusRaw}`,
   );
   if (!internalProxies.length) {
@@ -202,7 +245,7 @@ async function operator(proxies = [], targetPlatform, context) {
     internalProxies.map((proxy) => [proxy._sorted_index, proxy]),
   );
 
-  $.info(`[speed-stage] start: target=${take}, batch_size=${batchSize}`);
+  logInfo(`[speed-stage] start: target=${take}, batch_size=${batchSize}`);
 
   let cursor = 0;
   while (speedPassSet.size < take && cursor < internalProxies.length) {
@@ -214,17 +257,17 @@ async function operator(proxies = [], targetPlatform, context) {
       await processSpeedBatch(batch);
     addSpeedBatchResults(speedPassBatchSet, speedResultBatchMap);
 
-    $.info(
+    logInfo(
       `[speed-stage-batch] total=${batch.length}, speed_pass_batch=${speedPassBatchSet.size}, speed_total=${speedPassSet.size}/${take}`,
     );
   }
 
-  $.info(
+  logInfo(
     `[speed-stage] done: speed_total=${speedPassSet.size}/${take}, checked=${speedCheckedSet.size}/${internalProxies.length}`,
   );
 
   if (aiTarget > 0) {
-    $.info(`[ai-stage] start: target=${aiTarget}, batch_size=${batchSize}`);
+    logInfo(`[ai-stage] start: target=${aiTarget}, batch_size=${batchSize}`);
 
     while (!hasEnoughFinalCandidates()) {
       const aiBatch = getUncheckedAiSpeedPassedProxies().slice(0, batchSize);
@@ -234,7 +277,7 @@ async function operator(proxies = [], targetPlatform, context) {
         for (const sortedIndex of aiPassBatchSet) {
           aiPassSet.add(sortedIndex);
         }
-        $.info(
+        logInfo(
           `[ai-stage-batch] total=${aiBatch.length}, ai_pass_batch=${aiPassBatchSet.size}, ai_total=${aiPassSet.size}/${aiTarget}, ai_candidate_total=${countAiCandidates()}/${aiTarget}`,
         );
 
@@ -249,23 +292,23 @@ async function operator(proxies = [], targetPlatform, context) {
       cursor += batchSize;
       if (!batch.length) continue;
 
-      $.info(
+      logInfo(
         `[speed-refill] start: ai_candidate_total=${countAiCandidates()}/${aiTarget}, speed_total=${speedPassSet.size}`,
       );
       const { speedPassBatchSet, speedResultBatchMap } =
         await processSpeedBatch(batch);
       addSpeedBatchResults(speedPassBatchSet, speedResultBatchMap);
-      $.info(
+      logInfo(
         `[speed-refill-batch] total=${batch.length}, speed_pass_batch=${speedPassBatchSet.size}, speed_total=${speedPassSet.size}`,
       );
-      $.info("========================================");
+      logInfo("========================================");
 
       if (!speedPassBatchSet.size && cursor >= internalProxies.length) {
         break;
       }
     }
 
-    $.info(
+    logInfo(
       `[ai-stage] done: ai_total=${aiPassSet.size}/${aiTarget}, ai_candidate_total=${countAiCandidates()}/${aiTarget}, speed_total=${speedPassSet.size}, checked=${aiCheckedSet.size}`,
     );
   }
@@ -317,7 +360,7 @@ async function operator(proxies = [], targetPlatform, context) {
   // Persist fully formatted final output for fast return in cache mode.
   saveFinalProxiesCache(finalProxies);
 
-  $.info(
+  logInfo(
     `[done] ai=${aiPassSet.size}, ai_candidate=${aiCandidateCount}, ai_quota=${aiQuota}, speed=${speedPassSet.size}, candidate=${candidateSet.size}, filled=${Math.max(0, finalSelectedRecords.length - selectedRecords.length)}, output=${finalProxies.length}`,
   );
   logBoundary("END");
@@ -375,12 +418,12 @@ async function operator(proxies = [], targetPlatform, context) {
       cache.set(FINAL_PROXIES_CACHE_KEY, {
         proxies: cloneProxyList(normalizedProxies),
       });
-      $.info(
+      logInfo(
         `[cache-final] normalize names proxies=${normalizedProxies.length}`,
       );
     }
 
-    $.info(`[cache-final] hit proxies=${cachedProxies.length}`);
+    logInfo(`[cache-final] hit proxies=${cachedProxies.length}`);
     return normalizedProxies;
   }
 
@@ -393,7 +436,7 @@ async function operator(proxies = [], targetPlatform, context) {
     cache.set(FINAL_PROXIES_CACHE_KEY, {
       proxies: proxiesForCache,
     });
-    $.info(`[cache-final] save proxies=${proxiesForCache.length}`);
+    logInfo(`[cache-final] save proxies=${proxiesForCache.length}`);
   }
 
   function normalizeFinalProxyNames(records = []) {
@@ -467,34 +510,52 @@ async function operator(proxies = [], targetPlatform, context) {
 
   function getOutputTags(proxy = {}, name = "") {
     const tags = [];
-    const openaiTag = AI_APPEND_TAG_BY_KEY.openai;
-    const geminiTag = AI_APPEND_TAG_BY_KEY.gemini;
+    const openaiTag = aiTagByKey.openai;
+    const geminiTag = aiTagByKey.gemini;
+    const claudeTag = aiTagByKey.claude;
     if (
+      proxy.canAccessOpenai === true ||
       proxy._openai === true ||
-      new RegExp(
-        `\\s${openaiTag}\\s*$|\\s${openaiTag}\\s+${geminiTag}\\s*$`,
-        "i",
-      ).test(name)
+      (openaiTag &&
+        new RegExp(
+          `\\s${escapeRegExp(openaiTag)}\\s*$|\\s${escapeRegExp(openaiTag)}\\s+${escapeRegExp(geminiTag)}\\s*$`,
+          "i",
+        ).test(name))
     ) {
-      tags.push(openaiTag);
+      if (openaiTag) tags.push(openaiTag);
     }
     if (
+      proxy.canAccessGemini === true ||
       proxy._gemini === true ||
-      new RegExp(`\\s${geminiTag}\\s*$`, "i").test(name)
+      (geminiTag &&
+        new RegExp(`\\s${escapeRegExp(geminiTag)}\\s*$`, "i").test(name))
     ) {
-      tags.push(geminiTag);
+      if (geminiTag) tags.push(geminiTag);
+    }
+    if (
+      proxy.canAccessClaude === true ||
+      proxy._claude === true ||
+      (claudeTag &&
+        new RegExp(`\\s${escapeRegExp(claudeTag)}\\s*$`, "i").test(name))
+    ) {
+      if (claudeTag) tags.push(claudeTag);
     }
     return tags;
   }
 
   function stripOutputTags(name = "") {
     let result = `${name ?? ""}`.trim();
-    const tagPattern = AI_TAGS.join("|");
+    const tagPattern = aiTags.map(escapeRegExp).join("|");
+    if (!tagPattern) return result;
     const tagRegex = new RegExp(`\\s(?:${tagPattern})\\s*$`, "i");
     while (tagRegex.test(result)) {
       result = result.replace(tagRegex, "").trim();
     }
     return result;
+  }
+
+  function escapeRegExp(text = "") {
+    return `${text ?? ""}`.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
 
   function stripMeasuredSpeedSuffix(name = "") {
@@ -560,7 +621,7 @@ async function operator(proxies = [], targetPlatform, context) {
         { concurrency: normalConcurrency },
       );
     } catch (e) {
-      $.error(e);
+      logError(e);
     } finally {
       await stopHttpMetaForBatch(httpMetaPid, "speed");
     }
@@ -580,6 +641,9 @@ async function operator(proxies = [], targetPlatform, context) {
 
     let httpMetaPid;
     try {
+      for (const proxy of proxiesToCheck) {
+        clearLegacyAiFields(proxy);
+      }
       const batchHttpMeta = await startHttpMetaForBatch(proxiesToCheck, {
         label: "ai",
         startDelay: aiHttpMetaStartDelay,
@@ -597,23 +661,34 @@ async function operator(proxies = [], targetPlatform, context) {
           }
 
           aiCheckedSet.add(sortedIndex);
-          for (const detection of aiDetections) {
+          let allSuccess = true;
+          for (const detection of aiDetections.filter(Boolean)) {
+            const cacheId = getAiCacheId(proxy, detection);
+            const cached = getAiCache(cacheId);
+            if (cached?.[detection.cacheKey]) {
+              applyAiDetectionSuccess(proxy, detection, cached[detection.cacheLatencyKey]);
+              continue;
+            }
+            if (cached?.unsupported) {
+              allSuccess = false;
+              break;
+            }
+
             const result = await checkAiWithHttpMeta(proxy, port, detection);
-            if (result.outcome !== "success") {
+            if (result.outcome !== "supported") {
+              allSuccess = false;
               break;
             }
           }
 
-          if (
-            aiDetections.every((detection) => proxy[detection.flagKey] === true)
-          ) {
+          if (allSuccess) {
             aiPassBatchSet.add(sortedIndex);
           }
         }),
         { concurrency: aiConcurrency },
       );
     } catch (e) {
-      $.error(e);
+      logError(e);
     } finally {
       await stopHttpMetaForBatch(httpMetaPid, "ai");
     }
@@ -622,6 +697,7 @@ async function operator(proxies = [], targetPlatform, context) {
   }
 
   async function checkAiWithHttpMeta(proxy, port, detection) {
+    const cacheId = getAiCacheId(proxy, detection);
     try {
       const startedAt = Date.now();
       const requestMethod = detection.key === "gemini" ? "get" : aiMethod;
@@ -642,27 +718,53 @@ async function operator(proxies = [], targetPlatform, context) {
       });
 
       const status = parseInt(res.status || res.statusCode || 200, 10);
+      let msg = "";
       let bodyText = "";
       let body;
       let geminiCountry3 = "";
       let openaiCountry2 = "";
+      let claudeCountry2 = "";
+      let geminiLocation = "";
       const locationHeader = String(
         getHeaderValue(res.headers, "location") || "",
       );
       if (detection.key === "gemini") {
+        geminiLocation = locationHeader;
         bodyText = String(res.body ?? res.rawBody ?? "");
         geminiCountry3 = getGeminiCountry3(bodyText);
+        const details = [];
+        if (locationHeader) details.push(`location: ${locationHeader}`);
+        if (geminiCountry3) details.push(`gbar_country3: ${geminiCountry3}`);
+        msg = details.join(", ");
       } else if (detection.key === "openai") {
         const rawBody = String(res.body ?? res.rawBody ?? "");
         bodyText = rawBody;
         const trace = parseTraceFields(rawBody);
         openaiCountry2 = String(trace.loc || "").toUpperCase();
+        const details = [];
+        if (trace.h) details.push(`h: ${trace.h}`);
+        if (openaiCountry2) details.push(`country2: ${openaiCountry2}`);
+        if (trace.ip) details.push(`ip: ${trace.ip}`);
+        if (trace.colo) details.push(`colo: ${trace.colo}`);
+        msg = details.join(", ");
+      } else if (detection.key === "claude") {
+        const rawBody = String(res.body ?? res.rawBody ?? "");
+        bodyText = rawBody;
+        claudeCountry2 = getClaudeCountry2(rawBody);
+        msg = claudeCountry2 ? `country: ${claudeCountry2}` : "";
       } else {
         const rawBody = String(res.body ?? res.rawBody ?? "");
         body = rawBody;
         try {
           body = JSON.parse(rawBody);
         } catch (e) {}
+        msg = String(
+          body?.error?.code ||
+            body?.error?.error_type ||
+            body?.cf_details ||
+            body?.message ||
+            "",
+        );
         bodyText = typeof body === "string" ? body : rawBody;
       }
 
@@ -670,45 +772,90 @@ async function operator(proxies = [], targetPlatform, context) {
       const outcome = classifyAiResult({
         detection,
         status,
+        message: msg,
         bodyText,
         body,
+        headers: res.headers,
         geminiCountry3,
         openaiCountry2,
+        claudeCountry2,
       });
 
-      if (outcome === "success") {
+      if (outcome === "supported") {
         applyAiDetectionSuccess(proxy, detection, latency);
         const regionText =
           detection.key === "gemini" && geminiCountry3
-            ? `, region=${geminiCountry3}`
+            ? `, country3=${geminiCountry3}`
             : detection.key === "openai" && openaiCountry2
               ? `, country2=${openaiCountry2}`
+              : detection.key === "claude" && claudeCountry2
+                ? `, country2=${claudeCountry2}`
               : "";
-        $.info(
+        logInfo(
           `[${proxy.name}] [${detection.name}] 支持, status=${status}${regionText}`,
         );
+        if (shouldWriteAiCache) {
+          setAiCache(cacheId, {
+            [detection.cacheKey]: true,
+            [detection.cacheLatencyKey]: latency,
+            ...(detection.key === "gemini" && geminiCountry3
+              ? { supported_region: geminiCountry3 }
+              : detection.key === "openai" && openaiCountry2
+                ? { supported_region: openaiCountry2 }
+                : detection.key === "claude" && claudeCountry2
+                  ? { supported_region: claudeCountry2 }
+                  : {}),
+          });
+        }
       } else if (outcome === "unsupported") {
         const regionText =
-          detection.key === "gemini" && geminiCountry3
-            ? `, region=${geminiCountry3}`
-            : detection.key === "openai" && openaiCountry2
-              ? `, country2=${openaiCountry2}`
-              : "";
+          detection.key === "openai" && openaiCountry2
+            ? `, country2=${openaiCountry2}`
+            : detection.key === "gemini" && geminiCountry3
+              ? `, country3=${geminiCountry3}`
+              : detection.key === "claude" && claudeCountry2
+                ? `, country2=${claudeCountry2}`
+                : "";
         const locationText =
-          detection.key === "gemini" && status === 302 && locationHeader
-            ? `, location=${locationHeader}`
+          detection.key === "gemini" && status === 302 && geminiLocation
+            ? `, location=${geminiLocation}`
             : "";
-        $.info(
+        logInfo(
           `[${proxy.name}] [${detection.name}] 不支持(地区限制), status=${status}${regionText}${locationText}`,
         );
+        if (shouldWriteAiCache) {
+          setAiCache(cacheId, {
+            unsupported: true,
+            unsupported_message: msg || getUnsupportedMessage(bodyText),
+            unsupported_latency: latency,
+            ...(detection.key === "gemini" && geminiCountry3
+              ? { unsupported_region: geminiCountry3 }
+              : detection.key === "claude" && claudeCountry2
+                ? { unsupported_region: claudeCountry2 }
+                : {}),
+          });
+        }
       } else {
         const detailText = buildErrorText(
           bodyText,
           status === 302 ? locationHeader : "",
         );
-        $.info(
+        logInfo(
           `[${proxy.name}] [${detection.name}] 错误, status=${status}, ${detailText}`,
         );
+        if (
+          isTransientFailure({
+            status,
+            message: msg,
+            bodyText,
+            detectionKey: detection.key,
+          })
+        ) {
+          return { outcome: "error" };
+        }
+        if (shouldWriteAiCache) {
+          setAiCache(cacheId, {});
+        }
       }
 
       return { outcome };
@@ -726,10 +873,23 @@ async function operator(proxies = [], targetPlatform, context) {
         errorBody || errorMessage,
         errorStatus === 302 ? errorLocation : "",
       );
-      $.info(
+      logInfo(
         `[${proxy.name}] [${detection.name}] 错误, status=${errorStatus || "ERR"}, ${detailText}`,
       );
-      return { outcome: "hard_failure" };
+      if (
+        isTransientFailure({
+          status: errorStatus,
+          message: errorMessage,
+          bodyText: errorBody,
+          detectionKey: detection.key,
+        })
+      ) {
+        return { outcome: "error" };
+      }
+      if (shouldWriteAiCache) {
+        setAiCache(cacheId, {});
+      }
+      return { outcome: "error" };
     }
   }
 
@@ -747,7 +907,7 @@ async function operator(proxies = [], targetPlatform, context) {
       });
       const status = parseInt(res.status || res.statusCode || 200, 10);
       const latencyMs = Date.now() - startedAt;
-      $.info(
+      logInfo(
         `[${proxy.name}] [speed-latency] status=${status}, latency=${latencyMs}`,
       );
 
@@ -760,7 +920,7 @@ async function operator(proxies = [], targetPlatform, context) {
 
       return { ok: false };
     } catch (e) {
-      $.error(`[${proxy.name}] [speed-latency] ${e.message ?? e}`);
+      logError(`[${proxy.name}] [speed-latency] ${e.message ?? e}`);
       return { ok: false };
     }
   }
@@ -798,7 +958,7 @@ async function operator(proxies = [], targetPlatform, context) {
           ? Math.min(rawMeasuredSpeedKb, maxMeasuredSpeedKb)
           : 0;
       const withinEffectiveTimeout = effectiveDurationMs <= DEFAULT_TIMEOUT_MS;
-      $.info(
+      logInfo(
         `[${proxy.name}] [speed] status=${status}, duration=${durationMs}, latency=${latencyMs}, effective_duration=${effectiveDurationMs}, effective_timeout=${DEFAULT_TIMEOUT_MS}, bytes=${responseBytes}, max_speed=${formatSpeedText(maxMeasuredSpeedKb)}, speed=${formatSpeedText(measuredSpeedKb)}`,
       );
 
@@ -818,7 +978,7 @@ async function operator(proxies = [], targetPlatform, context) {
 
       return { ok: false };
     } catch (e) {
-      $.error(`[${proxy.name}] [speed] ${e.message ?? e}`);
+      logError(`[${proxy.name}] [speed] ${e.message ?? e}`);
       return { ok: false };
     }
   }
@@ -826,33 +986,64 @@ async function operator(proxies = [], targetPlatform, context) {
   function classifyAiResult({
     detection,
     status,
+    message = "",
+    bodyText = "",
+    body,
+    headers = {},
     geminiCountry3 = "",
     openaiCountry2 = "",
+    claudeCountry2 = "",
   }) {
     if (detection.key === "openai") {
-      if (status !== 200) return "hard_failure";
+      if (status !== 200) return "error";
       const country2 = `${openaiCountry2 ?? ""}`.toUpperCase();
-      if (!country2) return "hard_failure";
-      return openaiCountry2DenySet.has(country2) ? "unsupported" : "success";
+      if (!country2) return "error";
+      return openaiCountry2DenySet.has(country2) ? "unsupported" : "supported";
     }
     if (detection.key === "gemini") {
-      if (status === 302) return "hard_failure";
+      if (status === 302) return "error";
       if (status === 200) {
         const country3 = `${geminiCountry3 ?? ""}`.toUpperCase();
-        if (!country3) return "hard_failure";
+        if (!country3) return "error";
         if (geminiCountry3AllowSet.size) {
           return geminiCountry3AllowSet.has(country3)
-            ? "success"
+            ? "supported"
             : "unsupported";
         }
         if (geminiCountry3DenySet.has(country3)) {
           return "unsupported";
         }
-        return "success";
+        return "supported";
       }
-      return "hard_failure";
+      return "error";
     }
-    return "hard_failure";
+    if (detection.key === "claude") {
+      if (status !== 200) return "error";
+      const title = extractHtmlTitle(bodyText);
+      if (/unavailable/i.test(title)) {
+        return "unsupported";
+      }
+      const country2 = `${claudeCountry2 ?? ""}`.toUpperCase();
+      if (!country2) return "error";
+      return claudeCountry2DenySet.has(country2) ? "unsupported" : "supported";
+    }
+    if (isUnsupportedResult({ message, bodyText })) {
+      return "unsupported";
+    }
+    if (
+      isTransientFailure({
+        status,
+        message,
+        bodyText,
+        detectionKey: detection.key,
+      })
+    ) {
+      return "error";
+    }
+    if (detection.isSuccess?.({ status, message, bodyText, body, headers })) {
+      return "supported";
+    }
+    return "error";
   }
 
   async function startHttpMetaForBatch(batchProxies = [], options = {}) {
@@ -913,7 +1104,7 @@ async function operator(proxies = [], targetPlatform, context) {
 
     const portsCount = Array.isArray(ports) ? ports.length : 0;
     logHttpMetaBoundary("START", label);
-    $.info(
+    logInfo(
       `[status] ${startStatus} [pid] ${pid} [ports_count] ${portsCount} [proxies] ${batchProxies.length} [timeout] ${totalTimeout}`,
     );
     await $.wait(startDelay);
@@ -939,9 +1130,9 @@ async function operator(proxies = [], targetPlatform, context) {
         10,
       );
       logHttpMetaBoundary("END", label);
-      $.info(`[status] ${stopStatus} [pid] ${pid}`);
+      logInfo(`[status] ${stopStatus} [pid] ${pid}`);
     } catch (e) {
-      $.error(e);
+      logError(e);
     }
   }
 
@@ -958,16 +1149,15 @@ async function operator(proxies = [], targetPlatform, context) {
     const aiTags = [];
     for (const detection of aiDetections) {
       if (proxy[detection.flagKey] === true) {
-        aiTags.push(AI_APPEND_TAG_BY_KEY[detection.key] || detection.name);
+        aiTags.push(aiTagByKey[detection.key] || detection.name);
       }
     }
-    if (proxy._openai === true) parsed._openai = true;
-    if (proxy._openai_latency !== undefined)
-      parsed._openai_latency = proxy._openai_latency;
-    if (proxy._gemini === true) parsed._gemini = true;
-    if (proxy._gemini_latency !== undefined) {
-      parsed._gemini_latency = proxy._gemini_latency;
-    }
+    if (proxy.canAccessOpenai === true) parsed.canAccessOpenai = true;
+    if (proxy.openaiLatency !== undefined) parsed.openaiLatency = proxy.openaiLatency;
+    if (proxy.canAccessGemini === true) parsed.canAccessGemini = true;
+    if (proxy.geminiLatency !== undefined) parsed.geminiLatency = proxy.geminiLatency;
+    if (proxy.canAccessClaude === true) parsed.canAccessClaude = true;
+    if (proxy.claudeLatency !== undefined) parsed.claudeLatency = proxy.claudeLatency;
     if (measuredSpeedKb > 0) parsed._avg_speed_kb = measuredSpeedKb;
     if (durationMs > 0) parsed._duration_ms = `${durationMs}`;
     parsed.name = formatMeasuredName(
@@ -1020,6 +1210,8 @@ async function operator(proxies = [], targetPlatform, context) {
       delete parsed._base_name_speed;
       delete parsed._speed_kb;
       delete parsed._original_name;
+      delete parsed._origin_server;
+      delete parsed._origin_port;
       return parsed;
     } catch (e) {
       const fallback = { ...proxy };
@@ -1027,6 +1219,8 @@ async function operator(proxies = [], targetPlatform, context) {
       delete fallback._base_name_speed;
       delete fallback._speed_kb;
       delete fallback._original_name;
+      delete fallback._origin_server;
+      delete fallback._origin_port;
       return fallback;
     }
   }
@@ -1095,62 +1289,22 @@ async function operator(proxies = [], targetPlatform, context) {
   }
 
   function buildAiDetections(options = []) {
-    // Supported names are configured at the top constants.
-    const normalized = Array.from(
-      new Set(
-        options
-          .map((item) => `${item ?? ""}`.trim().toUpperCase())
-          .filter(Boolean),
-      ),
-    );
-
-    const detections = [];
-    const openaiEnabled = normalized.includes("OPENAI");
-    const geminiEnabled = normalized.includes("GEMINI");
-
-    if (openaiEnabled) detections.push({ ...AI_DETECTION_CONFIG.openai });
-    if (geminiEnabled) detections.push({ ...AI_DETECTION_CONFIG.gemini });
-
-    return detections;
+    return options
+      .map((key) => `${key ?? ""}`.trim().toLowerCase())
+      .map((key) => AI_DETECTION_CONFIG[key])
+      .filter(Boolean)
+      .map((item) => ({ ...item }));
   }
 
-  function normalizeAiOptions(rawAi) {
-    // Accepts array, JSON array/string, comma list, or a single token.
-    const defaultAi = [...AI_DEFAULT_OPTIONS];
-    if (rawAi === undefined || rawAi === null) return defaultAi;
-
-    if (Array.isArray(rawAi)) {
-      const cleaned = rawAi
-        .map((item) => `${item ?? ""}`.trim())
-        .filter(Boolean);
-      return cleaned.length ? cleaned : defaultAi;
-    }
-
-    if (typeof rawAi !== "string") return defaultAi;
-
-    const trimmed = rawAi.trim();
-    if (!trimmed) return defaultAi;
-
-    try {
-      const parsed = JSON.parse(trimmed);
-      if (Array.isArray(parsed)) {
-        const cleaned = parsed
-          .map((item) => `${item ?? ""}`.trim())
-          .filter(Boolean);
-        return cleaned.length ? cleaned : defaultAi;
-      }
-      if (typeof parsed === "string" && parsed.trim()) return [parsed.trim()];
-    } catch (e) {}
-
-    if (trimmed.includes(",")) {
-      const list = trimmed
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean);
-      return list.length ? list : defaultAi;
-    }
-
-    return [trimmed];
+  function normalizeAiOptions(rawAiDetect) {
+    const text = `${rawAiDetect ?? ""}`.trim();
+    if (!text) return [...AI_DEFAULT_OPTIONS];
+    const allowed = new Set(AI_DEFAULT_OPTIONS);
+    const parsed = text
+      .split(",")
+      .map((item) => item.trim().toLowerCase())
+      .filter((item) => allowed.has(item));
+    return parsed.length ? Array.from(new Set(parsed)) : [...AI_DEFAULT_OPTIONS];
   }
 
   function getHeaderValue(headers = {}, key = "") {
@@ -1279,6 +1433,15 @@ async function operator(proxies = [], targetPlatform, context) {
     return "";
   }
 
+  function getClaudeCountry2(bodyText = "") {
+    const text = String(bodyText ?? "");
+    if (!text) return "";
+    const matched =
+      text.match(/data-ion-ip-country="([A-Z]{2})"/i) ||
+      text.match(/data-ion-ip-country='([A-Z]{2})'/i);
+    return matched?.[1] ? matched[1].toUpperCase() : "";
+  }
+
   function parseTraceFields(bodyText = "") {
     const trace = {};
     const lines = String(bodyText ?? "").split(/\r?\n/g);
@@ -1313,6 +1476,66 @@ async function operator(proxies = [], targetPlatform, context) {
         .map((item) => item.trim().toUpperCase())
         .filter((item) => /^[A-Z]{2}$/.test(item)),
     );
+  }
+
+  function getAiCache(id) {
+    return cache.get(id, 0, true);
+  }
+
+  function setAiCache(id, value) {
+    cache.set(id, value);
+  }
+
+  function getAiCacheId(proxy = {}, detection = {}) {
+    const server = proxy._origin_server ?? proxy.server ?? "";
+    const port = proxy._origin_port ?? proxy.port ?? "";
+    return `${server}:${port}:${detection.cacheAiName}`;
+  }
+
+  function clearLegacyAiFields(proxy = {}) {
+    delete proxy._openai;
+    delete proxy._openai_latency;
+    delete proxy._gemini;
+    delete proxy._gemini_latency;
+    delete proxy._claude;
+    delete proxy._claude_latency;
+  }
+
+  function isUnsupportedResult({ message = "", bodyText = "" }) {
+    return unsupportedTextRegex.test(`${message}\n${bodyText}`);
+  }
+
+  function isTransientFailure({
+    status,
+    message = "",
+    bodyText = "",
+    detectionKey = "",
+  }) {
+    if (status === 429) {
+      return true;
+    }
+    return isTransientTextForDetection({
+      text: `${message}\n${bodyText}`,
+      detectionKey,
+    });
+  }
+
+  function isTransientTextForDetection({ text = "", detectionKey = "" }) {
+    if (networkTransientFailureRegex.test(`${text}`)) {
+      return true;
+    }
+    if (
+      detectionKey === "gemini" &&
+      policyTransientFailureRegex.test(`${text}`)
+    ) {
+      return true;
+    }
+    return false;
+  }
+
+  function getUnsupportedMessage(bodyText = "") {
+    const matched = `${bodyText}`.match(unsupportedTextRegex);
+    return matched?.[0] || "";
   }
 
   async function http(opt = {}) {
@@ -1489,3 +1712,5 @@ function formatSpeedNameText(speedKb = 0) {
   }
   return `${Math.round(kb)}K+/s`;
 }
+
+

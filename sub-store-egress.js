@@ -53,8 +53,8 @@ async function operator(proxies = [], targetPlatform, context) {
   let valid = $arguments.valid || `ProxyUtils.isIP('{{api.ip || api.query}}')`;
   const shouldRename = Boolean($arguments.format);
   let format = $arguments.format || "";
-  let url =
-    "http://ip-api.com/json?lang=en&fields=country,countryCode,region,regionName,city,isp,as,query,hosting";
+  let url = "http://ip-api.com/json?lang=en";
+  const ippureUrl = $arguments.ippure_api || "https://my.ippure.com/v1/info";
   const method = $arguments.method || "get";
 
   let utils;
@@ -77,6 +77,8 @@ async function operator(proxies = [], targetPlatform, context) {
   const isIpApiUrl = /^https?:\/\/ip-api\.com\/json(?:\/|\?|$)/i.test(url);
   const ipApiRawCacheReadEnabled = useCache && isIpApiUrl;
   const ipApiRawCacheWriteEnabled = shouldWriteCache && isIpApiUrl;
+  const ippureRawCacheReadEnabled = useCache && isIpApiUrl;
+  const ippureRawCacheWriteEnabled = shouldWriteCache && isIpApiUrl;
   const ipApiInFlight = new Map();
   const ipApiRequestCache = new Map();
   const nodeCount = proxies.length;
@@ -207,7 +209,7 @@ async function operator(proxies = [], targetPlatform, context) {
   }
 
   info(
-    `[stats] nodes: ${nodeCount}, ip-api requests: ${ipApiRequestCount}, groups: ${egressGroupMap.size}`,
+    `[stats] nodes: ${nodeCount}, dual-api requests: ${ipApiRequestCount}, groups: ${egressGroupMap.size}`,
   );
   logBoundary("END");
   return proxies;
@@ -336,7 +338,7 @@ async function operator(proxies = [], targetPlatform, context) {
           targetProxy._egress = api;
           if (ipApiResult.source === "persistent-cache") {
             info(
-              `[${proxy.name}] ${groupCode ? `${groupCode}, ` : ""}${formatServerWithIp(serverWithPort, api)}, using IP API persistent cache, ${formatIpApiInfo(api)}`,
+              `[${proxy.name}] ${groupCode ? `${groupCode}, ` : ""}${formatServerWithIp(serverWithPort, api)}, using persistent cache, ${formatIpApiInfo(api)}`,
             );
           } else if (
             ipApiResult.source === "shared-cache" ||
@@ -350,16 +352,13 @@ async function operator(proxies = [], targetPlatform, context) {
               `[${proxy.name}] ${groupCode ? `${groupCode}, ` : ""}${formatServerWithIp(serverWithPort, api)}, ${formatIpApiInfo(api)}, status: ${status}`,
             );
           }
-          if (ipApiRawCacheWriteEnabled && ipApiResult.source === "network") {
-            cache.set(getIpApiCacheId(serverWithPort), api);
-          }
           if (shouldWriteCache) {
             cache.set(id, { api });
           }
         } else {
           if (isIpApiUrl) {
             info(
-              `[${proxy.name}] ip-api status=${status} invalid response, log only`,
+              `[${proxy.name}] dual-api status=${status} invalid response, log only`,
             );
           } else {
             info(`[${proxy.name}] invalid response, skip cache update`);
@@ -369,7 +368,7 @@ async function operator(proxies = [], targetPlatform, context) {
     } catch (e) {
       error(`[${proxy.name}] ${e.message ?? e}`);
       if (isIpApiUrl && !internal) {
-        info(`[${proxy.name}] ip-api error/timeout, log only`);
+        info(`[${proxy.name}] dual-api error/timeout, log only`);
         return;
       }
       info(`[${proxy.name}] request failed, skip cache update`);
@@ -384,20 +383,25 @@ async function operator(proxies = [], targetPlatform, context) {
     index,
   ) {
     const requestKey = String(serverWithPort || queryServer || "").trim();
-    if (useCache) {
-      const ipApiCacheId = getIpApiCacheId(requestKey);
+    if (useCache && isIpApiUrl) {
       const cachedIpApi = ipApiRawCacheReadEnabled
-        ? cache.get(ipApiCacheId, 0, true)
+        ? cache.get(getIpApiCacheId(requestKey), 0, true)
         : null;
-      if (cachedIpApi) {
+      const cachedIppure = ippureRawCacheReadEnabled
+        ? cache.get(getIppureCacheId(requestKey), 0, true)
+        : null;
+      const mergedCached = mergeApiResult(cachedIpApi, cachedIppure);
+      if (hasMergedApiData(mergedCached)) {
         return {
-          api: cachedIpApi,
+          api: mergedCached,
           status: 200,
           latency: "",
           source: "persistent-cache",
         };
       }
+    }
 
+    if (useCache) {
       if (ipApiRequestCache.has(requestKey)) {
         return { ...ipApiRequestCache.get(requestKey), source: "shared-cache" };
       }
@@ -410,27 +414,74 @@ async function operator(proxies = [], targetPlatform, context) {
 
     const requestTask = (async () => {
       ipApiRequestCount += 1;
-      const res = await http({
-        proxy: `http://${http_meta_host}:${http_meta_ports[index]}`,
-        method,
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Mobile/15E148 Safari/604.1",
-        },
-        url: isIpApiUrl
-          ? getIpApiUrl(queryServer)
-          : formatter({
-              proxy: { ...proxy, server: queryServer },
-              format: url,
-            }),
-      });
-      let api = String(lodash_get(res, "body"));
-      try {
-        api = JSON.parse(api);
-      } catch (e) {}
+      const proxyUrl = `http://${http_meta_host}:${http_meta_ports[index]}`;
+      const headers = {
+        "User-Agent":
+          "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Mobile/15E148 Safari/604.1",
+      };
+
+      let api = {};
+      let status = 500;
+
+      if (isIpApiUrl) {
+        const [ipApiSettled, ippureSettled] = await Promise.allSettled([
+          requestJson({
+            proxy: proxyUrl,
+            method,
+            headers,
+            url: getIpApiUrl(queryServer),
+          }),
+          requestJson({
+            proxy: proxyUrl,
+            method,
+            headers,
+            url: ippureUrl,
+          }),
+        ]);
+
+        const ipApiPayload = getSettledPayload(ipApiSettled);
+        const ippurePayload = getSettledPayload(ippureSettled);
+
+        if (!ipApiPayload.ok) {
+          info(
+            `[${proxy.name}] dual-api error [ip-api]: ${formatApiErrorDetail(ipApiPayload)}`,
+          );
+        }
+        if (!ippurePayload.ok) {
+          info(
+            `[${proxy.name}] dual-api error [ippure]: ${formatApiErrorDetail(ippurePayload)}`,
+          );
+        }
+
+        api = mergeApiResult(ipApiPayload.api, ippurePayload.api);
+        status = ipApiPayload.ok || ippurePayload.ok ? 200 : 500;
+
+        if (ipApiRawCacheWriteEnabled && ipApiPayload.ok) {
+          cache.set(getIpApiCacheId(requestKey), ipApiPayload.api);
+        }
+        if (ippureRawCacheWriteEnabled && ippurePayload.ok) {
+          cache.set(getIppureCacheId(requestKey), ippurePayload.api);
+        }
+      } else {
+        const res = await http({
+          proxy: proxyUrl,
+          method,
+          headers,
+          url: formatter({
+            proxy: { ...proxy, server: queryServer },
+            format: url,
+          }),
+        });
+        api = String(lodash_get(res, "body"));
+        try {
+          api = JSON.parse(api);
+        } catch (e) {}
+        status = parseInt(res.status || res.statusCode || 200, 10);
+      }
+
       const payload = {
         api,
-        status: parseInt(res.status || res.statusCode || 200, 10),
+        status,
         latency: `${Date.now() - startedAt}`,
       };
       if (useCache) {
@@ -487,7 +538,8 @@ async function operator(proxies = [], targetPlatform, context) {
     proxy.egressRegionName = api.regionName ?? "";
     proxy.egressCity = api.city ?? "";
     proxy.egressIsp = api.isp ?? "";
-    proxy.egressHosting = api.hosting ?? "";
+    proxy.egressIsResidential =
+      typeof api.isResidential === "boolean" ? api.isResidential : "";
   }
 
   function applyEgressGroup(proxy = {}, api = {}) {
@@ -496,15 +548,15 @@ async function operator(proxies = [], targetPlatform, context) {
   }
 
   function formatIpApiInfo(api = {}) {
-    const hostingValue =
-      typeof api.hosting === "boolean"
-        ? `hosting ${api.hosting}`
-        : String(api.hosting ?? "").trim();
+    const residentialValue =
+      typeof api.isResidential === "boolean"
+        ? `isResidential ${api.isResidential}`
+        : "";
     const parts = [
       api.country || "",
       api.regionName || "",
       api.city || "",
-      hostingValue,
+      residentialValue,
       api.isp || "",
       api.as || "",
     ].filter((v) => String(v).trim() !== "");
@@ -580,8 +632,93 @@ async function operator(proxies = [], targetPlatform, context) {
     return `egress:ip-api:${ip}`;
   }
 
+  function getIppureCacheId(ip) {
+    return `egress:ippure:${ip}`;
+  }
+
   function getIpApiUrl(ip) {
-    return "http://ip-api.com/json?lang=en&fields=country,countryCode,region,regionName,city,isp,as,query,hosting";
+    return "http://ip-api.com/json?lang=en";
+  }
+
+  function mergeApiResult(ipApi = {}, ippure = {}) {
+    const merged = isPlainObject(ipApi) ? { ...ipApi } : {};
+    if (isPlainObject(ippure)) {
+      if (typeof ippure.isResidential === "boolean") {
+        merged.isResidential = ippure.isResidential;
+      }
+      if (!merged.ip && ippure.ip) {
+        merged.ip = ippure.ip;
+      }
+      if (!merged.country && ippure.country) {
+        merged.country = ippure.country;
+      }
+      if (!merged.countryCode && ippure.countryCode) {
+        merged.countryCode = ippure.countryCode;
+      }
+      if (!merged.region && ippure.region) {
+        merged.region = ippure.region;
+      }
+      if (!merged.city && ippure.city) {
+        merged.city = ippure.city;
+      }
+    }
+    return merged;
+  }
+
+  function hasMergedApiData(api = {}) {
+    if (!isPlainObject(api)) return false;
+    return Boolean(api.ip || api.query || api.countryCode || api.country);
+  }
+
+  function isPlainObject(value) {
+    return value && typeof value === "object" && !Array.isArray(value);
+  }
+
+  async function requestJson(opt = {}) {
+    try {
+      const res = await http(opt);
+      let api = String(lodash_get(res, "body", ""));
+      try {
+        api = JSON.parse(api);
+      } catch (e) {}
+      const status = parseInt(res.status || res.statusCode || 200, 10);
+      const ok = status >= 200 && status < 300 && isPlainObject(api);
+      return {
+        ok,
+        status,
+        api: ok ? api : {},
+        error: ok ? "" : `status ${status}`,
+      };
+    } catch (e) {
+      return {
+        ok: false,
+        status: 0,
+        api: {},
+        error: e?.message ?? String(e),
+      };
+    }
+  }
+
+  function getSettledPayload(settled = {}) {
+    if (settled?.status === "fulfilled") {
+      return settled.value || { ok: false, status: 0, api: {}, error: "" };
+    }
+    return {
+      ok: false,
+      status: 0,
+      api: {},
+      error: settled?.reason?.message ?? String(settled?.reason ?? ""),
+    };
+  }
+
+  function formatApiErrorDetail(payload = {}) {
+    const detail = String(payload?.error ?? "").trim();
+    if (detail) return detail;
+    const status = parseInt(payload?.status ?? 0, 10);
+    if (Number.isFinite(status) && status > 0) {
+      return `status ${status}`;
+    }
+    return "unknown error";
   }
 
   function lodash_get(source, path, defaultValue = undefined) {
