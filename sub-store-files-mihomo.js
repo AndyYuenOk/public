@@ -252,10 +252,14 @@ function main(config) {
     ...(enableFallback ? autoSelectGroup.proxies : []),
   );
 
-  strategyGroups.unshift(mainProxyGroup, ...airportGroups, {
-    ...autoSelectGroup,
-    ...healthCheck,
-  });
+  strategyGroups.unshift(
+    mainProxyGroup,
+    {
+      ...autoSelectGroup,
+      ...healthCheck,
+    },
+    ...airportGroups,
+  );
 
   let allProxyNames = config.proxies.map((proxy) => proxy.name);
 
