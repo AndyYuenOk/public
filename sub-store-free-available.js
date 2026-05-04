@@ -9,11 +9,13 @@ const DEFAULT_TIMEOUT_MS = 5000;
 const SPEED_REFERENCE_LABEL = "A";
 const BROWSER_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36";
-const AI_DEFAULT_OPTIONS = ["openai", "gemini"];
-const AI_APPEND_TAG_DEFAULT_BY_KEY = {
-  openai: "GPT",
-  gemini: "GM",
-  claude: "CL",
+const AI_DEFAULT_OPTIONS = ["openai", "aistudio"];
+const AI_ALLOWED_OPTIONS = ["openai", "gemini", "claude", "aistudio"];
+const AI_TAG_VALUE_BY_KEY = {
+  openai: "OAI",
+  gemini: "GME",
+  claude: "CLD",
+  aistudio: "GAI",
 };
 const AI_DETECTION_CONFIG = {
   openai: {
@@ -49,6 +51,17 @@ const AI_DETECTION_CONFIG = {
     cacheLatencyKey: "claudeLatency",
     userAgent: BROWSER_UA,
   },
+  aistudio: {
+    key: "aistudio",
+    cacheAiName: "aistudio",
+    name: "AI Studio",
+    url: "",
+    flagKey: "canAccessAistudio",
+    latencyKey: "aistudioLatency",
+    cacheKey: "canAccessAistudio",
+    cacheLatencyKey: "aistudioLatency",
+    userAgent: BROWSER_UA,
+  },
 };
 
 async function operator(proxies = [], targetPlatform, context) {
@@ -75,15 +88,17 @@ async function operator(proxies = [], targetPlatform, context) {
   // Runtime knobs from script arguments.
   const take = parseInt($arguments.take ?? 10, 10);
   const appendMeasuredSpeed = /true|1/i.test(`${$arguments.speed ?? 1}`);
+  const aistudioKey = `${$arguments.aistudio_key ?? ""}`.trim();
+  const encodedAistudioKey = encodeURIComponent(aistudioKey);
+  const hasAistudioKey = Boolean(aistudioKey);
   const aiTagByKey = {
-    openai: $arguments.openai_prefix ?? AI_APPEND_TAG_DEFAULT_BY_KEY.openai,
-    gemini: $arguments.gemini_prefix ?? AI_APPEND_TAG_DEFAULT_BY_KEY.gemini,
-    claude: $arguments.claude_prefix ?? AI_APPEND_TAG_DEFAULT_BY_KEY.claude,
+    ...AI_TAG_VALUE_BY_KEY,
   };
   const aiTagFieldByKey = {
     openai: "tagOpenai",
     gemini: "tagGemini",
     claude: "tagClaude",
+    aistudio: "tagAistudio",
   };
   const aiTags = Object.values(aiTagByKey).filter(Boolean);
 
@@ -119,8 +134,23 @@ async function operator(proxies = [], targetPlatform, context) {
     };
   });
 
+  const aiDetectionConfigByKey = {
+    ...AI_DETECTION_CONFIG,
+    aistudio: {
+      ...AI_DETECTION_CONFIG.aistudio,
+      url: hasAistudioKey
+        ? `https://generativelanguage.googleapis.com/v1/models?key=${encodedAistudioKey}`
+        : "",
+    },
+  };
   const aiOptions = normalizeAiOptions($arguments.ai_detect);
-  const aiDetections = buildAiDetections(aiOptions);
+  if (aiOptions.includes("aistudio") && !hasAistudioKey) {
+    logInfo("[aistudio] 未提供 aistudio_key, 跳过 AI Studio 检测");
+  }
+  const aiDetections = buildAiDetections(
+    aiOptions,
+    aiDetectionConfigByKey,
+  ).filter((detection) => detection.key !== "aistudio" || hasAistudioKey);
   const aiTarget = aiDetections.length ? Math.ceil(take / 2) : 0;
   const batchSize = Math.max(1, take);
   const shouldWriteAiCache = true;
@@ -578,9 +608,11 @@ async function operator(proxies = [], targetPlatform, context) {
     const openaiTag = aiTagByKey.openai;
     const geminiTag = aiTagByKey.gemini;
     const claudeTag = aiTagByKey.claude;
+    const aistudioTag = aiTagByKey.aistudio;
     const openaiTagField = `${proxy[aiTagFieldByKey.openai] ?? ""}`.trim();
     const geminiTagField = `${proxy[aiTagFieldByKey.gemini] ?? ""}`.trim();
     const claudeTagField = `${proxy[aiTagFieldByKey.claude] ?? ""}`.trim();
+    const aistudioTagField = `${proxy[aiTagFieldByKey.aistudio] ?? ""}`.trim();
     if (
       openaiTagField ||
       proxy.canAccessOpenai === true ||
@@ -610,6 +642,15 @@ async function operator(proxies = [], targetPlatform, context) {
         new RegExp(`\\s${escapeRegExp(claudeTag)}\\s*$`, "i").test(name))
     ) {
       if (claudeTag) tags.push(claudeTag);
+    }
+    if (
+      aistudioTagField ||
+      proxy.canAccessAistudio === true ||
+      proxy._aistudio === true ||
+      (aistudioTag &&
+        new RegExp(`\\s${escapeRegExp(aistudioTag)}\\s*$`, "i").test(name))
+    ) {
+      if (aistudioTag) tags.push(aistudioTag);
     }
     return tags;
   }
@@ -771,7 +812,10 @@ async function operator(proxies = [], targetPlatform, context) {
     const cacheId = getAiCacheId(proxy, detection);
     try {
       const startedAt = Date.now();
-      const requestMethod = detection.key === "gemini" ? "get" : aiMethod;
+      const requestMethod =
+        detection.key === "gemini" || detection.key === "aistudio"
+          ? "get"
+          : aiMethod;
       const res = await http({
         proxy: `http://${httpMeta.host}:${port}`,
         method: requestMethod,
@@ -823,6 +867,21 @@ async function operator(proxies = [], targetPlatform, context) {
         bodyText = rawBody;
         claudeCountry2 = getClaudeCountry2(rawBody);
         msg = claudeCountry2 ? `country: ${claudeCountry2}` : "";
+      } else if (detection.key === "aistudio") {
+        const rawBody = String(res.body ?? res.rawBody ?? "");
+        body = rawBody;
+        try {
+          body = JSON.parse(rawBody);
+        } catch (e) {}
+        msg = String(
+          body?.error?.code ||
+            body?.error?.error_type ||
+            body?.error?.status ||
+            body?.error?.message ||
+            body?.message ||
+            "",
+        );
+        bodyText = typeof body === "string" ? body : rawBody;
       } else {
         const rawBody = String(res.body ?? res.rawBody ?? "");
         body = rawBody;
@@ -1098,6 +1157,19 @@ async function operator(proxies = [], targetPlatform, context) {
       if (!country2) return "error";
       return claudeCountry2DenySet.has(country2) ? "unsupported" : "supported";
     }
+    if (detection.key === "aistudio") {
+      if (
+        status === 200 &&
+        Array.isArray(body?.models) &&
+        body.models.length > 0
+      ) {
+        return "supported";
+      }
+      if (isUnsupportedResult({ bodyText: JSON.stringify(body ?? {}) })) {
+        return "unsupported";
+      }
+      return "error";
+    }
     if (isUnsupportedResult({ message, bodyText })) {
       return "unsupported";
     }
@@ -1305,12 +1377,16 @@ async function operator(proxies = [], targetPlatform, context) {
       "geminiLatency",
       "canAccessClaude",
       "claudeLatency",
+      "canAccessAistudio",
+      "aistudioLatency",
       "_openai",
       "_openai_latency",
       "_gemini",
       "_gemini_latency",
       "_claude",
       "_claude_latency",
+      "_aistudio",
+      "_aistudio_latency",
     ];
     let changed = false;
     const nextProxy = { ...proxy };
@@ -1446,10 +1522,13 @@ async function operator(proxies = [], targetPlatform, context) {
     return selected;
   }
 
-  function buildAiDetections(options = []) {
+  function buildAiDetections(
+    options = [],
+    configByKey = AI_DETECTION_CONFIG,
+  ) {
     return options
       .map((key) => `${key ?? ""}`.trim().toLowerCase())
-      .map((key) => AI_DETECTION_CONFIG[key])
+      .map((key) => configByKey[key])
       .filter(Boolean)
       .map((item) => ({ ...item }));
   }
@@ -1457,7 +1536,7 @@ async function operator(proxies = [], targetPlatform, context) {
   function normalizeAiOptions(rawAiDetect) {
     const text = `${rawAiDetect ?? ""}`.trim();
     if (!text) return [...AI_DEFAULT_OPTIONS];
-    const allowed = new Set(AI_DEFAULT_OPTIONS);
+    const allowed = new Set(AI_ALLOWED_OPTIONS);
     const parsed = text
       .split(",")
       .map((item) => item.trim().toLowerCase())
@@ -1657,6 +1736,8 @@ async function operator(proxies = [], targetPlatform, context) {
     delete proxy._gemini_latency;
     delete proxy._claude;
     delete proxy._claude_latency;
+    delete proxy._aistudio;
+    delete proxy._aistudio_latency;
   }
 
   function isUnsupportedResult({ message = "", bodyText = "" }) {

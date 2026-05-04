@@ -100,6 +100,7 @@ function operator(proxies = [], targetPlatform, context) {
       proxy?.tagOpenai ?? "",
       proxy?.tagGemini ?? "",
       proxy?.tagClaude ?? "",
+      proxy?.tagAistudio ?? "",
     ]
       .join(" ")
       .replace(/\s{2,}/g, " ")
