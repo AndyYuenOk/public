@@ -103,6 +103,7 @@ async function operator(proxies = [], targetPlatform, context) {
   let ipApiRequestCount = 0;
   const concurrency = parseInt($arguments.concurrency || 10); // Batch concurrency
   const shouldLogResolveDns =
+    !useCache &&
     resolveDomain &&
     proxies.some((proxy) => {
       const server = String(proxy?.server || "").trim();
@@ -174,15 +175,28 @@ async function operator(proxies = [], targetPlatform, context) {
   return proxies;
 
   async function buildProxyContext(proxy = {}) {
-    let queryServer = String(proxy.server || "").trim();
+    const cacheServer = String(proxy.server || "").trim();
+    let queryServer = cacheServer;
     const serverWithPort = getServerWithPort(proxy);
     const originalServer = queryServer;
-    let id = shouldWriteCache ? getCacheId(proxy, queryServer) : undefined;
-    try {
-      queryServer = await getQueryServer(proxy);
-      id = shouldWriteCache ? getCacheId(proxy, queryServer) : undefined;
+    let id = shouldWriteCache ? getCacheId(proxy, cacheServer) : undefined;
+    if (useCache) {
       return {
         proxy,
+        cacheServer,
+        queryServer,
+        originalServer,
+        serverWithPort,
+        id,
+        resolveError: null,
+      };
+    }
+    try {
+      queryServer = await getQueryServer(proxy);
+      id = shouldWriteCache ? getCacheId(proxy, cacheServer) : undefined;
+      return {
+        proxy,
+        cacheServer,
         queryServer,
         originalServer,
         serverWithPort,
@@ -192,6 +206,7 @@ async function operator(proxies = [], targetPlatform, context) {
     } catch (e) {
       return {
         proxy,
+        cacheServer,
         queryServer,
         originalServer,
         serverWithPort,
@@ -204,13 +219,20 @@ async function operator(proxies = [], targetPlatform, context) {
   async function processQueryServerGroup(groupContexts = []) {
     if (!groupContexts.length) return;
     const queryServer = groupContexts[0]?.queryServer ?? "";
+    const groupCacheServers = [
+      ...new Set(
+        groupContexts
+          .map((context) => String(context?.cacheServer || "").trim())
+          .filter(Boolean),
+      ),
+    ];
     const pendingContexts = [];
 
     for (const context of groupContexts) {
       const { proxy, id, serverWithPort } = context;
-      const cached = useCache ? cache.get(id) : null;
-      if (useCache && cached) {
-        if (cached.api) {
+      if (useCache) {
+        const cached = cache.get(id);
+        if (cached?.api) {
           const cacheInfo = internal
             ? formatCountryAsoAsInfo(cached.api)
             : formatIpApiInfo(cached.api);
@@ -224,18 +246,21 @@ async function operator(proxies = [], targetPlatform, context) {
           proxy._entrance = cached.api;
           continue;
         }
-        if (disableFailedCache) {
-          info(`[${proxy.name}] skip failed cache`);
-          pendingContexts.push(context);
+        if (cached) {
+          if (disableFailedCache) {
+            info(`[${proxy.name}] skip failed cache (cache-only)`);
+          } else {
+            info(`USE CACHE, [${proxy.name}] error`);
+          }
         } else {
-          info(`USE CACHE, [${proxy.name}] error`);
+          info(`USE CACHE, [${proxy.name}] miss`);
         }
         continue;
       }
       pendingContexts.push(context);
     }
 
-    if (!pendingContexts.length) return;
+    if (useCache || !pendingContexts.length) return;
 
     if (internal) {
       const api = {
@@ -274,6 +299,7 @@ async function operator(proxies = [], targetPlatform, context) {
       const ipApiResult = await getIpApiResult(
         groupContexts[0].proxy,
         queryServer,
+        groupCacheServers,
         Date.now(),
       );
       const api = ipApiResult.api;
@@ -282,7 +308,15 @@ async function operator(proxies = [], targetPlatform, context) {
 
       if (status == 200 && validApi) {
         if (ipApiRawCacheWriteEnabled && ipApiResult.source === "network") {
-          cache.set(getIpApiCacheId(queryServer), api);
+          const fallbackCacheServer = String(
+            groupContexts[0]?.cacheServer || "",
+          ).trim();
+          const targetCacheServers = groupCacheServers.length
+            ? groupCacheServers
+            : [fallbackCacheServer];
+          for (const cacheServer of targetCacheServers) {
+            cache.set(getIpApiCacheId(cacheServer), api);
+          }
         }
         const deduplicatedByGroup =
           ipApiResult.source === "network" && pendingContexts.length > 1;
@@ -370,8 +404,8 @@ async function operator(proxies = [], targetPlatform, context) {
     };
     return await fn();
   }
-  function getCacheId(proxy, queryServer) {
-    return `entrance:${url}:${format}:${regex}:${internal}:${resolveDomain}:${getMmdbCacheVariant()}:${queryServer}:${JSON.stringify(
+  function getCacheId(proxy, cacheServer) {
+    return `entrance:${url}:${format}:${regex}:${internal}:${resolveDomain}:${getMmdbCacheVariant()}:${cacheServer}:${JSON.stringify(
       Object.fromEntries(
         Object.entries(proxy).filter(([key]) => {
           const re = new RegExp(uniq_key);
@@ -389,25 +423,34 @@ async function operator(proxies = [], targetPlatform, context) {
       mmdb_asn_path || eval("process.env.SUB_STORE_MMDB_ASN_PATH") || "",
     ].join("|");
   }
-  function getIpApiCacheId(ip) {
-    return `entrance:ip-api:${ip}`;
+  function getIpApiCacheId(cacheServer) {
+    return `entrance:ip-api:${cacheServer}`;
   }
   function getIpApiUrl(ip) {
     const query = String(url).split("?")[1];
     return `http://ip-api.com/json/${encodeURIComponent(ip)}${query ? `?${query}` : ""}`;
   }
-  async function getIpApiResult(proxy, queryServer, startedAt) {
-    const ipApiCacheId = getIpApiCacheId(queryServer);
-    const cachedIpApi = ipApiRawCacheReadEnabled
-      ? cache.get(ipApiCacheId, 0, true)
-      : null;
-    if (cachedIpApi) {
-      return {
-        api: cachedIpApi,
-        status: 200,
-        latency: "",
-        source: "persistent-cache",
-      };
+  async function getIpApiResult(proxy, queryServer, cacheServers, startedAt) {
+    const candidateCacheServers = (
+      Array.isArray(cacheServers) ? cacheServers : [cacheServers]
+    )
+      .map((server) => String(server || "").trim())
+      .filter(Boolean);
+    if (!candidateCacheServers.length) {
+      candidateCacheServers.push(String(proxy?.server || "").trim());
+    }
+    for (const cacheServer of candidateCacheServers) {
+      const cachedIpApi = ipApiRawCacheReadEnabled
+        ? cache.get(getIpApiCacheId(cacheServer), 0, true)
+        : null;
+      if (cachedIpApi) {
+        return {
+          api: cachedIpApi,
+          status: 200,
+          latency: "",
+          source: "persistent-cache",
+        };
+      }
     }
     ipApiRequestCount += 1;
     const res = await http({

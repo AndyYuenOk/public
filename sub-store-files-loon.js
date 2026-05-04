@@ -1,9 +1,8 @@
 ﻿const targetCollectionName = "Fallback";
-const sourceMap = context?.source ?? {};
 const subscriptions = await loadCollectionSubscriptions(targetCollectionName);
 
 const baseUrl = $arguments?.base_url;
-const remoteProxyItems = buildRemoteProxyItems(subscriptions, sourceMap);
+const remoteProxyItems = buildRemoteProxyItems(subscriptions);
 
 const remoteProxyLines = remoteProxyItems.map(({ subName, remoteName }) => {
   const subUrl = `${baseUrl}/download/${encodeURIComponent(subName)}/Loon`;
@@ -14,23 +13,17 @@ let nextContent = replaceSection($content, "Remote Proxy", remoteProxyLines);
 nextContent = replaceAutoProxyGroups(nextContent, remoteProxyItems);
 $content = nextContent;
 
-function buildRemoteProxyItems(subscriptions, sourceMap) {
+function buildRemoteProxyItems(subscriptions) {
   const usedRemoteNames = new Set();
   const usedAutoNames = new Set();
   const items = [];
   for (const subInfo of Array.isArray(subscriptions) ? subscriptions : []) {
-    const subName = subInfo.name;
-    const sub = sourceMap?.[subName] ?? {};
-    const alias =
-      subInfo.displayName ||
-      sub.displayName ||
-      sub["display-name"] ||
-      sub.name ||
-      subName;
-    const baseName = alias || subName || "Sub";
+    const subName = String(subInfo?.name || "").trim();
+    const displayName = String(subInfo?.displayName || "").trim();
+    const baseName = displayName || subName || "Sub";
     const remoteName = makeUniqueName(baseName, usedRemoteNames);
     const autoName = makeUniqueName(`Auto_${baseName}`, usedAutoNames);
-    items.push({ subName, alias, remoteName, autoName });
+    items.push({ subName, remoteName, autoName });
   }
   return items;
 }
@@ -95,7 +88,9 @@ function replaceAutoProxyGroups(text, items) {
     (item) =>
       `${item.autoName} = ${buildAutoUrlTestRhs(templateRhs, item.remoteName)}`,
   );
-  const autoAiIndex = keptLines.findIndex((line) => /^\s*Auto_AI\s*=/i.test(line));
+  const autoAiIndex = keptLines.findIndex((line) =>
+    /^\s*Auto_AI\s*=/i.test(line),
+  );
   if (autoAiIndex >= 0) {
     keptLines.splice(autoAiIndex, 0, ...generatedAutoLines);
   } else {
@@ -119,6 +114,7 @@ function replaceAutoProxyGroups(text, items) {
     keptLines[proxyIndex] = mergeRemoteIntoProxySelectLine(
       keptLines[proxyIndex],
       remoteNames,
+      autoNames,
     );
   }
 
@@ -126,7 +122,7 @@ function replaceAutoProxyGroups(text, items) {
   return text.replace(sectionRegex, rebuiltSection);
 }
 
-function mergeRemoteIntoProxySelectLine(line, remoteNames) {
+function mergeRemoteIntoProxySelectLine(line, remoteNames, autoNames) {
   const eqIndex = line.indexOf("=");
   if (eqIndex < 0) return line;
   const left = line.slice(0, eqIndex + 1);
@@ -143,17 +139,41 @@ function mergeRemoteIntoProxySelectLine(line, remoteNames) {
     optionsStart >= 0 ? parts.slice(0, optionsStart) : parts.slice();
   const optionParts = optionsStart >= 0 ? parts.slice(optionsStart) : [];
 
-  const allFilterIndex = policyParts.findIndex((p) => /^All_Filter$/i.test(p));
-  const insertAt = allFilterIndex >= 0 ? allFilterIndex : policyParts.length;
-
   const remoteMap = new Map(
-    remoteNames.map((n) => [String(n).toLowerCase(), n]),
+    (Array.isArray(remoteNames) ? remoteNames : []).map((n) => [
+      String(n).toLowerCase(),
+      n,
+    ]),
+  );
+  const autoMap = new Map(
+    (Array.isArray(autoNames) ? autoNames : []).map((n) => [
+      String(n).toLowerCase(),
+      n,
+    ]),
   );
   const filteredPolicies = policyParts.filter(
-    (p) => !remoteMap.has(String(p).toLowerCase()),
+    (p) =>
+      !remoteMap.has(String(p).toLowerCase()) &&
+      !autoMap.has(String(p).toLowerCase()),
   );
 
-  filteredPolicies.splice(insertAt, 0, ...remoteNames);
+  // Keep Proxy group clean: do not add remote policy names back.
+  // We only keep Auto_<displayName> entries in Proxy.
+
+  const fallbackMemberIndex = filteredPolicies.findIndex((p) =>
+    /^Fallback$/i.test(String(p).trim()),
+  );
+  const autoInsertAt =
+    fallbackMemberIndex >= 0
+      ? fallbackMemberIndex + 1
+      : filteredPolicies.findIndex((p) => /^All_Filter$/i.test(p)) >= 0
+        ? filteredPolicies.findIndex((p) => /^All_Filter$/i.test(p))
+        : filteredPolicies.length;
+  filteredPolicies.splice(
+    autoInsertAt,
+    0,
+    ...(Array.isArray(autoNames) ? autoNames : []),
+  );
 
   const dedupedPolicies = [];
   const seen = new Set();
@@ -204,7 +224,8 @@ function rewriteFallbackLineKeepingOnlyAutoAi(
   if (!/^fallback$/i.test(type)) return line;
 
   const optionsStart = parts.findIndex((p) => /=/.test(p));
-  const members = optionsStart >= 0 ? parts.slice(0, optionsStart) : parts.slice();
+  const members =
+    optionsStart >= 0 ? parts.slice(0, optionsStart) : parts.slice();
   const options = optionsStart >= 0 ? parts.slice(optionsStart) : [];
 
   const autoSet = new Set(
@@ -238,25 +259,32 @@ function rewriteFallbackLineKeepingOnlyAutoAi(
 }
 
 async function loadCollectionSubscriptions(collectionName) {
-  const proxies = await produceArtifact({
-    type: "collection",
-    name: collectionName,
-    platform: "ClashMeta",
-    produceType: "internal",
-  });
-  const seen = new Map();
-  for (const proxy of Array.isArray(proxies) ? proxies : []) {
-    const name = proxy?._subName || proxy?.subscriptionName;
-    if (!name || seen.has(name)) continue;
-    seen.set(
-      name,
-      proxy?._subDisplayName || proxy?.subscriptionDisplayName || name,
-    );
+  const allCollections = $substore.read("collections") || [];
+  const allSubscriptions = $substore.read("subs") || [];
+  const collection = Array.isArray(allCollections)
+    ? allCollections.find((item) => item?.name === collectionName)
+    : null;
+  if (!collection) throw new Error(`collection ${collectionName} not found`);
+
+  const list = [];
+  const seen = new Set();
+  for (const subName of Array.isArray(collection.subscriptions)
+    ? collection.subscriptions
+    : []) {
+    const normalized = String(subName || "").trim();
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    const sub = Array.isArray(allSubscriptions)
+      ? allSubscriptions.find((item) => item?.name === normalized)
+      : null;
+    const displayName = String(
+      sub?.displayName || sub?.["display-name"] || sub?.name || normalized,
+    ).trim();
+    list.push({
+      name: normalized,
+      displayName: displayName || normalized,
+    });
   }
-  const list = Array.from(seen.entries()).map(([name, displayName]) => ({
-    name,
-    displayName,
-  }));
   if (!list.length)
     throw new Error(`collection ${collectionName} has no subscriptions`);
   return list;

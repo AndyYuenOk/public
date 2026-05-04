@@ -84,6 +84,83 @@ async function operator(proxies = [], targetPlatform, context) {
   const nodeCount = proxies.length;
   let ipApiRequestCount = 0;
 
+  if (useCache) {
+    for (const proxy of Array.isArray(proxies) ? proxies : []) {
+      const serverWithPort = getServerWithPort(proxy);
+      const queryServer = String(proxy.server || "").trim();
+      const id = shouldWriteCache ? getCacheId(proxy, queryServer) : undefined;
+
+      // Keep output fields deterministic in cache-only mode.
+      applyEgressInfo(proxy, {});
+
+      const cached = cache.get(id);
+      if (cached?.api) {
+        const cacheInfo = internal
+          ? formatCountryAsoAsInfo(cached.api)
+          : formatIpApiInfo(cached.api);
+        info(
+          `USE CACHE, [${proxy.name}] ${formatServerWithIp(serverWithPort, cached.api)}, ${cacheInfo}`,
+        );
+        applyEgressInfo(proxy, cached.api);
+        if (shouldRename) {
+          proxy.name = formatter({
+            proxy,
+            api: cached.api,
+            format,
+            regex,
+          });
+        }
+        proxy._egress = cached.api;
+        continue;
+      }
+
+      if (cached) {
+        if (disableFailedCache) {
+          info(`[${proxy.name}] skip failed cache (cache-only)`);
+        } else {
+          info(`USE CACHE, [${proxy.name}] error`);
+        }
+      } else {
+        info(`USE CACHE, [${proxy.name}] miss`);
+      }
+    }
+
+    if (remove_incompatible || remove_failed) {
+      proxies = proxies.filter((p) => {
+        if (remove_incompatible && p._incompatible) {
+          return false;
+        }
+        if (remove_failed && !p._egress) {
+          return !remove_incompatible && p._incompatible;
+        }
+        return true;
+      });
+    }
+
+    if (!egressEnabled || !incompatibleEnabled) {
+      proxies = proxies.map((p) => {
+        if (!egressEnabled) {
+          delete p._egress;
+        }
+        if (!incompatibleEnabled) {
+          delete p._incompatible;
+        }
+        return p;
+      });
+    }
+
+    const uniqueEgressIpCount = new Set(
+      proxies
+        .map((proxy) => String(proxy?.egressIp ?? "").trim())
+        .filter(Boolean),
+    ).size;
+    info(
+      `[stats] nodes: ${nodeCount}, dual-api requests: ${ipApiRequestCount}, unique egress ip: ${uniqueEgressIpCount}`,
+    );
+    logBoundary("END");
+    return proxies;
+  }
+
   const internalProxies = [];
   proxies.map((proxy, index) => {
     try {
