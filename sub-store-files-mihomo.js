@@ -1,4 +1,4 @@
-let enableFallback = $arguments.fallback;
+let enableFallback = $arguments.fallback || $file.sourceType == "collection";
 let regions, allowPatterns, blockPatterns, ai;
 
 try {
@@ -201,6 +201,7 @@ function main(config) {
   let fullNodeGroupNames = ["Proxy", "AI", "Netflix"];
 
   let autoSelectGroup,
+    autoLongTermGroup,
     airportGroups = [],
     healthCheck = {
       url: "http://www.gstatic.com/generate_204",
@@ -215,8 +216,18 @@ function main(config) {
       type: "fallback",
       proxies: [],
     };
+    autoLongTermGroup = {
+      name: "Auto_LongTerm",
+      icon: "Auto.png",
+      type: "url-test",
+      proxies: [],
+    };
 
-    // Group proxies by the second token in name, e.g. `HK xxx`, `JP xxx`.
+    let longTermNames = $substore
+      .read("subs")
+      .filter((sub) => sub.tag.includes("LongTerm"))
+      .map((sub) => sub.displayName);
+
     const airportProxyMap = config.proxies.reduce((airportProxyMap, proxy) => {
       (airportProxyMap[proxy.subscriptionDisplayName] ??= []).push(proxy.name);
       return airportProxyMap;
@@ -226,7 +237,11 @@ function main(config) {
       ([airportCode, airportProxies], groupInsertIndex) => {
         let name = "Auto_" + airportCode;
 
-        autoSelectGroup.proxies.push(name);
+        if (longTermNames.includes(airportCode)) {
+          autoLongTermGroup.proxies.push(name);
+        } else {
+          autoSelectGroup.proxies.push(name);
+        }
 
         return {
           name,
@@ -236,6 +251,8 @@ function main(config) {
         };
       },
     );
+
+    autoSelectGroup.proxies.push(autoLongTermGroup.name);
   } else {
     autoSelectGroup = {
       name: "Auto",
@@ -249,7 +266,9 @@ function main(config) {
 
   mainProxyGroup.proxies.push(
     autoSelectGroup.name,
-    ...(enableFallback ? autoSelectGroup.proxies : []),
+    ...(enableFallback
+      ? [...autoSelectGroup.proxies, ...autoLongTermGroup.proxies]
+      : []),
   );
 
   strategyGroups.unshift(
@@ -258,6 +277,7 @@ function main(config) {
       ...autoSelectGroup,
       ...healthCheck,
     },
+    autoLongTermGroup,
     ...airportGroups,
   );
 
