@@ -1,5 +1,7 @@
 let enableFallback = $arguments.fallback || $file.sourceType == "collection";
-let isMainProxyGroupOnly = /true|1/i.test($arguments.proxy_group_only ?? 1);
+let isMainProxyGroupOnly = /true|1/i.test(
+  $arguments.proxy_group_only ?? enableFallback,
+);
 let regions, allowPatterns, blockPatterns, ai;
 
 try {
@@ -282,7 +284,7 @@ function main(config) {
       ...autoSelectGroup,
       ...healthCheck,
     },
-    autoLongTermGroup,
+    ...(enableFallback ? [autoLongTermGroup] : []),
     ...airportGroups,
   );
 
