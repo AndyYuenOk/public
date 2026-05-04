@@ -1,4 +1,5 @@
 let enableFallback = $arguments.fallback || $file.sourceType == "collection";
+let isMainProxyGroupOnly = /true|1/i.test($arguments.proxy_group_only ?? 1);
 let regions, allowPatterns, blockPatterns, ai;
 
 try {
@@ -198,7 +199,11 @@ function main(config) {
     type: "select",
     proxies: [],
   };
-  let fullNodeGroupNames = ["Proxy", "AI", "Netflix"];
+  let fullNodeGroupNames = [
+    isMainProxyGroupOnly ? "" : "Proxy",
+    "AI",
+    "Netflix",
+  ];
 
   let autoSelectGroup,
     autoLongTermGroup,

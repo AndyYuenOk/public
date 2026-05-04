@@ -5,7 +5,7 @@ const baseUrl = $arguments?.base_url;
 const remoteProxyItems = buildRemoteProxyItems(subscriptions);
 
 const remoteProxyLines = remoteProxyItems.map(({ subName, remoteName }) => {
-  const subUrl = `${baseUrl}/download/${encodeURIComponent(subName)}/Loon`;
+  const subUrl = `${baseUrl}${process.env.SUB_STORE_FRONTEND_BACKEND_PATH}/download/${encodeURIComponent(subName)}/Loon`;
   return `${remoteName} = ${subUrl},enabled=true`;
 });
 
@@ -23,7 +23,12 @@ function buildRemoteProxyItems(subscriptions) {
     const baseName = displayName || subName || "Sub";
     const remoteName = makeUniqueName(baseName, usedRemoteNames);
     const autoName = makeUniqueName(`Auto_${baseName}`, usedAutoNames);
-    items.push({ subName, remoteName, autoName });
+    items.push({
+      subName,
+      remoteName,
+      autoName,
+      isLongTerm: Boolean(subInfo?.isLongTerm),
+    });
   }
   return items;
 }
@@ -55,6 +60,14 @@ function replaceAutoProxyGroups(text, items) {
 
   const remoteNames = items.map((item) => item.remoteName);
   const autoNames = items.map((item) => item.autoName);
+  const autoLongTermName = "Auto_LongTerm";
+  const longTermAutoNames = items
+    .filter((item) => item.isLongTerm)
+    .map((item) => item.autoName);
+  const normalAutoNames = items
+    .filter((item) => !item.isLongTerm)
+    .map((item) => item.autoName);
+  const hasLongTermAutoGroup = longTermAutoNames.length > 0;
 
   const rawLines = section.split(/\r?\n/);
   const sectionHeader = rawLines[0];
@@ -88,33 +101,50 @@ function replaceAutoProxyGroups(text, items) {
     (item) =>
       `${item.autoName} = ${buildAutoUrlTestRhs(templateRhs, item.remoteName)}`,
   );
+  const generatedAutoLongTermLine = hasLongTermAutoGroup
+    ? `${autoLongTermName} = ${buildAutoLongTermUrlTestRhs(templateRhs, longTermAutoNames)}`
+    : "";
+  const fallbackLineIndex = keptLines.findIndex((line) =>
+    /^\s*Fallback\s*=/i.test(line),
+  );
   const autoAiIndex = keptLines.findIndex((line) =>
     /^\s*Auto_AI\s*=/i.test(line),
   );
-  if (autoAiIndex >= 0) {
-    keptLines.splice(autoAiIndex, 0, ...generatedAutoLines);
+  const generatedLines = generatedAutoLongTermLine
+    ? [generatedAutoLongTermLine, ...generatedAutoLines]
+    : generatedAutoLines;
+  if (fallbackLineIndex >= 0) {
+    keptLines.splice(fallbackLineIndex + 1, 0, ...generatedLines);
+  } else if (autoAiIndex >= 0) {
+    keptLines.splice(autoAiIndex, 0, ...generatedLines);
   } else {
-    keptLines.push(...generatedAutoLines);
+    keptLines.push(...generatedLines);
   }
 
   const fallbackIndex = keptLines.findIndex((line) =>
     /^\s*Fallback\s*=/i.test(line),
   );
   if (fallbackIndex >= 0) {
+    const fallbackAutoMembers = hasLongTermAutoGroup
+      ? [autoLongTermName, ...normalAutoNames]
+      : [...normalAutoNames];
     keptLines[fallbackIndex] = rewriteFallbackLineKeepingOnlyAutoAi(
       keptLines[fallbackIndex],
       removedUrlTestGroups,
-      autoNames,
+      fallbackAutoMembers,
     );
   }
   const proxyIndex = keptLines.findIndex((line) =>
     /^\s*Proxy\s*=\s*select\s*,/i.test(line),
   );
   if (proxyIndex >= 0) {
+    const proxyAutoMembers = hasLongTermAutoGroup
+      ? [autoLongTermName, ...autoNames]
+      : [...autoNames];
     keptLines[proxyIndex] = mergeRemoteIntoProxySelectLine(
       keptLines[proxyIndex],
       remoteNames,
-      autoNames,
+      proxyAutoMembers,
     );
   }
 
@@ -122,7 +152,7 @@ function replaceAutoProxyGroups(text, items) {
   return text.replace(sectionRegex, rebuiltSection);
 }
 
-function mergeRemoteIntoProxySelectLine(line, remoteNames, autoNames) {
+function mergeRemoteIntoProxySelectLine(line, remoteNames, autoMembers) {
   const eqIndex = line.indexOf("=");
   if (eqIndex < 0) return line;
   const left = line.slice(0, eqIndex + 1);
@@ -146,7 +176,7 @@ function mergeRemoteIntoProxySelectLine(line, remoteNames, autoNames) {
     ]),
   );
   const autoMap = new Map(
-    (Array.isArray(autoNames) ? autoNames : []).map((n) => [
+    (Array.isArray(autoMembers) ? autoMembers : []).map((n) => [
       String(n).toLowerCase(),
       n,
     ]),
@@ -172,7 +202,7 @@ function mergeRemoteIntoProxySelectLine(line, remoteNames, autoNames) {
   filteredPolicies.splice(
     autoInsertAt,
     0,
-    ...(Array.isArray(autoNames) ? autoNames : []),
+    ...(Array.isArray(autoMembers) ? autoMembers : []),
   );
 
   const dedupedPolicies = [];
@@ -204,10 +234,33 @@ function buildAutoUrlTestRhs(rhs, alias) {
   return `url-test, ${mergedLeft}, ${right}`;
 }
 
+function buildAutoLongTermUrlTestRhs(rhs, aliases) {
+  const members = Array.isArray(aliases)
+    ? aliases.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+  if (!members.length) return rhs;
+
+  const urlMatch = rhs.match(/,\s*url\s*=/i);
+  if (!urlMatch) return rhs;
+
+  const cutIndex = urlMatch.index;
+  const left = rhs.slice(0, cutIndex).trim();
+  const right = rhs.slice(cutIndex + 1).trim();
+  const leftPayload = left
+    .replace(/^url-test\s*,?\s*/i, "")
+    .trim()
+    .replace(/,\s*$/, "");
+  const memberPayload = members.join(", ");
+  const mergedLeft = leftPayload
+    ? `${leftPayload}, ${memberPayload}`
+    : memberPayload;
+  return `url-test, ${mergedLeft}, ${right}`;
+}
+
 function rewriteFallbackLineKeepingOnlyAutoAi(
   line,
   removedUrlTestGroups,
-  autoNames,
+  autoMembers,
 ) {
   const eqIndex = line.indexOf("=");
   if (eqIndex < 0) return line;
@@ -229,7 +282,7 @@ function rewriteFallbackLineKeepingOnlyAutoAi(
   const options = optionsStart >= 0 ? parts.slice(optionsStart) : [];
 
   const autoSet = new Set(
-    (Array.isArray(autoNames) ? autoNames : []).map((n) =>
+    (Array.isArray(autoMembers) ? autoMembers : []).map((n) =>
       String(n).toLowerCase(),
     ),
   );
@@ -239,8 +292,8 @@ function rewriteFallbackLineKeepingOnlyAutoAi(
       !/^Auto_AI$/i.test(String(m).trim()),
   );
   const mergedMembers = [
-    ...(Array.isArray(autoNames)
-      ? autoNames.filter((n) => !/^Auto_AI$/i.test(String(n).trim()))
+    ...(Array.isArray(autoMembers)
+      ? autoMembers.filter((n) => !/^Auto_AI$/i.test(String(n).trim()))
       : []),
     ...filteredMembers.filter((m) => !autoSet.has(String(m).toLowerCase())),
   ];
@@ -280,9 +333,13 @@ async function loadCollectionSubscriptions(collectionName) {
     const displayName = String(
       sub?.displayName || sub?.["display-name"] || sub?.name || normalized,
     ).trim();
+    const isLongTerm = Array.isArray(sub?.tag)
+      ? sub.tag.includes("LongTerm")
+      : false;
     list.push({
       name: normalized,
       displayName: displayName || normalized,
+      isLongTerm,
     });
   }
   if (!list.length)
