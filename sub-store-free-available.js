@@ -88,7 +88,11 @@ async function operator(proxies = [], targetPlatform, context) {
   // Runtime knobs from script arguments.
   const take = parseInt($arguments.take ?? 10, 10);
   const appendMeasuredSpeed = /true|1/i.test(`${$arguments.speed ?? 1}`);
-  const aistudioKey = `${$arguments.aistudio_key ?? ""}`.trim();
+  const aistudioKey = `${
+    $arguments.aistudio_key ??
+    eval("process.env.SUB_STORE_GOOGLE_API_KEY") ??
+    ""
+  }`.trim();
   const encodedAistudioKey = encodeURIComponent(aistudioKey);
   const hasAistudioKey = Boolean(aistudioKey);
   const aiTagByKey = {

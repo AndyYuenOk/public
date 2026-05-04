@@ -22,7 +22,7 @@
  * - [client] OpenAI 检测的客户端类型(兼容保留). 不再影响 OpenAI URL
  * - [method] 请求方法. 默认 get
  * - [ai_detect] 启用检测项, 逗号分隔. 允许值: openai,gemini,claude,aistudio. 默认 openai,aistudio
- * - [aistudio_key] AI Studio 检测 key。aistudio 检测将调用 generativelanguage.googleapis.com/v1/models
+ * - [aistudio_key] AI Studio 检测 key。默认读取环境变量 SUB_STORE_GOOGLE_API_KEY。aistudio 检测将调用 generativelanguage.googleapis.com/v1/models
  * - [openai_prefix] 已弃用(仅兼容保留). 脚本不再改名, 只挂载 tagOpenai/tagGemini/tagClaude
  * - [openai_country2_deny] OpenAI 两位国家码黑名单, 逗号分隔. 默认 CN,HK
  * - OpenAI 当前检测端点为 https://chat.openai.com/cdn-cgi/trace, 规则为 status=200 且 country2 不在黑名单
@@ -90,7 +90,11 @@ async function operator(proxies = [], targetPlatform, context) {
     $arguments.http_meta_proxy_timeout ?? 10000,
   );
   const method = $arguments.method || "get";
-  const aistudioKey = `${$arguments.aistudio_key ?? ""}`.trim();
+  const aistudioKey = `${
+    $arguments.aistudio_key ??
+    eval("process.env.SUB_STORE_GOOGLE_API_KEY") ??
+    ""
+  }`.trim();
   const encodedAistudioKey = encodeURIComponent(aistudioKey);
   const hasAistudioKey = Boolean(aistudioKey);
   const enabledDetectionKeys = parseAiDetectKeys(
