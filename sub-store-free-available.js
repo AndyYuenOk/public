@@ -16,6 +16,7 @@ const AI_TAG_VALUE_BY_KEY = {
   gemini: "GME",
   claude: "CLD",
   aistudio: "GAI",
+  all: "AI",
 };
 const AI_DETECTION_CONFIG = {
   openai: {
@@ -103,6 +104,7 @@ async function operator(proxies = [], targetPlatform, context) {
     gemini: "tagGemini",
     claude: "tagClaude",
     aistudio: "tagAistudio",
+    all: "tagAi",
   };
   const aiTags = Object.values(aiTagByKey).filter(Boolean);
 
@@ -613,10 +615,12 @@ async function operator(proxies = [], targetPlatform, context) {
     const geminiTag = aiTagByKey.gemini;
     const claudeTag = aiTagByKey.claude;
     const aistudioTag = aiTagByKey.aistudio;
+    const allTag = aiTagByKey.all;
     const openaiTagField = `${proxy[aiTagFieldByKey.openai] ?? ""}`.trim();
     const geminiTagField = `${proxy[aiTagFieldByKey.gemini] ?? ""}`.trim();
     const claudeTagField = `${proxy[aiTagFieldByKey.claude] ?? ""}`.trim();
     const aistudioTagField = `${proxy[aiTagFieldByKey.aistudio] ?? ""}`.trim();
+    const allTagField = `${proxy[aiTagFieldByKey.all] ?? ""}`.trim();
     if (
       openaiTagField ||
       proxy.canAccessOpenai === true ||
@@ -655,6 +659,14 @@ async function operator(proxies = [], targetPlatform, context) {
         new RegExp(`\\s${escapeRegExp(aistudioTag)}\\s*$`, "i").test(name))
     ) {
       if (aistudioTag) tags.push(aistudioTag);
+    }
+    if (
+      allTagField ||
+      isAllAiDetectionsSupported(proxy) ||
+      (allTag &&
+        new RegExp(`\\s${escapeRegExp(allTag)}\\s*$`, "i").test(name))
+    ) {
+      if (allTag) tags.push(allTag);
     }
     return tags;
   }
@@ -1288,6 +1300,14 @@ async function operator(proxies = [], targetPlatform, context) {
     proxy[detection.flagKey] = true;
     proxy[detection.latencyKey] = latency;
   }
+  function isAllAiDetectionsSupported(proxy = {}) {
+    if (!Array.isArray(aiDetections) || !aiDetections.length) {
+      return false;
+    }
+    return aiDetections.every(
+      (detection) => proxy[detection.flagKey] === true,
+    );
+  }
 
   function toAiProxyOutput(proxy, measuredSpeedKb = 0, durationMs = 0) {
     let parsed = safeParseProxy(proxy);
@@ -1299,6 +1319,10 @@ async function operator(proxies = [], targetPlatform, context) {
         const tagField = aiTagFieldByKey[detection.key];
         if (tag && tagField) tags.push(tag);
       }
+    }
+    if (isAllAiDetectionsSupported(proxy)) {
+      const allTag = aiTagByKey.all;
+      if (allTag) tags.push(allTag);
     }
     const taggedParsed = { ...parsed };
     for (const key of Object.keys(aiTagFieldByKey)) {

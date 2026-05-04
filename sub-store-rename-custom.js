@@ -97,10 +97,7 @@ function operator(proxies = [], targetPlatform, context) {
       multiplier,
       proxy?.measuredSpeed ?? "",
       proxy?.guaranteedSpeed ?? "",
-      proxy?.tagOpenai ?? "",
-      proxy?.tagGemini ?? "",
-      proxy?.tagClaude ?? "",
-      proxy?.tagAistudio ?? "",
+      proxy?.tagAi ?? "",
     ]
       .join(" ")
       .replace(/\s{2,}/g, " ")

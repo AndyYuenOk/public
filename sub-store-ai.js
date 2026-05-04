@@ -37,6 +37,7 @@
  * - 节点上会按需添加 canAccessGemini/geminiLatency, 指 Gemini 检测结果与响应延迟
  * - 节点上会按需添加 canAccessClaude/claudeLatency, 指 Claude 检测结果与响应延迟
  * - 节点上会按需添加 canAccessAistudio/aistudioLatency, 指 AI Studio 检测结果与响应延迟
+ * - 当 ai_detect 实际参与检测项全部通过时, 节点会挂载 tagAi=AI
  * - [cache] 使用缓存结果直接返回; 关闭时实时检测并保存最后测试结果
  * - 缓存时长使用 Sub-Store 默认配置
  * - 失败结果和不支持地区结果也会缓存, 便于后续直接复用
@@ -65,6 +66,8 @@ const AI_TAG_VALUE_BY_KEY = {
   claude: "CLD",
   aistudio: "GAI",
 };
+const AI_ALL_TAG_FIELD = "tagAi";
+const AI_ALL_TAG_VALUE = "AI";
 
 async function operator(proxies = [], targetPlatform, context) {
   const $ = $substore;
@@ -230,6 +233,7 @@ async function operator(proxies = [], targetPlatform, context) {
           log(`使用缓存 [${proxy.name}] ${aiName} 未检测(未命中缓存)`);
         }
       }
+      applyAggregateAiTag(proxyIndex);
     }
     return proxies;
   }
@@ -341,6 +345,7 @@ async function operator(proxies = [], targetPlatform, context) {
     for (const detection of detectionConfigs) {
       await runDetection({ proxy, detection });
     }
+    applyAggregateAiTag(proxy._proxies_index);
   }
   async function runDetection({ proxy, detection }) {
     const id = getCacheId({ proxy, detection });
@@ -572,6 +577,7 @@ async function operator(proxies = [], targetPlatform, context) {
     delete proxy.tagGemini;
     delete proxy.tagClaude;
     delete proxy.tagAistudio;
+    delete proxy.tagAi;
 
     delete proxy._openai;
     delete proxy._openai_latency;
@@ -581,6 +587,23 @@ async function operator(proxies = [], targetPlatform, context) {
     delete proxy._claude_latency;
     delete proxy._aistudio;
     delete proxy._aistudio_latency;
+  }
+  function applyAggregateAiTag(proxyIndex) {
+    const proxy = proxies[proxyIndex];
+    if (!proxy) return;
+    if (isAllEnabledDetectionsSupported(proxy)) {
+      proxy[AI_ALL_TAG_FIELD] = AI_ALL_TAG_VALUE;
+      return;
+    }
+    delete proxy[AI_ALL_TAG_FIELD];
+  }
+  function isAllEnabledDetectionsSupported(proxy = {}) {
+    if (!Array.isArray(detectionConfigs) || !detectionConfigs.length) {
+      return false;
+    }
+    return detectionConfigs.every(
+      (detection) => proxy[detection.flagKey] === true,
+    );
   }
   function getCache(id) {
     return cache.get(id, 0, true);

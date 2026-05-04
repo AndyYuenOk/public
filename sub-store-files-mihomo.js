@@ -20,7 +20,7 @@ try {
 }
 
 try {
-  aiPatterns = JSON.parse($arguments.ai ?? '["GPT","GM"]');
+  aiPatterns = JSON.parse($arguments.ai ?? '["\bAI\b"]');
 } catch {
   aiPatterns = [$arguments.ai];
 }
