@@ -107,6 +107,7 @@ async function operator(proxies = [], targetPlatform, context) {
     all: "tagAi",
   };
   const aiTags = Object.values(aiTagByKey).filter(Boolean);
+  let aiDetections = [];
 
   // Always cache for the client.
   let useCache = 1; // 默认为 1 (涵盖了非 JSON 平台)
@@ -153,10 +154,9 @@ async function operator(proxies = [], targetPlatform, context) {
   if (aiOptions.includes("aistudio") && !hasAistudioKey) {
     logInfo("[aistudio] 未提供 aistudio_key, 跳过 AI Studio 检测");
   }
-  const aiDetections = buildAiDetections(
-    aiOptions,
-    aiDetectionConfigByKey,
-  ).filter((detection) => detection.key !== "aistudio" || hasAistudioKey);
+  aiDetections = buildAiDetections(aiOptions, aiDetectionConfigByKey).filter(
+    (detection) => detection.key !== "aistudio" || hasAistudioKey,
+  );
   const aiTarget = aiDetections.length ? Math.ceil(take / 2) : 0;
   const batchSize = Math.max(1, take);
   const shouldWriteAiCache = true;
