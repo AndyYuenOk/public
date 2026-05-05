@@ -351,7 +351,7 @@ async function operator(proxies = [], targetPlatform, context) {
           method,
           headers: {
             "User-Agent":
-              "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Mobile/15E148 Safari/604.1",
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
           },
           url,
         });
@@ -732,17 +732,24 @@ async function operator(proxies = [], targetPlatform, context) {
   async function requestJson(opt = {}) {
     try {
       const res = await http(opt);
-      let api = String(lodash_get(res, "body", ""));
+      const rawBody = String(lodash_get(res, "body", ""));
+      let api = rawBody;
       try {
         api = JSON.parse(api);
       } catch (e) {}
       const status = parseInt(res.status || res.statusCode || 200, 10);
       const ok = status >= 200 && status < 300 && isPlainObject(api);
+      const previews = ok
+        ? { titlePreview: "", bodyPreview: "" }
+        : extractTitleAndBody(rawBody);
       return {
         ok,
         status,
         api: ok ? api : {},
         error: ok ? "" : `status ${status}`,
+        rawBody: ok ? "" : rawBody,
+        titlePreview: previews.titlePreview,
+        bodyPreview: previews.bodyPreview,
       };
     } catch (e) {
       return {
@@ -750,30 +757,115 @@ async function operator(proxies = [], targetPlatform, context) {
         status: 0,
         api: {},
         error: e?.message ?? String(e),
+        rawBody: "",
+        titlePreview: "",
+        bodyPreview: "",
       };
     }
   }
 
   function getSettledPayload(settled = {}) {
     if (settled?.status === "fulfilled") {
-      return settled.value || { ok: false, status: 0, api: {}, error: "" };
+      return (
+        settled.value || {
+          ok: false,
+          status: 0,
+          api: {},
+          error: "",
+          rawBody: "",
+          titlePreview: "",
+          bodyPreview: "",
+        }
+      );
     }
     return {
       ok: false,
       status: 0,
       api: {},
       error: settled?.reason?.message ?? String(settled?.reason ?? ""),
+      rawBody: "",
+      titlePreview: "",
+      bodyPreview: "",
     };
   }
 
   function formatApiErrorDetail(payload = {}) {
     const detail = String(payload?.error ?? "").trim();
-    if (detail) return detail;
+    const titlePreview = String(payload?.titlePreview ?? "").trim();
+    const bodyPreview = String(payload?.bodyPreview ?? "").trim();
+    const extraParts = [];
+    if (titlePreview) {
+      extraParts.push(`title: ${titlePreview}`);
+    }
+    if (bodyPreview) {
+      extraParts.push(`body: ${bodyPreview}`);
+    }
+    if (detail) {
+      return extraParts.length > 0
+        ? `${detail}, ${extraParts.join(", ")}`
+        : detail;
+    }
     const status = parseInt(payload?.status ?? 0, 10);
     if (Number.isFinite(status) && status > 0) {
-      return `status ${status}`;
+      return extraParts.length > 0
+        ? `status ${status}, ${extraParts.join(", ")}`
+        : `status ${status}`;
     }
-    return "unknown error";
+    return extraParts.length > 0
+      ? `unknown error, ${extraParts.join(", ")}`
+      : "unknown error";
+  }
+
+  function extractTitleAndBody(raw = "") {
+    const source = String(raw ?? "");
+    if (!source.trim()) {
+      return {
+        titlePreview: "",
+        bodyPreview: "",
+      };
+    }
+
+    const titleMatch = source.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i);
+    const titleRaw = titleMatch?.[1] ?? "";
+    const bodyWithoutCode = removeNonTextBlocks(source);
+    const strippedTitle = normalizeWhitespace(stripHtmlTags(titleRaw));
+    const strippedBody = normalizeWhitespace(stripHtmlTags(bodyWithoutCode));
+
+    return {
+      titlePreview: truncateText(strippedTitle, 160),
+      bodyPreview: truncateText(strippedBody, 160),
+    };
+  }
+
+  function removeNonTextBlocks(text = "") {
+    return String(text ?? "")
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+      .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, " ");
+  }
+
+  function stripHtmlTags(text = "") {
+    return String(text ?? "").replace(/<[^>]*>/g, " ");
+  }
+
+  function normalizeWhitespace(text = "") {
+    return String(text ?? "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function truncateText(text = "", limit = 160) {
+    const value = String(text ?? "");
+    if (!Number.isFinite(limit) || limit <= 0) {
+      return "";
+    }
+    if (value.length <= limit) {
+      return value;
+    }
+    if (limit <= 3) {
+      return value.slice(0, limit);
+    }
+    return `${value.slice(0, limit - 3)}...`;
   }
 
   function lodash_get(source, path, defaultValue = undefined) {
