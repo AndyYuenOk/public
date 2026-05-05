@@ -1,5 +1,6 @@
 ﻿const targetCollectionName = "Fallback";
 const subscriptions = await loadCollectionSubscriptions(targetCollectionName);
+setDownloadFilenameHeader();
 
 const baseUrl = $arguments?.base_url;
 const remoteProxyItems = buildRemoteProxyItems(subscriptions);
@@ -366,4 +367,47 @@ function replaceSection(text, sectionName, lines) {
     sectionRegex,
     `${sectionHeader}${eol}${safeLines.join(eol)}${eol}`,
   );
+}
+
+function setDownloadFilenameHeader() {
+  const rawName = String(
+    $arguments?.filename ?? "loon.conf",
+  ).trim();
+  if (!rawName) return;
+
+  const safeName = sanitizeHeaderValue(rawName);
+  if (!safeName) return;
+
+  const fallbackName = toAsciiFilename(safeName);
+  const utf8Name = encodeRFC5987ValueChars(safeName);
+
+  $options ??= {};
+  $options._res ??= {};
+  $options._res.headers ??= {};
+  $options._res.headers["content-disposition"] =
+    'attachment; filename="' +
+    fallbackName +
+    "\"; filename*=UTF-8''" +
+    utf8Name;
+}
+
+function sanitizeHeaderValue(value) {
+  return String(value || "")
+    .replace(/[\r\n"]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function toAsciiFilename(value) {
+  const ascii = String(value || "")
+    .replace(/[^\x20-\x7E]/g, "_")
+    .trim();
+  return ascii || "loon.conf";
+}
+
+function encodeRFC5987ValueChars(value) {
+  return encodeURIComponent(String(value || ""))
+    .replace(/[\'()]/g, escape)
+    .replace(/\*/g, "%2A")
+    .replace(/%(7C|60|5E)/g, (match) => match.toLowerCase());
 }

@@ -23,7 +23,9 @@ try {
 }
 
 try {
-  aiPatterns = JSON.parse($arguments.ai ?? '["\\\\bAI\\\\b"]');
+  aiPatterns = JSON.parse(
+    $arguments.ai ?? JSON.stringify(["\bAI\b"]).replaceAll("\\", "\\\\"),
+  );
 } catch {
   aiPatterns = [$arguments.ai];
 }
