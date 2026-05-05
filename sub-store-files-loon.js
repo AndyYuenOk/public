@@ -60,7 +60,6 @@ function replaceAutoProxyGroups(text, items) {
   if (!section) return text;
 
   const remoteNames = items.map((item) => item.remoteName);
-  const autoNames = items.map((item) => item.autoName);
   const autoLongTermName = "Auto_LongTerm";
   const longTermAutoNames = items
     .filter((item) => item.isLongTerm)
@@ -98,10 +97,18 @@ function replaceAutoProxyGroups(text, items) {
     removedUrlTestGroups.add(groupName.toLowerCase());
   }
 
-  const generatedAutoLines = items.map(
-    (item) =>
+  const generatedAutoLineMap = new Map(
+    items.map((item) => [
+      item.autoName,
       `${item.autoName} = ${buildAutoUrlTestRhs(templateRhs, item.remoteName)}`,
+    ]),
   );
+  const generatedNormalAutoLines = normalAutoNames
+    .map((name) => generatedAutoLineMap.get(name))
+    .filter(Boolean);
+  const generatedLongTermAutoLines = longTermAutoNames
+    .map((name) => generatedAutoLineMap.get(name))
+    .filter(Boolean);
   const generatedAutoLongTermLine = hasLongTermAutoGroup
     ? `${autoLongTermName} = ${buildAutoLongTermUrlTestRhs(templateRhs, longTermAutoNames)}`
     : "";
@@ -112,8 +119,12 @@ function replaceAutoProxyGroups(text, items) {
     /^\s*Auto_AI\s*=/i.test(line),
   );
   const generatedLines = generatedAutoLongTermLine
-    ? [generatedAutoLongTermLine, ...generatedAutoLines]
-    : generatedAutoLines;
+    ? [
+        ...generatedNormalAutoLines,
+        generatedAutoLongTermLine,
+        ...generatedLongTermAutoLines,
+      ]
+    : [...generatedNormalAutoLines, ...generatedLongTermAutoLines];
   if (fallbackLineIndex >= 0) {
     keptLines.splice(fallbackLineIndex + 1, 0, ...generatedLines);
   } else if (autoAiIndex >= 0) {
@@ -127,7 +138,7 @@ function replaceAutoProxyGroups(text, items) {
   );
   if (fallbackIndex >= 0) {
     const fallbackAutoMembers = hasLongTermAutoGroup
-      ? [autoLongTermName, ...normalAutoNames]
+      ? [...normalAutoNames, autoLongTermName]
       : [...normalAutoNames];
     keptLines[fallbackIndex] = rewriteFallbackLineKeepingOnlyAutoAi(
       keptLines[fallbackIndex],
@@ -140,8 +151,8 @@ function replaceAutoProxyGroups(text, items) {
   );
   if (proxyIndex >= 0) {
     const proxyAutoMembers = hasLongTermAutoGroup
-      ? [autoLongTermName, ...autoNames]
-      : [...autoNames];
+      ? [...normalAutoNames, autoLongTermName, ...longTermAutoNames]
+      : [...normalAutoNames];
     keptLines[proxyIndex] = mergeRemoteIntoProxySelectLine(
       keptLines[proxyIndex],
       remoteNames,
@@ -370,9 +381,7 @@ function replaceSection(text, sectionName, lines) {
 }
 
 function setDownloadFilenameHeader() {
-  const rawName = String(
-    $arguments?.filename ?? "loon.conf",
-  ).trim();
+  const rawName = String($arguments?.filename ?? "loon.conf").trim();
   if (!rawName) return;
 
   const safeName = sanitizeHeaderValue(rawName);
