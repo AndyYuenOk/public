@@ -1,5 +1,5 @@
 function operator(proxies, targetPlatform, context) {
-  let multiplier = $arguments.multiplier;
+  let multiplier = $arguments.multiplier ?? 1;
   if (!multiplier) return;
 
   let multiplierMap = {
@@ -11,9 +11,12 @@ function operator(proxies, targetPlatform, context) {
   };
 
   return proxies.filter((proxy) => {
-    if (multiplierMap[multiplier].test(proxy.name)) {
-      return multiplier < 1;
+    const isMatch = multiplierMap[multiplier].test(proxy.name);
+
+    if (multiplier < 1) {
+      return isMatch;
     }
-    return false;
+
+    return !isMatch;
   });
 }
