@@ -121,9 +121,9 @@ function operator(proxies = [], targetPlatform, context) {
 function normalizedIsp(isp, country, city) {
   return (
     isp
-      // .replace(/.*China Mobile.*/i, "CM")
-      // .replace(/.*China Unicom.*/i, "CU")
-      // .replace(/.*Chinanet.*/i, "CT")
+      .replace(/.*China Mobile.*/i, "CM")
+      .replace(/.*China Unicom.*/i, "CU")
+      .replace(/.*Chinanet.*/i, "CT")
       // .replace(/.*Amazon.*/i, "AMZ")
       // .replace(/.*Microsoft.*/i, "Azure")
       // .replace(/.*Cloudflare.*/i, "CF")
@@ -133,11 +133,11 @@ function normalizedIsp(isp, country, city) {
       // .replace(/.*Hong Kong Telecommunications.*/i, "HKT")
       // .replace(/.*Alibaba.*/i, "Ali")
       .replace(/,|\./g, "")
-      .replace(/Telecommunications/i, "TC")
+      // .replace(/Telecommunications/i, "Telecom")
       .replace(/Television/i, "TV")
       .replace(/and/i, "&")
       .replace(
-        /\b(?:networks?|technolog(?:y|ies)|shared|cloud|servers|services|group|company|co|ltd|inc|pte|kk|sa|llc|pty|information|corporation|data|communications|limited|labs|the|link|europe|srl|sas|servers)\b/gi,
+        /\b(?:networks?|technolog(?:y|ies)|telecom|telecommunications|mass|internet|shared|cloud|servers|services|group|company|co|ltd|inc|pte|kk|sa|llc|pty|information|corporation|data|communications|limited|labs|the|link|europe|srl|sas|servers)\b/gi,
         "",
       )
       .replace(RegExp(country + "|" + city, "i"), "")
