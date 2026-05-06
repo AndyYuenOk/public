@@ -210,7 +210,8 @@ function main(config) {
   ];
 
   let autoSelectGroup,
-    autoLongTermGroup,
+    autoTimeLimitedGroup,
+    autoNoExpiryGroup,
     airportGroups = [],
     healthCheck = {
       url: "http://www.gstatic.com/generate_204",
@@ -223,18 +224,24 @@ function main(config) {
       name: "Fallback",
       icon: "Auto.png",
       type: "fallback",
+      proxies: ["Auto_TimeLimited", "Auto_NoExpiry"],
+    };
+    autoTimeLimitedGroup = {
+      name: "Auto_TimeLimited",
+      icon: "Auto.png",
+      type: "url-test",
       proxies: [],
     };
-    autoLongTermGroup = {
-      name: "Auto_LongTerm",
+    autoNoExpiryGroup = {
+      name: "Auto_NoExpiry",
       icon: "Auto.png",
       type: "url-test",
       proxies: [],
     };
 
-    let longTermNames = $substore
+    let noExpiryNames = $substore
       .read("subs")
-      .filter((sub) => sub.tag.includes("LongTerm"))
+      .filter((sub) => sub.tag.includes("NoExpiry"))
       .map((sub) => sub.displayName);
 
     const airportProxyMap = config.proxies.reduce((airportProxyMap, proxy) => {
@@ -246,10 +253,10 @@ function main(config) {
       ([airportCode, airportProxies], groupInsertIndex) => {
         let name = "Auto_" + airportCode;
 
-        if (longTermNames.includes(airportCode)) {
-          autoLongTermGroup.proxies.push(name);
+        if (noExpiryNames.includes(airportCode)) {
+          autoNoExpiryGroup.proxies.push(name);
         } else {
-          autoSelectGroup.proxies.push(name);
+          autoTimeLimitedGroup.proxies.push(name);
         }
 
         return {
@@ -260,8 +267,6 @@ function main(config) {
         };
       },
     );
-
-    autoSelectGroup.proxies.push(autoLongTermGroup.name);
   } else {
     autoSelectGroup = {
       name: "Auto",
@@ -276,7 +281,7 @@ function main(config) {
   mainProxyGroup.proxies.push(
     autoSelectGroup.name,
     ...(enableFallback
-      ? [...autoSelectGroup.proxies, ...autoLongTermGroup.proxies]
+      ? [...autoTimeLimitedGroup.proxies, ...autoNoExpiryGroup.proxies]
       : []),
   );
 
@@ -286,7 +291,7 @@ function main(config) {
       ...autoSelectGroup,
       ...healthCheck,
     },
-    ...(enableFallback ? [autoLongTermGroup] : []),
+    ...(enableFallback ? [autoTimeLimitedGroup, autoNoExpiryGroup] : []),
     ...airportGroups,
   );
 
