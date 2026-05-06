@@ -657,6 +657,7 @@ async function operator(proxies = [], targetPlatform, context) {
     proxy.egressRegion = api.regionName ?? "";
     proxy.egressCity = api.city ?? "";
     proxy.egressIsp = api.isp ?? "";
+    proxy.egressAsn = api.asn ?? "";
     proxy.egressIsResidential =
       typeof api.isResidential === "boolean" ? api.isResidential : "";
     delete proxy.egressGroup;
@@ -673,7 +674,7 @@ async function operator(proxies = [], targetPlatform, context) {
       api.city || "",
       residentialValue,
       api.isp || "",
-      api.as || "",
+      api.asn || "",
     ].filter((v) => String(v).trim() !== "");
     return parts.join(", ");
   }
@@ -682,7 +683,7 @@ async function operator(proxies = [], targetPlatform, context) {
     const parts = [
       api.countryCode || "",
       api.aso || "",
-      api.as || api.aso || "",
+      api.asn || api.aso || "",
     ]
       .map((v) => String(v).trim())
       .filter(Boolean);
@@ -754,6 +755,7 @@ async function operator(proxies = [], targetPlatform, context) {
 
   function mergeApiResult(ipApi = {}, ippure = {}, ipwho = {}) {
     const merged = isPlainObject(ipApi) ? { ...ipApi } : {};
+    merged.asn = extractAsnCode(merged.asn || merged.as || "");
     if (isPlainObject(ippure)) {
       if (typeof ippure.isResidential === "boolean") {
         merged.isResidential = ippure.isResidential;
@@ -799,10 +801,11 @@ async function operator(proxies = [], targetPlatform, context) {
       if (!merged.isp && ipwho.isp) {
         merged.isp = ipwho.isp;
       }
-      if (!merged.as && ipwho.as) {
-        merged.as = ipwho.as;
+      if (!merged.asn && ipwho.asn) {
+        merged.asn = ipwho.asn;
       }
     }
+    delete merged.as;
     return merged;
   }
 
@@ -812,9 +815,7 @@ async function operator(proxies = [], targetPlatform, context) {
     }
     const connection = isPlainObject(source.connection) ? source.connection : {};
     const asn = Number(connection.asn);
-    const orgOrIsp = String(connection.org || connection.isp || "").trim();
-    const asnText = Number.isFinite(asn) && asn > 0 ? `AS${asn}` : "";
-    const asText = [asnText, orgOrIsp].filter(Boolean).join(" ");
+    const asnCode = Number.isFinite(asn) && asn > 0 ? `AS${asn}` : "";
     const query = String(source.ip || "").trim();
 
     return {
@@ -826,8 +827,14 @@ async function operator(proxies = [], targetPlatform, context) {
       regionName: String(source.region || "").trim(),
       city: String(source.city || "").trim(),
       isp: String(connection.isp || connection.org || "").trim(),
-      as: asText,
+      asn: asnCode,
     };
+  }
+
+  function extractAsnCode(value = "") {
+    const text = String(value || "").toUpperCase();
+    const matched = text.match(/\bAS\d+\b/);
+    return matched ? matched[0] : "";
   }
 
   function hasMergedApiData(api = {}) {

@@ -478,17 +478,19 @@ async function operator(proxies = [], targetPlatform, context) {
     };
   }
   function formatIpApiInfo(api = {}) {
+    const asnCode = extractAsnCode(api.asn || api.as || api.aso || "");
     const parts = [
       api.country || "",
       api.regionName || "",
       api.city || "",
       api.isp || "",
-      api.as || api.aso || "",
+      asnCode || api.aso || "",
     ].filter((v) => String(v).trim() !== "");
     return parts.join(", ");
   }
   function formatCountryAsoAsInfo(api = {}) {
-    const parts = [api.countryCode || "", api.aso || "", api.as || api.aso || ""]
+    const asnCode = extractAsnCode(api.asn || api.as || api.aso || "");
+    const parts = [api.countryCode || "", api.aso || "", asnCode || api.aso || ""]
       .map((v) => String(v).trim())
       .filter(Boolean);
     return parts.join(", ");
@@ -501,6 +503,7 @@ async function operator(proxies = [], targetPlatform, context) {
     proxy.entranceCity = api.city;
     proxy.entranceRegion = api.regionName;
     proxy.entranceIsp = api.isp;
+    proxy.entranceAsn = extractAsnCode(api.asn || api.as || api.aso || "");
     delete proxy.entranceGroup;
   }
   async function getQueryServer(proxy) {
@@ -539,6 +542,11 @@ async function operator(proxies = [], targetPlatform, context) {
   }
   function getReturnedIp(api = {}, fallback = "") {
     return api?.query || api?.ip || fallback || "";
+  }
+  function extractAsnCode(value = "") {
+    const text = String(value || "").toUpperCase();
+    const matched = text.match(/\bAS\d+\b/);
+    return matched ? matched[0] : "";
   }
   function getServerWithPort(proxy = {}) {
     const server = String(proxy?.server ?? "").trim();

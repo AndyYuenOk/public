@@ -4,18 +4,18 @@ function operator(proxies, targetPlatform, context) {
     let entranceInfo = proxy.entranceIp;
     let egressInfo = proxy.egressIp;
 
-    if (/true|1/i.test($arguments.use_isp)) {
+    if (/true|1/i.test($arguments.use_asn)) {
       entranceInfo =
         proxy.entranceCountryCode +
         proxy.entranceRegion +
         proxy.entranceCity +
-        proxy.entranceIsp;
+        proxy.entranceAsn;
 
       egressInfo =
         proxy.egressCountryCode +
         proxy.egressRegion +
         proxy.egressCity +
-        proxy.egressIsp;
+        proxy.egressAsn;
     }
 
     proxyMap.set(
