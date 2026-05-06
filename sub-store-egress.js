@@ -55,6 +55,7 @@ async function operator(proxies = [], targetPlatform, context) {
   let format = $arguments.format || "";
   let url = "http://ip-api.com/json?lang=en";
   const ippureUrl = $arguments.ippure_api || "https://my.ippure.com/v1/info";
+  const ipwhoUrl = $arguments.ipwho_api || "https://ipwho.is/";
   const method = $arguments.method || "get";
 
   let utils;
@@ -79,6 +80,8 @@ async function operator(proxies = [], targetPlatform, context) {
   const ipApiRawCacheWriteEnabled = shouldWriteCache && isIpApiUrl;
   const ippureRawCacheReadEnabled = useCache && isIpApiUrl;
   const ippureRawCacheWriteEnabled = shouldWriteCache && isIpApiUrl;
+  const ipwhoRawCacheReadEnabled = useCache && isIpApiUrl;
+  const ipwhoRawCacheWriteEnabled = shouldWriteCache && isIpApiUrl;
   const ipApiInFlight = new Map();
   const ipApiRequestCache = new Map();
   const nodeCount = proxies.length;
@@ -461,7 +464,14 @@ async function operator(proxies = [], targetPlatform, context) {
       const cachedIppure = ippureRawCacheReadEnabled
         ? cache.get(getIppureCacheId(requestKey), 0, true)
         : null;
-      const mergedCached = mergeApiResult(cachedIpApi, cachedIppure);
+      const cachedIpwho = ipwhoRawCacheReadEnabled
+        ? cache.get(getIpwhoCacheId(requestKey), 0, true)
+        : null;
+      const mergedCached = mergeApiResult(
+        cachedIpApi,
+        cachedIppure,
+        cachedIpwho,
+      );
       if (hasMergedApiData(mergedCached)) {
         return {
           api: mergedCached,
@@ -512,11 +522,42 @@ async function operator(proxies = [], targetPlatform, context) {
 
         const ipApiPayload = getSettledPayload(ipApiSettled);
         const ippurePayload = getSettledPayload(ippureSettled);
+        let ipwhoPayload = {
+          ok: false,
+          status: 0,
+          api: {},
+          error: "",
+          rawBody: "",
+          titlePreview: "",
+          bodyPreview: "",
+        };
 
         if (!ipApiPayload.ok) {
           info(
             `[${proxy.name}] dual-api error [ip-api]: ${formatApiErrorDetail(ipApiPayload)}`,
           );
+          info(`[${proxy.name}] ip-api failed, trigger ipwho fallback`);
+          ipwhoPayload = await requestJson({
+            proxy: proxyUrl,
+            method,
+            headers,
+            url: getIpwhoUrl(),
+          });
+          if (ipwhoPayload.ok) {
+            const normalizedIpwho = normalizeIpwhoApi(ipwhoPayload.api);
+            const normalizedOk = hasMergedApiData(normalizedIpwho);
+            ipwhoPayload = {
+              ...ipwhoPayload,
+              ok: normalizedOk,
+              api: normalizedOk ? normalizedIpwho : {},
+              error: normalizedOk ? ipwhoPayload.error : "empty ipwho payload",
+            };
+          }
+          if (!ipwhoPayload.ok) {
+            info(
+              `[${proxy.name}] dual-api error [ipwho]: ${formatApiErrorDetail(ipwhoPayload)}`,
+            );
+          }
         }
         if (!ippurePayload.ok) {
           info(
@@ -524,14 +565,17 @@ async function operator(proxies = [], targetPlatform, context) {
           );
         }
 
-        api = mergeApiResult(ipApiPayload.api, ippurePayload.api);
-        status = ipApiPayload.ok || ippurePayload.ok ? 200 : 500;
+        api = mergeApiResult(ipApiPayload.api, ippurePayload.api, ipwhoPayload.api);
+        status = ipApiPayload.ok || ippurePayload.ok || ipwhoPayload.ok ? 200 : 500;
 
         if (ipApiRawCacheWriteEnabled && ipApiPayload.ok) {
           cache.set(getIpApiCacheId(requestKey), ipApiPayload.api);
         }
         if (ippureRawCacheWriteEnabled && ippurePayload.ok) {
           cache.set(getIppureCacheId(requestKey), ippurePayload.api);
+        }
+        if (ipwhoRawCacheWriteEnabled && ipwhoPayload.ok) {
+          cache.set(getIpwhoCacheId(requestKey), ipwhoPayload.api);
         }
       } else {
         const res = await http({
@@ -691,11 +735,20 @@ async function operator(proxies = [], targetPlatform, context) {
     return `egress:ippure:${ip}`;
   }
 
+  function getIpwhoCacheId(ip) {
+    return `egress:ipwho:${ip}`;
+  }
+
   function getIpApiUrl(ip) {
     return "http://ip-api.com/json?lang=en";
   }
 
-  function mergeApiResult(ipApi = {}, ippure = {}) {
+  function getIpwhoUrl() {
+    const normalizedBase = String(ipwhoUrl || "").trim() || "https://ipwho.is/";
+    return normalizedBase;
+  }
+
+  function mergeApiResult(ipApi = {}, ippure = {}, ipwho = {}) {
     const merged = isPlainObject(ipApi) ? { ...ipApi } : {};
     if (isPlainObject(ippure)) {
       if (typeof ippure.isResidential === "boolean") {
@@ -717,7 +770,60 @@ async function operator(proxies = [], targetPlatform, context) {
         merged.city = ippure.city;
       }
     }
+    if (isPlainObject(ipwho)) {
+      if (!merged.query && ipwho.query) {
+        merged.query = ipwho.query;
+      }
+      if (!merged.ip && ipwho.ip) {
+        merged.ip = ipwho.ip;
+      }
+      if (!merged.country && ipwho.country) {
+        merged.country = ipwho.country;
+      }
+      if (!merged.countryCode && ipwho.countryCode) {
+        merged.countryCode = ipwho.countryCode;
+      }
+      if (!merged.region && ipwho.region) {
+        merged.region = ipwho.region;
+      }
+      if (!merged.regionName && ipwho.regionName) {
+        merged.regionName = ipwho.regionName;
+      }
+      if (!merged.city && ipwho.city) {
+        merged.city = ipwho.city;
+      }
+      if (!merged.isp && ipwho.isp) {
+        merged.isp = ipwho.isp;
+      }
+      if (!merged.as && ipwho.as) {
+        merged.as = ipwho.as;
+      }
+    }
     return merged;
+  }
+
+  function normalizeIpwhoApi(source = {}) {
+    if (!isPlainObject(source)) {
+      return {};
+    }
+    const connection = isPlainObject(source.connection) ? source.connection : {};
+    const asn = Number(connection.asn);
+    const orgOrIsp = String(connection.org || connection.isp || "").trim();
+    const asnText = Number.isFinite(asn) && asn > 0 ? `AS${asn}` : "";
+    const asText = [asnText, orgOrIsp].filter(Boolean).join(" ");
+    const query = String(source.ip || "").trim();
+
+    return {
+      query,
+      ip: query,
+      countryCode: String(source.country_code || "").trim(),
+      country: String(source.country || "").trim(),
+      region: String(source.region_code || "").trim(),
+      regionName: String(source.region || "").trim(),
+      city: String(source.city || "").trim(),
+      isp: String(connection.isp || connection.org || "").trim(),
+      as: asText,
+    };
   }
 
   function hasMergedApiData(api = {}) {

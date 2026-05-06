@@ -28,7 +28,7 @@ function buildRemoteProxyItems(subscriptions) {
       subName,
       remoteName,
       autoName,
-      isLongTerm: Boolean(subInfo?.isLongTerm),
+      isNoExpiry: Boolean(subInfo?.isNoExpiry),
     });
   }
   return items;
@@ -60,14 +60,14 @@ function replaceAutoProxyGroups(text, items) {
   if (!section) return text;
 
   const remoteNames = items.map((item) => item.remoteName);
-  const autoLongTermName = "Auto_LongTerm";
-  const longTermAutoNames = items
-    .filter((item) => item.isLongTerm)
+  const autoTimeLimitedName = "Auto_TimeLimited";
+  const autoNoExpiryName = "Auto_NoExpiry";
+  const noExpiryAutoNames = items
+    .filter((item) => item.isNoExpiry)
     .map((item) => item.autoName);
-  const normalAutoNames = items
-    .filter((item) => !item.isLongTerm)
+  const timeLimitedAutoNames = items
+    .filter((item) => !item.isNoExpiry)
     .map((item) => item.autoName);
-  const hasLongTermAutoGroup = longTermAutoNames.length > 0;
 
   const rawLines = section.split(/\r?\n/);
   const sectionHeader = rawLines[0];
@@ -81,7 +81,6 @@ function replaceAutoProxyGroups(text, items) {
     templateLine?.split("=").slice(1).join("=").trim() ||
     "url-test, url=http://www.gstatic.com/generate_204, interval=300, tolerance=50, img-url=https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Auto.png";
 
-  const removedUrlTestGroups = new Set();
   const keptLines = [];
   for (const line of bodyLines) {
     const match = line.match(urlTestLineRegex);
@@ -94,7 +93,6 @@ function replaceAutoProxyGroups(text, items) {
       keptLines.push(line);
       continue;
     }
-    removedUrlTestGroups.add(groupName.toLowerCase());
   }
 
   const generatedAutoLineMap = new Map(
@@ -103,28 +101,26 @@ function replaceAutoProxyGroups(text, items) {
       `${item.autoName} = ${buildAutoUrlTestRhs(templateRhs, item.remoteName)}`,
     ]),
   );
-  const generatedNormalAutoLines = normalAutoNames
+  const generatedTimeLimitedAutoLines = timeLimitedAutoNames
     .map((name) => generatedAutoLineMap.get(name))
     .filter(Boolean);
-  const generatedLongTermAutoLines = longTermAutoNames
+  const generatedNoExpiryAutoLines = noExpiryAutoNames
     .map((name) => generatedAutoLineMap.get(name))
     .filter(Boolean);
-  const generatedAutoLongTermLine = hasLongTermAutoGroup
-    ? `${autoLongTermName} = ${buildAutoLongTermUrlTestRhs(templateRhs, longTermAutoNames)}`
-    : "";
+  const generatedAutoTimeLimitedLine = `${autoTimeLimitedName} = ${buildAutoAggregateUrlTestRhs(templateRhs, timeLimitedAutoNames)}`;
+  const generatedAutoNoExpiryLine = `${autoNoExpiryName} = ${buildAutoAggregateUrlTestRhs(templateRhs, noExpiryAutoNames)}`;
   const fallbackLineIndex = keptLines.findIndex((line) =>
     /^\s*Fallback\s*=/i.test(line),
   );
   const autoAiIndex = keptLines.findIndex((line) =>
     /^\s*Auto_AI\s*=/i.test(line),
   );
-  const generatedLines = generatedAutoLongTermLine
-    ? [
-        ...generatedNormalAutoLines,
-        generatedAutoLongTermLine,
-        ...generatedLongTermAutoLines,
-      ]
-    : [...generatedNormalAutoLines, ...generatedLongTermAutoLines];
+  const generatedLines = [
+    generatedAutoTimeLimitedLine,
+    generatedAutoNoExpiryLine,
+    ...generatedTimeLimitedAutoLines,
+    ...generatedNoExpiryAutoLines,
+  ];
   if (fallbackLineIndex >= 0) {
     keptLines.splice(fallbackLineIndex + 1, 0, ...generatedLines);
   } else if (autoAiIndex >= 0) {
@@ -137,22 +133,16 @@ function replaceAutoProxyGroups(text, items) {
     /^\s*Fallback\s*=/i.test(line),
   );
   if (fallbackIndex >= 0) {
-    const fallbackAutoMembers = hasLongTermAutoGroup
-      ? [...normalAutoNames, autoLongTermName]
-      : [...normalAutoNames];
-    keptLines[fallbackIndex] = rewriteFallbackLineKeepingOnlyAutoAi(
+    keptLines[fallbackIndex] = rewriteFallbackLineWithAutoMembers(
       keptLines[fallbackIndex],
-      removedUrlTestGroups,
-      fallbackAutoMembers,
+      [autoTimeLimitedName, autoNoExpiryName],
     );
   }
   const proxyIndex = keptLines.findIndex((line) =>
     /^\s*Proxy\s*=\s*select\s*,/i.test(line),
   );
   if (proxyIndex >= 0) {
-    const proxyAutoMembers = hasLongTermAutoGroup
-      ? [...normalAutoNames, autoLongTermName, ...longTermAutoNames]
-      : [...normalAutoNames];
+    const proxyAutoMembers = [...timeLimitedAutoNames, ...noExpiryAutoNames];
     keptLines[proxyIndex] = mergeRemoteIntoProxySelectLine(
       keptLines[proxyIndex],
       remoteNames,
@@ -231,26 +221,13 @@ function mergeRemoteIntoProxySelectLine(line, remoteNames, autoMembers) {
 }
 
 function buildAutoUrlTestRhs(rhs, alias) {
-  const cleanAlias = alias;
-  const urlMatch = rhs.match(/,\s*url\s*=/i);
-  if (!urlMatch) return rhs;
-
-  const cutIndex = urlMatch.index;
-  const left = rhs.slice(0, cutIndex).trim();
-  const right = rhs.slice(cutIndex + 1).trim();
-  const leftPayload = left
-    .replace(/^url-test\s*,?\s*/i, "")
-    .trim()
-    .replace(/,\s*$/, "");
-  const mergedLeft = leftPayload ? `${leftPayload}, ${cleanAlias}` : cleanAlias;
-  return `url-test, ${mergedLeft}, ${right}`;
+  return buildAutoAggregateUrlTestRhs(rhs, [alias]);
 }
 
-function buildAutoLongTermUrlTestRhs(rhs, aliases) {
+function buildAutoAggregateUrlTestRhs(rhs, aliases) {
   const members = Array.isArray(aliases)
     ? aliases.map((item) => String(item || "").trim()).filter(Boolean)
     : [];
-  if (!members.length) return rhs;
 
   const urlMatch = rhs.match(/,\s*url\s*=/i);
   if (!urlMatch) return rhs;
@@ -262,18 +239,19 @@ function buildAutoLongTermUrlTestRhs(rhs, aliases) {
     .replace(/^url-test\s*,?\s*/i, "")
     .trim()
     .replace(/,\s*$/, "");
-  const memberPayload = members.join(", ");
-  const mergedLeft = leftPayload
-    ? `${leftPayload}, ${memberPayload}`
-    : memberPayload;
-  return `url-test, ${mergedLeft}, ${right}`;
+  const leftParts = leftPayload
+    ? leftPayload
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean)
+    : [];
+  const leftOptionParts = leftParts.filter((part) => /=/.test(part));
+  const mergedLeftParts = [...members, ...leftOptionParts];
+  const mergedLeft = mergedLeftParts.join(", ");
+  return mergedLeft ? `url-test, ${mergedLeft}, ${right}` : `url-test, ${right}`;
 }
 
-function rewriteFallbackLineKeepingOnlyAutoAi(
-  line,
-  removedUrlTestGroups,
-  autoMembers,
-) {
+function rewriteFallbackLineWithAutoMembers(line, autoMembers) {
   const eqIndex = line.indexOf("=");
   if (eqIndex < 0) return line;
 
@@ -289,30 +267,12 @@ function rewriteFallbackLineKeepingOnlyAutoAi(
   if (!/^fallback$/i.test(type)) return line;
 
   const optionsStart = parts.findIndex((p) => /=/.test(p));
-  const members =
-    optionsStart >= 0 ? parts.slice(0, optionsStart) : parts.slice();
   const options = optionsStart >= 0 ? parts.slice(optionsStart) : [];
-
-  const autoSet = new Set(
-    (Array.isArray(autoMembers) ? autoMembers : []).map((n) =>
-      String(n).toLowerCase(),
-    ),
-  );
-  const filteredMembers = members.filter(
-    (m) =>
-      !removedUrlTestGroups.has(String(m).toLowerCase()) &&
-      !/^Auto_AI$/i.test(String(m).trim()),
-  );
-  const mergedMembers = [
-    ...(Array.isArray(autoMembers)
-      ? autoMembers.filter((n) => !/^Auto_AI$/i.test(String(n).trim()))
-      : []),
-    ...filteredMembers.filter((m) => !autoSet.has(String(m).toLowerCase())),
-  ];
 
   const dedupedMembers = [];
   const seen = new Set();
-  for (const m of mergedMembers) {
+  for (const m of Array.isArray(autoMembers) ? autoMembers : []) {
+    if (/^Auto_AI$/i.test(String(m).trim())) continue;
     const key = String(m).toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
@@ -345,13 +305,13 @@ async function loadCollectionSubscriptions(collectionName) {
     const displayName = String(
       sub?.displayName || sub?.["display-name"] || sub?.name || normalized,
     ).trim();
-    const isLongTerm = Array.isArray(sub?.tag)
-      ? sub.tag.includes("LongTerm")
+    const isNoExpiry = Array.isArray(sub?.tag)
+      ? sub.tag.includes("NoExpiry")
       : false;
     list.push({
       name: normalized,
       displayName: displayName || normalized,
-      isLongTerm,
+      isNoExpiry,
     });
   }
   if (!list.length)
