@@ -14,6 +14,6 @@ function operator(proxies, targetPlatform, context) {
     if (multiplierMap[multiplier].test(proxy.name)) {
       return multiplier < 1;
     }
-    return true;
+    return false;
   });
 }
