@@ -120,21 +120,21 @@ function operator(proxies = [], targetPlatform, context) {
 
 function normalizedIsp(isp, country, city) {
   return isp
-    .replace(/.*China Mobile.*/, "CM")
-    .replace(/.*China Unicom.*/, "CU")
-    .replace(/.*Chinanet.*/, "CT")
-    .replace(/.*Amazon.*/, "AMZ")
-    .replace(/.*Microsoft.*/, "Azure")
-    .replace(/.*Cloudflare.*/, "CF")
-    .replace(/.*Chunghwa Telecom.*/, "HiNet")
-    .replace(/.*HostPapa.*/, "HPAPA")
-    .replace(/.*NetLab.*/, "NetLab")
-    .replace(/.*Hong Kong Telecommunications.*/, "HKT")
-    .replace(/.*Alibaba.*/, "Ali")
+    .replace(/.*China Mobile.*/i, "CM")
+    .replace(/.*China Unicom.*/i, "CU")
+    .replace(/.*Chinanet.*/i, "CT")
+    .replace(/.*Amazon.*/i, "AMZ")
+    .replace(/.*Microsoft.*/i, "Azure")
+    .replace(/.*Cloudflare.*/i, "CF")
+    .replace(/.*Chunghwa Telecom.*/i, "HiNet")
+    .replace(/.*HostPapa.*/i, "HPAPA")
+    .replace(/.*NetLab.*/i, "NetLab")
+    .replace(/.*Hong Kong Telecommunications.*/i, "HKT")
+    .replace(/.*Alibaba.*/i, "Ali")
     .replace(/,|\./g, "")
-    .replace(/Telecommunications/, "TC")
-    .replace(/Television/, "TV")
-    .replace(/and/, "&")
+    .replace(/Telecommunications/i, "TC")
+    .replace(/Television/i, "TV")
+    .replace(/and/i, "&")
     .replace(
       /\b(?:networks?|technolog(?:y|ies)|cloud|servers|services|group|company|co|ltd|inc|pte|kk|sa|llc|pty|information|corporation|data|communications|limited|labs|the|link|europe|srl|sas|servers)\b/gi,
       "",
