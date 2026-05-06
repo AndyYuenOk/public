@@ -497,9 +497,9 @@ async function operator(proxies = [], targetPlatform, context) {
     proxy.entranceIp = getReturnedIp(api);
     proxy.entranceCountryCode = api.countryCode;
     proxy.entranceCountry = api.country;
-    proxy.entranceRegion = api.region;
+    proxy.entranceRegionCode = api.region;
     proxy.entranceCity = api.city;
-    proxy.entranceRegionName = api.regionName;
+    proxy.entranceRegion = api.regionName;
     proxy.entranceIsp = api.isp;
     delete proxy.entranceGroup;
   }

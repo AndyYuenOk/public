@@ -66,7 +66,7 @@ function operator(proxies = [], targetPlatform, context) {
       }
       entrance = [
         proxy.entranceCountryCode,
-        proxy.entranceCountryCode == "CN" ? proxy.entranceRegion : "",
+        proxy.entranceCountryCode == "CN" ? proxy.entranceRegionCode : "",
         index,
         // $server.ipCity,
         normalizedIsp(

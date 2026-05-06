@@ -6,7 +6,7 @@ function operator(proxies, targetPlatform, context) {
     if (/true|1/i.test($arguments.use_isp)) {
       egressInfo =
         proxy.egressCountryCode +
-        proxy.egressRegionName +
+        proxy.egressRegion +
         proxy.egressCity +
         proxy.egressIsp;
     }
