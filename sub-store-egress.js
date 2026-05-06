@@ -536,27 +536,31 @@ async function operator(proxies = [], targetPlatform, context) {
           info(
             `[${proxy.name}] dual-api error [ip-api]: ${formatApiErrorDetail(ipApiPayload)}`,
           );
-          info(`[${proxy.name}] ip-api failed, trigger ipwho fallback`);
-          ipwhoPayload = await requestJson({
-            proxy: proxyUrl,
-            method,
-            headers,
-            url: getIpwhoUrl(),
-          });
-          if (ipwhoPayload.ok) {
-            const normalizedIpwho = normalizeIpwhoApi(ipwhoPayload.api);
-            const normalizedOk = hasMergedApiData(normalizedIpwho);
-            ipwhoPayload = {
-              ...ipwhoPayload,
-              ok: normalizedOk,
-              api: normalizedOk ? normalizedIpwho : {},
-              error: normalizedOk ? ipwhoPayload.error : "empty ipwho payload",
-            };
-          }
-          if (!ipwhoPayload.ok) {
-            info(
-              `[${proxy.name}] dual-api error [ipwho]: ${formatApiErrorDetail(ipwhoPayload)}`,
-            );
+          if (isRequestTimeoutError(ipApiPayload)) {
+            info(`[${proxy.name}] ip-api timeout, skip ipwho fallback`);
+          } else {
+            info(`[${proxy.name}] ip-api failed, trigger ipwho fallback`);
+            ipwhoPayload = await requestJson({
+              proxy: proxyUrl,
+              method,
+              headers,
+              url: getIpwhoUrl(),
+            });
+            if (ipwhoPayload.ok) {
+              const normalizedIpwho = normalizeIpwhoApi(ipwhoPayload.api);
+              const normalizedOk = hasMergedApiData(normalizedIpwho);
+              ipwhoPayload = {
+                ...ipwhoPayload,
+                ok: normalizedOk,
+                api: normalizedOk ? normalizedIpwho : {},
+                error: normalizedOk ? ipwhoPayload.error : "empty ipwho payload",
+              };
+            }
+            if (!ipwhoPayload.ok) {
+              info(
+                `[${proxy.name}] dual-api error [ipwho]: ${formatApiErrorDetail(ipwhoPayload)}`,
+              );
+            }
           }
         }
         if (!ippurePayload.ok) {
@@ -920,6 +924,17 @@ async function operator(proxies = [], targetPlatform, context) {
     return extraParts.length > 0
       ? `unknown error, ${extraParts.join(", ")}`
       : "unknown error";
+  }
+
+  function isRequestTimeoutError(payload = {}) {
+    const text = [
+      payload?.error ?? "",
+      payload?.titlePreview ?? "",
+      payload?.bodyPreview ?? "",
+    ]
+      .map((value) => String(value).toLowerCase())
+      .join(" ");
+    return text.includes("timeout");
   }
 
   function extractTitleAndBody(raw = "") {
