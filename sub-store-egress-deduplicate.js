@@ -5,20 +5,21 @@ function operator(proxies, targetPlatform, context) {
     let egressInfo = proxy.egressIp;
 
     if (/true|1/i.test($arguments.use_isp)) {
-      egressInfo =
-        proxy.egressCountryCode +
-        proxy.egressRegion +
-        proxy.egressCity +
-        proxy.egressIsp;
       entranceInfo =
         proxy.entranceCountryCode +
         proxy.entranceRegion +
         proxy.entranceCity +
         proxy.entranceIsp;
+
+      egressInfo =
+        proxy.egressCountryCode +
+        proxy.egressRegion +
+        proxy.egressCity +
+        proxy.egressIsp;
     }
 
     proxyMap.set(
-      (proxy.entranceInfo || proxy.server) + (egressInfo || proxy.port),
+      (entranceInfo || proxy.server) + (egressInfo || proxy.port),
       proxy,
     );
   });
