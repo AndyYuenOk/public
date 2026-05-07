@@ -533,13 +533,14 @@ async function operator(proxies = [], targetPlatform, context) {
         };
 
         if (!ipApiPayload.ok) {
-          info(
-            `[${proxy.name}] dual-api error [ip-api]: ${formatApiErrorDetail(ipApiPayload)}`,
-          );
           if (isRequestTimeoutError(ipApiPayload)) {
-            info(`[${proxy.name}] ip-api timeout, skip ipwho fallback`);
+            info(
+              `[${proxy.name}] dual-api error [ip-api]: ${formatApiErrorDetail(ipApiPayload)}, timeout, skip ipwho fallback`,
+            );
           } else {
-            info(`[${proxy.name}] ip-api failed, trigger ipwho fallback`);
+            info(
+              `[${proxy.name}] dual-api error [ip-api]: ${formatApiErrorDetail(ipApiPayload)}, trigger ipwho fallback`,
+            );
             ipwhoPayload = await requestJson({
               proxy: proxyUrl,
               method,
