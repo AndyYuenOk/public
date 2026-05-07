@@ -337,7 +337,7 @@ async function operator(proxies = [], targetPlatform, context) {
             );
           } else {
             info(
-              `[${proxy.name}] ${formatServerWithIp(serverWithPort, api, queryServer)}, ${formatIpApiInfo(api)}, status: ${status}`,
+              `[${proxy.name}] ${formatServerWithIp(serverWithPort, api, queryServer)}, ${formatIpApiInfo(api)}`,
             );
           }
           if (shouldWriteCache) {
@@ -349,7 +349,7 @@ async function operator(proxies = [], targetPlatform, context) {
           const { proxy, id } = context;
           if (isIpApiUrl) {
             info(
-              `[${proxy.name}] ip-api status=${status} invalid response, log only`,
+              `[${proxy.name}] ip-api invalid response, log only`,
             );
           } else if (shouldWriteCache) {
             info(`[${proxy.name}] write failed cache`);

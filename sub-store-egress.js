@@ -417,7 +417,7 @@ async function operator(proxies = [], targetPlatform, context) {
           if (ipApiResult.source === "network") {
             enqueueFinalResultLog(
               proxyOrderIndex,
-              `[${proxy.name}] ${formatServerWithIp(serverWithPort, api)}, ${formatIpApiInfo(api)}, status: ${status}`,
+              `[${proxy.name}] ${formatServerWithIp(serverWithPort, api)}, ${formatIpApiInfo(api)}`,
             );
           }
           if (shouldWriteCache) {
@@ -426,7 +426,7 @@ async function operator(proxies = [], targetPlatform, context) {
         } else {
           if (isIpApiUrl) {
             enqueueRequestStatusLog(
-              `[${proxy.name}] dual-api status=${status} invalid response, log only`,
+              `[${proxy.name}] dual-api invalid response, log only`,
             );
           } else {
             enqueueRequestStatusLog(
@@ -860,7 +860,7 @@ async function operator(proxies = [], targetPlatform, context) {
         ok,
         status,
         api: ok ? api : {},
-        error: ok ? "" : `status ${status}`,
+        error: ok ? "" : "request failed",
         rawBody: ok ? "" : rawBody,
         titlePreview: previews.titlePreview,
         bodyPreview: previews.bodyPreview,
@@ -918,12 +918,6 @@ async function operator(proxies = [], targetPlatform, context) {
       return extraParts.length > 0
         ? `${detail}, ${extraParts.join(", ")}`
         : detail;
-    }
-    const status = parseInt(payload?.status ?? 0, 10);
-    if (Number.isFinite(status) && status > 0) {
-      return extraParts.length > 0
-        ? `status ${status}, ${extraParts.join(", ")}`
-        : `status ${status}`;
     }
     return extraParts.length > 0
       ? `unknown error, ${extraParts.join(", ")}`
