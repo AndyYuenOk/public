@@ -86,6 +86,8 @@ async function operator(proxies = [], targetPlatform, context) {
   const ipApiRequestCache = new Map();
   const nodeCount = proxies.length;
   let ipApiRequestCount = 0;
+  const requestStatusLogs = [];
+  const finalResultLogs = [];
 
   if (useCache) {
     for (const proxy of Array.isArray(proxies) ? proxies : []) {
@@ -240,6 +242,7 @@ async function operator(proxies = [], targetPlatform, context) {
     internalProxies.map((proxy) => () => check(proxy)),
     { concurrency },
   );
+  flushBufferedLogs();
 
   try {
     const stopRes = await http({
@@ -300,6 +303,7 @@ async function operator(proxies = [], targetPlatform, context) {
   async function check(proxy) {
     const index = internalProxies.indexOf(proxy);
     if (index < 0) return;
+    const proxyOrderIndex = proxy._proxies_index;
 
     const serverWithPort = getServerWithPort(proxy);
     const queryServer = String(proxy.server || "").trim();
@@ -410,19 +414,9 @@ async function operator(proxies = [], targetPlatform, context) {
             });
           }
           targetProxy._egress = api;
-          if (ipApiResult.source === "persistent-cache") {
-            info(
-              `[${proxy.name}] ${formatServerWithIp(serverWithPort, api)}, using persistent cache, ${formatIpApiInfo(api)}`,
-            );
-          } else if (
-            ipApiResult.source === "shared-cache" ||
-            ipApiResult.source === "shared-inflight"
-          ) {
-            info(
-              `[${proxy.name}] ${formatServerWithIp(serverWithPort, api)}, deduplicated, ${formatIpApiInfo(api)}`,
-            );
-          } else {
-            info(
+          if (ipApiResult.source === "network") {
+            enqueueFinalResultLog(
+              proxyOrderIndex,
               `[${proxy.name}] ${formatServerWithIp(serverWithPort, api)}, ${formatIpApiInfo(api)}, status: ${status}`,
             );
           }
@@ -431,21 +425,23 @@ async function operator(proxies = [], targetPlatform, context) {
           }
         } else {
           if (isIpApiUrl) {
-            info(
+            enqueueRequestStatusLog(
               `[${proxy.name}] dual-api status=${status} invalid response, log only`,
             );
           } else {
-            info(`[${proxy.name}] invalid response, skip cache update`);
+            enqueueRequestStatusLog(
+              `[${proxy.name}] invalid response, skip cache update`,
+            );
           }
         }
       }
     } catch (e) {
       error(`[${proxy.name}] ${e.message ?? e}`);
       if (isIpApiUrl && !internal) {
-        info(`[${proxy.name}] dual-api error/timeout, log only`);
+        enqueueRequestStatusLog(`[${proxy.name}] dual-api error/timeout, log only`);
         return;
       }
-      info(`[${proxy.name}] request failed, skip cache update`);
+      enqueueRequestStatusLog(`[${proxy.name}] request failed, skip cache update`);
     }
   }
 
@@ -534,11 +530,11 @@ async function operator(proxies = [], targetPlatform, context) {
 
         if (!ipApiPayload.ok) {
           if (isRequestTimeoutError(ipApiPayload)) {
-            info(
+            enqueueRequestStatusLog(
               `[${proxy.name}] dual-api error [ip-api]: ${formatApiErrorDetail(ipApiPayload)}, timeout, skip ipwho fallback`,
             );
           } else {
-            info(
+            enqueueRequestStatusLog(
               `[${proxy.name}] dual-api error [ip-api]: ${formatApiErrorDetail(ipApiPayload)}, trigger ipwho fallback`,
             );
             ipwhoPayload = await requestJson({
@@ -558,14 +554,14 @@ async function operator(proxies = [], targetPlatform, context) {
               };
             }
             if (!ipwhoPayload.ok) {
-              info(
+              enqueueRequestStatusLog(
                 `[${proxy.name}] dual-api error [ipwho]: ${formatApiErrorDetail(ipwhoPayload)}`,
               );
             }
           }
         }
         if (!ippurePayload.ok) {
-          info(
+          enqueueRequestStatusLog(
             `[${proxy.name}] dual-api error [ippure]: ${formatApiErrorDetail(ippurePayload)}`,
           );
         }
@@ -943,6 +939,28 @@ async function operator(proxies = [], targetPlatform, context) {
       .map((value) => String(value).toLowerCase())
       .join(" ");
     return text.includes("timeout");
+  }
+
+  function enqueueRequestStatusLog(message = "") {
+    requestStatusLogs.push(String(message));
+  }
+
+  function enqueueFinalResultLog(proxyIndex, message = "") {
+    const index = Number.isInteger(proxyIndex) ? proxyIndex : Number.MAX_SAFE_INTEGER;
+    finalResultLogs.push({ index, message: String(message) });
+  }
+
+  function flushBufferedLogs() {
+    for (const message of requestStatusLogs) {
+      info(message);
+    }
+    requestStatusLogs.length = 0;
+
+    finalResultLogs.sort((left, right) => left.index - right.index);
+    for (const entry of finalResultLogs) {
+      info(entry.message);
+    }
+    finalResultLogs.length = 0;
   }
 
   function extractTitleAndBody(raw = "") {
