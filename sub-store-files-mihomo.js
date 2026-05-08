@@ -213,7 +213,7 @@ function main(config) {
     healthCheck = {
       url: "http://www.gstatic.com/generate_204",
       interval: 300,
-      timeout: 500,
+      timeout: 300,
       tolerance: 50,
       "max-failed-times": 1,
     };
