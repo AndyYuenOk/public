@@ -116,9 +116,6 @@ let strategyGroups = [
     name: "Auto_AI",
     icon: "Urltest.png",
     type: "url-test",
-    url: "http://www.gstatic.com/generate_204",
-    interval: 300,
-    tolerance: 50,
     proxies: [],
   },
   {
@@ -216,7 +213,9 @@ function main(config) {
     healthCheck = {
       url: "http://www.gstatic.com/generate_204",
       interval: 300,
+      timeout: 500,
       tolerance: 50,
+      "max-failed-times": 1,
     };
 
   if (enableFallback) {
@@ -287,10 +286,7 @@ function main(config) {
 
   strategyGroups.unshift(
     mainProxyGroup,
-    {
-      ...autoSelectGroup,
-      ...healthCheck,
-    },
+    autoSelectGroup,
     ...(enableFallback ? [autoTimeLimitedGroup, autoNoExpiryGroup] : []),
     ...airportGroups,
   );
@@ -300,6 +296,15 @@ function main(config) {
   for (const group of strategyGroups) {
     group.icon =
       "https://raw.githubusercontent.com/Orz-3/mini/master/Color/" + group.icon;
+
+    if (group.type === "fallback") {
+      group.url = healthCheck.url;
+      group.interval = healthCheck.interval;
+    }
+
+    if (group.type === "url-test") {
+      Object.assign(group, healthCheck);
+    }
 
     // Append all nodes to common manual selection groups for fallback use.
     if (fullNodeGroupNames.includes(group.name)) {
