@@ -214,7 +214,7 @@ function main(config) {
       url: "http://www.gstatic.com/generate_204",
       interval: 300,
       timeout: 300,
-      tolerance: 50,
+      tolerance: 200,
       "max-failed-times": 1,
     };
 
