@@ -74,22 +74,18 @@ function replaceAutoProxyGroups(text, items) {
   const bodyLines = rawLines.slice(1);
 
   const urlTestLineRegex = /^\s*([^=\s][^=]*?)\s*=\s*url-test\s*,/i;
-  const templateLine = bodyLines.find(
-    (line) => urlTestLineRegex.test(line) && !/^\s*Auto_AI\s*=/i.test(line),
-  );
+  const templateLine = bodyLines.find((line) => urlTestLineRegex.test(line));
   const templateRhs =
     templateLine?.split("=").slice(1).join("=").trim() ||
-    "url-test, url=http://www.gstatic.com/generate_204, interval=300, tolerance=50, img-url=https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Auto.png";
+    "url-test, url=http://www.gstatic.com/generate_204, interval=300, tolerance=200, max-timeout=1500, img-url=https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Auto.png";
 
   const keptLines = [];
   for (const line of bodyLines) {
-    const match = line.match(urlTestLineRegex);
-    if (!match) {
-      keptLines.push(line);
+    if (/^\s*Auto_AI\s*=/i.test(line)) {
       continue;
     }
-    const groupName = String(match[1] || "").trim();
-    if (/^Auto_AI$/i.test(groupName)) {
+    const match = line.match(urlTestLineRegex);
+    if (!match) {
       keptLines.push(line);
       continue;
     }
@@ -112,9 +108,6 @@ function replaceAutoProxyGroups(text, items) {
   const fallbackLineIndex = keptLines.findIndex((line) =>
     /^\s*Fallback\s*=/i.test(line),
   );
-  const autoAiIndex = keptLines.findIndex((line) =>
-    /^\s*Auto_AI\s*=/i.test(line),
-  );
   const generatedLines = [
     generatedAutoTimeLimitedLine,
     generatedAutoNoExpiryLine,
@@ -123,8 +116,6 @@ function replaceAutoProxyGroups(text, items) {
   ];
   if (fallbackLineIndex >= 0) {
     keptLines.splice(fallbackLineIndex + 1, 0, ...generatedLines);
-  } else if (autoAiIndex >= 0) {
-    keptLines.splice(autoAiIndex, 0, ...generatedLines);
   } else {
     keptLines.push(...generatedLines);
   }
@@ -185,6 +176,7 @@ function mergeRemoteIntoProxySelectLine(line, remoteNames, autoMembers) {
   );
   const filteredPolicies = policyParts.filter(
     (p) =>
+      !/^Auto_AI$/i.test(String(p).trim()) &&
       !remoteMap.has(String(p).toLowerCase()) &&
       !autoMap.has(String(p).toLowerCase()),
   );
@@ -248,7 +240,9 @@ function buildAutoAggregateUrlTestRhs(rhs, aliases) {
   const leftOptionParts = leftParts.filter((part) => /=/.test(part));
   const mergedLeftParts = [...members, ...leftOptionParts];
   const mergedLeft = mergedLeftParts.join(", ");
-  return mergedLeft ? `url-test, ${mergedLeft}, ${right}` : `url-test, ${right}`;
+  return mergedLeft
+    ? `url-test, ${mergedLeft}, ${right}`
+    : `url-test, ${right}`;
 }
 
 function rewriteFallbackLineWithAutoMembers(line, autoMembers) {
@@ -267,12 +261,13 @@ function rewriteFallbackLineWithAutoMembers(line, autoMembers) {
   if (!/^fallback$/i.test(type)) return line;
 
   const optionsStart = parts.findIndex((p) => /=/.test(p));
-  const options = optionsStart >= 0 ? parts.slice(optionsStart) : [];
+  const options = (optionsStart >= 0 ? parts.slice(optionsStart) : []).filter(
+    (p) => !/^Auto_AI$/i.test(String(p).trim()),
+  );
 
   const dedupedMembers = [];
   const seen = new Set();
   for (const m of Array.isArray(autoMembers) ? autoMembers : []) {
-    if (/^Auto_AI$/i.test(String(m).trim())) continue;
     const key = String(m).toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);

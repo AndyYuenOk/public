@@ -66,8 +66,11 @@ const AI_TAG_VALUE_BY_KEY = {
   claude: "CLD",
   aistudio: "GAI",
 };
-const AI_ALL_TAG_FIELD = "tagAi";
+const AI_ALL_TAG_FIELD = "tag";
 const AI_ALL_TAG_VALUE = "AI";
+const AI_CACHE_CAN_ACCESS_FIELD = "canAccess";
+const AI_CACHE_LATENCY_FIELD = "latency";
+const AI_VENDOR_TAG_FIELD = "tag";
 
 async function operator(proxies = [], targetPlatform, context) {
   const $ = $substore;
@@ -81,6 +84,11 @@ async function operator(proxies = [], targetPlatform, context) {
   // JSON + cache=false: 不读缓存，但仍写入最新检测结果缓存
   const shouldWriteCache = true;
   const cache = scriptResourceCache;
+  const sourceName = getSourceName(context?.source);
+  const sourceStore = getSourceStore(sourceName);
+  const pendingLogsByIndex = new Map();
+  const completedLogIndices = new Set();
+  let nextLogIndex = 0;
   const http_meta_host = $arguments.http_meta_host ?? "127.0.0.1";
   const http_meta_port = $arguments.http_meta_port ?? 9876;
   const http_meta_protocol = $arguments.http_meta_protocol ?? "http";
@@ -131,8 +139,6 @@ async function operator(proxies = [], targetPlatform, context) {
       url: openaiUrl,
       flagKey: "canAccessOpenai",
       latencyKey: "openaiLatency",
-      cacheKey: "canAccessOpenai",
-      cacheLatencyKey: "openaiLatency",
       userAgent: BROWSER_UA,
       isSuccess({ status }) {
         return status === 200;
@@ -145,8 +151,6 @@ async function operator(proxies = [], targetPlatform, context) {
       url: "https://gemini.google.com/app",
       flagKey: "canAccessGemini",
       latencyKey: "geminiLatency",
-      cacheKey: "canAccessGemini",
-      cacheLatencyKey: "geminiLatency",
       userAgent: BROWSER_UA,
     },
 
@@ -157,8 +161,6 @@ async function operator(proxies = [], targetPlatform, context) {
       url: "https://claude.ai/",
       flagKey: "canAccessClaude",
       latencyKey: "claudeLatency",
-      cacheKey: "canAccessClaude",
-      cacheLatencyKey: "claudeLatency",
       userAgent: BROWSER_UA,
     },
     {
@@ -168,8 +170,6 @@ async function operator(proxies = [], targetPlatform, context) {
       url: `https://generativelanguage.googleapis.com/v1/models?key=${encodedAistudioKey}`,
       flagKey: "canAccessAistudio",
       latencyKey: "aistudioLatency",
-      cacheKey: "canAccessAistudio",
-      cacheLatencyKey: "aistudioLatency",
       userAgent: BROWSER_UA,
     },
   ];
@@ -193,6 +193,7 @@ async function operator(proxies = [], targetPlatform, context) {
   );
   if (!detectionConfigs.length) {
     log("[ai-detect] 未匹配到可用检测项, 跳过检测");
+    persistSourceStore(sourceName, sourceStore);
     return proxies;
   }
 
@@ -203,15 +204,24 @@ async function operator(proxies = [], targetPlatform, context) {
   if (useCache) {
     for (let proxyIndex = 0; proxyIndex < proxies.length; proxyIndex++) {
       const proxy = proxies[proxyIndex];
+      const serverWithPort = getServerWithPort(proxy);
+      const cachedEntry = getStructuredAiEntry(serverWithPort);
+      const cachedAiPayload = isPlainObject(cachedEntry?.ai) ? cachedEntry.ai : {};
       for (const detection of detectionConfigs) {
-        const cached = getCache(getCacheId({ proxy, detection }));
-        const aiName = getCacheAiDisplayName(detection);
-        if (cached?.[detection.cacheKey]) {
-          applyDetectionSuccess({
+        const hasCached = Object.prototype.hasOwnProperty.call(
+          cachedAiPayload,
+          detection.key,
+        );
+        const cached = hasCached ? cachedAiPayload[detection.key] : undefined;
+        if (hasCached) {
+          applyDetectionPayloadToProxyAi({
             proxyIndex,
             detection,
-            latency: cached[detection.cacheLatencyKey],
+            payload: cached,
           });
+        }
+        const aiName = getCacheAiDisplayName(detection);
+        if (cached?.[AI_CACHE_CAN_ACCESS_FIELD]) {
           const regionText = getCachedSupportedRegionText({
             detection,
             cached,
@@ -227,7 +237,7 @@ async function operator(proxies = [], targetPlatform, context) {
           log(
             `使用缓存 [${proxy.name}] ${aiName} 不支持(地区限制)${regionText}`,
           );
-        } else if (cached) {
+        } else if (hasCached) {
           log(`使用缓存 [${proxy.name}] ${aiName} 错误`);
         } else {
           log(`使用缓存 [${proxy.name}] ${aiName} 未检测(未命中缓存)`);
@@ -235,6 +245,7 @@ async function operator(proxies = [], targetPlatform, context) {
       }
       applyAggregateAiTag(proxyIndex);
     }
+    persistSourceStore(sourceName, sourceStore);
     return proxies;
   }
 
@@ -264,6 +275,7 @@ async function operator(proxies = [], targetPlatform, context) {
   });
   log(`核心支持节点数: ${internalProxies.length}/${proxies.length}`);
   if (!internalProxies.length) {
+    persistSourceStore(sourceName, sourceStore);
     return proxies;
   }
 
@@ -293,6 +305,7 @@ async function operator(proxies = [], targetPlatform, context) {
   } catch (e) {}
   const { ports, pid } = body;
   if (!pid || !ports) {
+    persistSourceStore(sourceName, sourceStore);
     throw new Error(`HTTP META 启动失败\n${body}`);
   }
   http_meta_pid = pid;
@@ -337,21 +350,48 @@ async function operator(proxies = [], targetPlatform, context) {
   } catch (e) {
     log(e);
   }
+  persistSourceStore(sourceName, sourceStore);
   return proxies;
 
   async function check(proxy) {
     // log(`[${proxy.name}] 检测`)
     // log(`检测 ${JSON.stringify(proxy, null, 2)}`)
-    for (const detection of detectionConfigs) {
-      await runDetection({ proxy, detection });
+    const proxyIndex = internalProxies.indexOf(proxy);
+    if (proxyIndex < 0) return;
+    try {
+      const aiPayload = {};
+      for (const detection of detectionConfigs) {
+        const cachedDetection = await runDetection({
+          proxy,
+          detection,
+          proxyIndex,
+        });
+        if (shouldWriteCache && cachedDetection !== undefined) {
+          aiPayload[detection.key] = cachedDetection;
+        }
+        if (cachedDetection !== undefined) {
+          applyDetectionPayloadToProxyAi({
+            proxyIndex: proxy._proxies_index,
+            detection,
+            payload: cachedDetection,
+          });
+        }
+      }
+      applyAggregateAiTag(proxy._proxies_index);
+      if (shouldWriteCache) {
+        setStructuredAiEntry({
+          serverWithPort: getServerWithPort(proxy),
+          aiPayload,
+        });
+      }
+    } finally {
+      markNodeLogCompleted(proxyIndex);
     }
-    applyAggregateAiTag(proxy._proxies_index);
   }
-  async function runDetection({ proxy, detection }) {
-    const id = getCacheId({ proxy, detection });
+  async function runDetection({ proxy, detection, proxyIndex }) {
     const startedAt = Date.now();
     try {
-      const index = internalProxies.indexOf(proxy);
+      const index = proxyIndex;
 
       const requestMethod =
         detection.key === "gemini" || detection.key === "aistudio" ? "get" : method;
@@ -450,11 +490,6 @@ async function operator(proxies = [], targetPlatform, context) {
       });
 
       if (outcome === "supported") {
-        applyDetectionSuccess({
-          proxyIndex: proxy._proxies_index,
-          detection,
-          latency,
-        });
         const regionText =
           detection.key === "gemini" && geminiCountry3
             ? `, country3=${geminiCountry3}`
@@ -463,22 +498,21 @@ async function operator(proxies = [], targetPlatform, context) {
               : detection.key === "claude" && claudeCountry2
                 ? `, country2=${claudeCountry2}`
                 : "";
-        log(
+        enqueueNodeLog(
+          proxyIndex,
           `[${proxy.name}] [${detection.name}] 支持, status=${status}${regionText}`,
         );
-        if (shouldWriteCache) {
-          setCache(id, {
-            [detection.cacheKey]: true,
-            [detection.cacheLatencyKey]: latency,
-            ...(detection.key === "gemini" && geminiCountry3
-              ? { supported_region: geminiCountry3 }
-              : detection.key === "openai" && openaiCountry2
-                ? { supported_region: openaiCountry2 }
-                : detection.key === "claude" && claudeCountry2
-                  ? { supported_region: claudeCountry2 }
-                  : {}),
-          });
-        }
+        return {
+          [AI_CACHE_CAN_ACCESS_FIELD]: true,
+          [AI_CACHE_LATENCY_FIELD]: latency,
+          ...(detection.key === "gemini" && geminiCountry3
+            ? { supported_region: geminiCountry3 }
+            : detection.key === "openai" && openaiCountry2
+              ? { supported_region: openaiCountry2 }
+              : detection.key === "claude" && claudeCountry2
+                ? { supported_region: claudeCountry2 }
+                : {}),
+        };
       } else if (outcome === "unsupported") {
         const locText =
           detection.key === "openai" && openaiCountry2
@@ -488,21 +522,20 @@ async function operator(proxies = [], targetPlatform, context) {
               : detection.key === "claude" && claudeCountry2
                 ? `, country2=${claudeCountry2}`
                 : "";
-        log(
+        enqueueNodeLog(
+          proxyIndex,
           `[${proxy.name}] [${detection.name}] 不支持(地区限制), status=${status}${locText}`,
         );
-        if (shouldWriteCache) {
-          setCache(id, {
-            unsupported: true,
-            unsupported_message: msg || getUnsupportedMessage(bodyText),
-            unsupported_latency: latency,
-            ...(detection.key === "gemini" && geminiCountry3
-              ? { unsupported_region: geminiCountry3 }
-              : detection.key === "claude" && claudeCountry2
-                ? { unsupported_region: claudeCountry2 }
-                : {}),
-          });
-        }
+        return {
+          unsupported: true,
+          unsupported_message: msg || getUnsupportedMessage(bodyText),
+          unsupported_latency: latency,
+          ...(detection.key === "gemini" && geminiCountry3
+            ? { unsupported_region: geminiCountry3 }
+            : detection.key === "claude" && claudeCountry2
+              ? { unsupported_region: claudeCountry2 }
+              : {}),
+        };
       } else {
         const detailText = buildErrorText(
           bodyText,
@@ -513,7 +546,8 @@ async function operator(proxies = [], targetPlatform, context) {
             : "",
         );
 
-        log(
+        enqueueNodeLog(
+          proxyIndex,
           `[${proxy.name}] [${detection.name}] 错误, status=${status}, ${detailText}`,
         );
         if (
@@ -524,11 +558,9 @@ async function operator(proxies = [], targetPlatform, context) {
             detectionKey: detection.key,
           })
         ) {
-          return;
+          return undefined;
         }
-        if (shouldWriteCache) {
-          setCache(id, {});
-        }
+        return {};
       }
     } catch (e) {
       const errorStatus = parseInt(
@@ -544,7 +576,8 @@ async function operator(proxies = [], targetPlatform, context) {
         errorBody || errorMessage,
         errorStatus === 302 ? errorLocation : "",
       );
-      log(
+      enqueueNodeLog(
+        proxyIndex,
         `[${proxy.name}] [${detection.name}] 错误, status=${errorStatus || "ERR"}, ${detailText}`,
       );
       if (
@@ -555,29 +588,65 @@ async function operator(proxies = [], targetPlatform, context) {
           detectionKey: detection.key,
         })
       ) {
-        return;
+        return undefined;
       }
-      if (shouldWriteCache) {
-        setCache(id, {});
-      }
+      return {};
     }
   }
-  function applyDetectionSuccess({ proxyIndex, detection, latency }) {
+  function applyDetectionPayloadToProxyAi({
+    proxyIndex,
+    detection,
+    payload = {},
+  }) {
     const proxy = proxies[proxyIndex];
-    const tagField = AI_TAG_FIELD_BY_KEY[detection.key];
-    const tagValue = AI_TAG_VALUE_BY_KEY[detection.key];
-    if (tagField && tagValue) {
-      proxy[tagField] = tagValue;
+    if (!proxy) return;
+    ensureProxyAiShape(proxy);
+    const bucket = isPlainObject(proxy.ai[detection.key]) ? proxy.ai[detection.key] : {};
+    const nextBucket = {};
+
+    if (isPlainObject(payload)) {
+      if (payload?.[AI_CACHE_CAN_ACCESS_FIELD]) {
+        nextBucket[AI_CACHE_CAN_ACCESS_FIELD] = true;
+        nextBucket[AI_CACHE_LATENCY_FIELD] = payload[AI_CACHE_LATENCY_FIELD];
+        const tagValue = AI_TAG_VALUE_BY_KEY[detection.key];
+        if (tagValue) {
+          nextBucket[AI_VENDOR_TAG_FIELD] = tagValue;
+        }
+      }
+      if ("supported_region" in payload) {
+        nextBucket.supported_region = payload.supported_region;
+      }
+      if ("unsupported" in payload) {
+        nextBucket.unsupported = payload.unsupported;
+      }
+      if ("unsupported_message" in payload) {
+        nextBucket.unsupported_message = payload.unsupported_message;
+      }
+      if ("unsupported_latency" in payload) {
+        nextBucket.unsupported_latency = payload.unsupported_latency;
+      }
+      if ("unsupported_region" in payload) {
+        nextBucket.unsupported_region = payload.unsupported_region;
+      }
     }
-    proxy[detection.flagKey] = true;
-    proxy[detection.latencyKey] = latency;
+
+    proxy.ai[detection.key] = { ...bucket, ...nextBucket };
   }
   function clearOutputAiFields(proxy = {}) {
+    ensureProxyAiShape(proxy);
     delete proxy.tagOpenai;
     delete proxy.tagGemini;
     delete proxy.tagClaude;
     delete proxy.tagAistudio;
     delete proxy.tagAi;
+    delete proxy.canAccessOpenai;
+    delete proxy.openaiLatency;
+    delete proxy.canAccessGemini;
+    delete proxy.geminiLatency;
+    delete proxy.canAccessClaude;
+    delete proxy.claudeLatency;
+    delete proxy.canAccessAistudio;
+    delete proxy.aistudioLatency;
 
     delete proxy._openai;
     delete proxy._openai_latency;
@@ -587,29 +656,43 @@ async function operator(proxies = [], targetPlatform, context) {
     delete proxy._claude_latency;
     delete proxy._aistudio;
     delete proxy._aistudio_latency;
+
+    proxy.ai.openai = {};
+    proxy.ai.gemini = {};
+    proxy.ai.claude = {};
+    proxy.ai.aistudio = {};
+    delete proxy.ai[AI_ALL_TAG_FIELD];
   }
   function applyAggregateAiTag(proxyIndex) {
     const proxy = proxies[proxyIndex];
     if (!proxy) return;
+    ensureProxyAiShape(proxy);
     if (isAllEnabledDetectionsSupported(proxy)) {
-      proxy[AI_ALL_TAG_FIELD] = AI_ALL_TAG_VALUE;
+      proxy.ai[AI_ALL_TAG_FIELD] = AI_ALL_TAG_VALUE;
       return;
     }
-    delete proxy[AI_ALL_TAG_FIELD];
+    delete proxy.ai[AI_ALL_TAG_FIELD];
   }
   function isAllEnabledDetectionsSupported(proxy = {}) {
     if (!Array.isArray(detectionConfigs) || !detectionConfigs.length) {
       return false;
     }
+    const aiPayload = isPlainObject(proxy.ai) ? proxy.ai : {};
     return detectionConfigs.every(
-      (detection) => proxy[detection.flagKey] === true,
+      (detection) =>
+        isPlainObject(aiPayload[detection.key]) &&
+        aiPayload[detection.key][AI_CACHE_CAN_ACCESS_FIELD] === true,
     );
   }
-  function getCache(id) {
-    return cache.get(id, 0, true);
-  }
-  function setCache(id, value) {
-    cache.set(id, value);
+  function ensureProxyAiShape(proxy = {}) {
+    if (!isPlainObject(proxy.ai)) {
+      proxy.ai = {};
+    }
+    for (const key of ["openai", "gemini", "claude", "aistudio"]) {
+      if (!isPlainObject(proxy.ai[key])) {
+        proxy.ai[key] = {};
+      }
+    }
   }
   function getCacheAiDisplayName(detection) {
     if (detection.cacheAiName === "gemini") return "GEMINI";
@@ -898,10 +981,74 @@ async function operator(proxies = [], targetPlatform, context) {
     };
     return await fn();
   }
-  function getCacheId({ proxy = {}, detection }) {
-    const server = proxy._origin_server ?? proxy.server ?? "";
-    const port = proxy._origin_port ?? proxy.port ?? "";
-    return `${server}:${port}:${detection.cacheAiName}`;
+  function getSourceName(source = {}) {
+    const firstSource = Object.values(source || {})?.[0] || {};
+    const name = String(firstSource?.name || "").trim();
+    const displayName = String(firstSource?.displayName || "").trim();
+    const combined = `${name}:${displayName}`.trim();
+    return combined && combined !== ":" ? combined : "unknown-source";
+  }
+  function getSourceStore(sourceName = "") {
+    const safeSourceName = String(sourceName || "").trim() || "unknown-source";
+    const store = cache.get(safeSourceName);
+    return isPlainObject(store) ? store : {};
+  }
+  function persistSourceStore(sourceName = "", store = {}) {
+    const safeSourceName = String(sourceName || "").trim() || "unknown-source";
+    cache.set(safeSourceName, isPlainObject(store) ? store : {});
+  }
+  function getServerWithPort(proxy = {}) {
+    const server = String(proxy?._origin_server ?? proxy?.server ?? "").trim();
+    const port = proxy?._origin_port ?? proxy?.port;
+    const hasPort = port !== undefined && port !== null && String(port) !== "";
+    return hasPort ? `${server}:${port}` : server;
+  }
+  function getStructuredAiEntry(serverWithPort = "") {
+    const safeServerWithPort = String(serverWithPort || "").trim();
+    if (!safeServerWithPort) return null;
+    const entry = sourceStore[safeServerWithPort];
+    return isPlainObject(entry) ? entry : null;
+  }
+  function setStructuredAiEntry({ serverWithPort = "", aiPayload = {} } = {}) {
+    const safeServerWithPort = String(serverWithPort || "").trim();
+    if (!safeServerWithPort) return;
+    const existingEntry = isPlainObject(sourceStore[safeServerWithPort])
+      ? sourceStore[safeServerWithPort]
+      : {};
+    sourceStore[safeServerWithPort] = {
+      ...existingEntry,
+      ai: isPlainObject(aiPayload) ? aiPayload : {},
+    };
+  }
+  function enqueueNodeLog(proxyIndex, message = "") {
+    const index = Number.isInteger(proxyIndex) ? proxyIndex : Number.MAX_SAFE_INTEGER;
+    if (index === Number.MAX_SAFE_INTEGER) {
+      log(String(message));
+      return;
+    }
+    if (!pendingLogsByIndex.has(index)) {
+      pendingLogsByIndex.set(index, []);
+    }
+    pendingLogsByIndex.get(index).push(String(message));
+  }
+  function markNodeLogCompleted(proxyIndex) {
+    if (!Number.isInteger(proxyIndex) || proxyIndex < 0) return;
+    completedLogIndices.add(proxyIndex);
+    flushInOrderNodeLogs();
+  }
+  function flushInOrderNodeLogs() {
+    while (completedLogIndices.has(nextLogIndex)) {
+      const logs = pendingLogsByIndex.get(nextLogIndex) || [];
+      for (const message of logs) {
+        log(message);
+      }
+      pendingLogsByIndex.delete(nextLogIndex);
+      completedLogIndices.delete(nextLogIndex);
+      nextLogIndex += 1;
+    }
+  }
+  function isPlainObject(value) {
+    return value && typeof value === "object" && !Array.isArray(value);
   }
   function executeAsyncTasks(tasks, { wrap, result, concurrency = 1 } = {}) {
     return new Promise(async (resolve, reject) => {

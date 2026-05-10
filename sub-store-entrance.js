@@ -91,14 +91,13 @@ async function operator(proxies = [], targetPlatform, context) {
     $arguments.disable_failed_cache || $arguments.ignore_failed_error;
   const remove_failed = $arguments.remove_failed;
   const entranceEnabled = $arguments.entrance;
-  const uniq_key = $arguments.uniq_key || "^server$";
   const cache = scriptResourceCache;
   const method = $arguments.method || "get";
   const url =
     $arguments.api || `http://ip-api.com/json/{{proxy.server}}?lang=en`;
   const isIpApiUrl = /^https?:\/\/ip-api\.com\/json\//i.test(url);
-  const ipApiRawCacheReadEnabled = useCache && isIpApiUrl;
-  const ipApiRawCacheWriteEnabled = shouldWriteCache && isIpApiUrl;
+  const sourceName = getSourceName(context?.source);
+  const sourceStore = getSourceStore(sourceName);
   const nodeCount = proxies.length;
   let ipApiRequestCount = 0;
   const concurrency = parseInt($arguments.concurrency || 10); // Batch concurrency
@@ -164,53 +163,45 @@ async function operator(proxies = [], targetPlatform, context) {
 
   const uniqueEntranceIpCount = new Set(
     proxies
-      .map((proxy) => String(proxy?.entranceIp ?? "").trim())
+      .map((proxy) => String(proxy?.entrance?.ip ?? "").trim())
       .filter(Boolean),
   ).size;
   info(
     `[stats] nodes: ${nodeCount}, ip-api requests: ${ipApiRequestCount}, unique entrance ip: ${uniqueEntranceIpCount}`,
   );
 
+  persistSourceStore(sourceName, sourceStore);
   logBoundary("END");
   return proxies;
 
   async function buildProxyContext(proxy = {}) {
-    const cacheServer = String(proxy.server || "").trim();
-    let queryServer = cacheServer;
+    let queryServer = String(proxy.server || "").trim();
     const serverWithPort = getServerWithPort(proxy);
     const originalServer = queryServer;
-    let id = shouldWriteCache ? getCacheId(proxy, cacheServer) : undefined;
     if (useCache) {
       return {
         proxy,
-        cacheServer,
         queryServer,
         originalServer,
         serverWithPort,
-        id,
         resolveError: null,
       };
     }
     try {
       queryServer = await getQueryServer(proxy);
-      id = shouldWriteCache ? getCacheId(proxy, cacheServer) : undefined;
       return {
         proxy,
-        cacheServer,
         queryServer,
         originalServer,
         serverWithPort,
-        id,
         resolveError: null,
       };
     } catch (e) {
       return {
         proxy,
-        cacheServer,
         queryServer,
         originalServer,
         serverWithPort,
-        id,
         resolveError: e,
       };
     }
@@ -219,34 +210,28 @@ async function operator(proxies = [], targetPlatform, context) {
   async function processQueryServerGroup(groupContexts = []) {
     if (!groupContexts.length) return;
     const queryServer = groupContexts[0]?.queryServer ?? "";
-    const groupCacheServers = [
-      ...new Set(
-        groupContexts
-          .map((context) => String(context?.cacheServer || "").trim())
-          .filter(Boolean),
-      ),
-    ];
     const pendingContexts = [];
 
     for (const context of groupContexts) {
-      const { proxy, id, serverWithPort } = context;
+      const { proxy, serverWithPort } = context;
       if (useCache) {
-        const cached = cache.get(id);
-        if (cached?.api) {
+        const cachedEntry = getStructuredEntranceEntry(serverWithPort);
+        const cachedApi = cachedEntry?.entrance?.["ip-api"];
+        if (cachedApi) {
           const cacheInfo = internal
-            ? formatCountryAsoAsInfo(cached.api)
-            : formatIpApiInfo(cached.api);
+            ? formatCountryAsoAsInfo(cachedApi)
+            : formatIpApiInfo(cachedApi);
           info(
-            `USE CACHE, [${proxy.name}] ${formatServerWithIp(serverWithPort, cached.api, queryServer)}, ${cacheInfo}`,
+            `USE CACHE, [${proxy.name}] ${formatServerWithIp(serverWithPort, cachedApi, queryServer)}, ${cacheInfo}`,
           );
-          applyEntranceInfo(proxy, cached.api);
+          applyEntranceInfo(proxy, cachedApi);
           if (shouldRename) {
-            proxy.name = formatter({ proxy, api: cached.api, format, regex });
+            proxy.name = formatter({ proxy, api: cachedApi, format, regex });
           }
-          proxy._entrance = cached.api;
+          proxy._entrance = cachedApi;
           continue;
         }
-        if (cached) {
+        if (cachedEntry) {
           if (disableFailedCache) {
             info(`[${proxy.name}] skip failed cache (cache-only)`);
           } else {
@@ -271,7 +256,7 @@ async function operator(proxies = [], targetPlatform, context) {
         (api.countryCode || api.aso) &&
         eval(formatter({ api, format: valid, regex }));
       for (const context of pendingContexts) {
-        const { proxy, originalServer, serverWithPort, id } = context;
+        const { proxy, originalServer, serverWithPort } = context;
         if (validApi) {
           const queryText =
             originalServer && originalServer !== queryServer
@@ -286,10 +271,8 @@ async function operator(proxies = [], targetPlatform, context) {
             `[${proxy.name}] ${formatServerWithIp(serverWithPort, api, queryText)}, ${formatCountryAsoAsInfo(api)}`,
           );
           if (shouldWriteCache) {
-            cache.set(id, { api });
+            setStructuredEntranceEntry({ serverWithPort, ipApi: api });
           }
-        } else if (shouldWriteCache) {
-          cache.set(id, {});
         }
       }
       return;
@@ -299,7 +282,6 @@ async function operator(proxies = [], targetPlatform, context) {
       const ipApiResult = await getIpApiResult(
         groupContexts[0].proxy,
         queryServer,
-        groupCacheServers,
         Date.now(),
       );
       const api = ipApiResult.api;
@@ -307,31 +289,15 @@ async function operator(proxies = [], targetPlatform, context) {
       const validApi = eval(formatter({ api, format: valid, regex }));
 
       if (status == 200 && validApi) {
-        if (ipApiRawCacheWriteEnabled && ipApiResult.source === "network") {
-          const fallbackCacheServer = String(
-            groupContexts[0]?.cacheServer || "",
-          ).trim();
-          const targetCacheServers = groupCacheServers.length
-            ? groupCacheServers
-            : [fallbackCacheServer];
-          for (const cacheServer of targetCacheServers) {
-            cache.set(getIpApiCacheId(cacheServer), api);
-          }
-        }
-        const deduplicatedByGroup =
-          ipApiResult.source === "network" && pendingContexts.length > 1;
+        const deduplicatedByGroup = pendingContexts.length > 1;
         for (const context of pendingContexts) {
-          const { proxy, serverWithPort, id } = context;
+          const { proxy, serverWithPort } = context;
           applyEntranceInfo(proxy, api);
           if (shouldRename) {
             proxy.name = formatter({ proxy, api, format, regex });
           }
           proxy._entrance = api;
-          if (ipApiResult.source === "persistent-cache") {
-            info(
-              `[${proxy.name}] ${formatServerWithIp(serverWithPort, api, queryServer)}, using IP API persistent cache, ${formatIpApiInfo(api)}`,
-            );
-          } else if (deduplicatedByGroup) {
+          if (deduplicatedByGroup) {
             info(
               `[${proxy.name}] ${formatServerWithIp(serverWithPort, api, queryServer)}, ${formatIpApiInfo(api)}, deduplicated`,
             );
@@ -341,19 +307,16 @@ async function operator(proxies = [], targetPlatform, context) {
             );
           }
           if (shouldWriteCache) {
-            cache.set(id, { api });
+            setStructuredEntranceEntry({ serverWithPort, ipApi: api });
           }
         }
       } else {
         for (const context of pendingContexts) {
-          const { proxy, id } = context;
+          const { proxy } = context;
           if (isIpApiUrl) {
             info(
               `[${proxy.name}] ip-api invalid response, log only`,
             );
-          } else if (shouldWriteCache) {
-            info(`[${proxy.name}] write failed cache`);
-            cache.set(id, {});
           }
         }
       }
@@ -365,15 +328,11 @@ async function operator(proxies = [], targetPlatform, context) {
   }
 
   function handleContextFailure(context = {}, err) {
-    const { proxy = {}, id } = context;
+    const { proxy = {} } = context;
     error(`[${proxy.name}] ${err?.message ?? err}`);
     if (isIpApiUrl && !internal) {
       info(`[${proxy.name}] ip-api error/timeout, log only`);
       return;
-    }
-    if (shouldWriteCache && id !== undefined) {
-      info(`[${proxy.name}] write failed cache`);
-      cache.set(id, {});
     }
   }
   // HTTP request helper
@@ -404,54 +363,11 @@ async function operator(proxies = [], targetPlatform, context) {
     };
     return await fn();
   }
-  function getCacheId(proxy, cacheServer) {
-    return `entrance:${url}:${format}:${regex}:${internal}:${resolveDomain}:${getMmdbCacheVariant()}:${cacheServer}:${JSON.stringify(
-      Object.fromEntries(
-        Object.entries(proxy).filter(([key]) => {
-          const re = new RegExp(uniq_key);
-          return re.test(key);
-        }),
-      ),
-    )}`;
-  }
-  function getMmdbCacheVariant() {
-    if (!internal) return "";
-    return [
-      mmdb_country_path ||
-        eval("process.env.SUB_STORE_MMDB_COUNTRY_PATH") ||
-        "",
-      mmdb_asn_path || eval("process.env.SUB_STORE_MMDB_ASN_PATH") || "",
-    ].join("|");
-  }
-  function getIpApiCacheId(cacheServer) {
-    return `entrance:ip-api:${cacheServer}`;
-  }
   function getIpApiUrl(ip) {
     const query = String(url).split("?")[1];
     return `http://ip-api.com/json/${encodeURIComponent(ip)}${query ? `?${query}` : ""}`;
   }
-  async function getIpApiResult(proxy, queryServer, cacheServers, startedAt) {
-    const candidateCacheServers = (
-      Array.isArray(cacheServers) ? cacheServers : [cacheServers]
-    )
-      .map((server) => String(server || "").trim())
-      .filter(Boolean);
-    if (!candidateCacheServers.length) {
-      candidateCacheServers.push(String(proxy?.server || "").trim());
-    }
-    for (const cacheServer of candidateCacheServers) {
-      const cachedIpApi = ipApiRawCacheReadEnabled
-        ? cache.get(getIpApiCacheId(cacheServer), 0, true)
-        : null;
-      if (cachedIpApi) {
-        return {
-          api: cachedIpApi,
-          status: 200,
-          latency: "",
-          source: "persistent-cache",
-        };
-      }
-    }
+  async function getIpApiResult(proxy, queryServer, startedAt) {
     ipApiRequestCount += 1;
     const res = await http({
       method,
@@ -474,7 +390,6 @@ async function operator(proxies = [], targetPlatform, context) {
       api,
       status: parseInt(res.status || res.statusCode || 200),
       latency: `${Date.now() - startedAt}`,
-      source: "network",
     };
   }
   function formatIpApiInfo(api = {}) {
@@ -496,14 +411,25 @@ async function operator(proxies = [], targetPlatform, context) {
     return parts.join(", ");
   }
   function applyEntranceInfo(proxy = {}, api = {}) {
-    proxy.entranceIp = getReturnedIp(api);
-    proxy.entranceCountryCode = api.countryCode;
-    proxy.entranceCountry = api.country;
-    proxy.entranceRegionCode = api.region;
-    proxy.entranceCity = api.city;
-    proxy.entranceRegion = api.regionName;
-    proxy.entranceIsp = api.isp;
-    proxy.entranceAsn = extractAsnCode(api.asn || api.as || api.aso || "");
+    proxy.entrance = {
+      ip: getReturnedIp(api),
+      countryCode: api.countryCode,
+      country: api.country,
+      regionCode: api.region,
+      city: api.city,
+      region: api.regionName,
+      isp: api.isp,
+      asn: extractAsnCode(api.asn || api.as || api.aso || ""),
+    };
+    // Clear legacy flat fields to avoid mixed output during transition.
+    delete proxy.entranceIp;
+    delete proxy.entranceCountryCode;
+    delete proxy.entranceCountry;
+    delete proxy.entranceRegionCode;
+    delete proxy.entranceCity;
+    delete proxy.entranceRegion;
+    delete proxy.entranceIsp;
+    delete proxy.entranceAsn;
     delete proxy.entranceGroup;
   }
   async function getQueryServer(proxy) {
@@ -605,6 +531,44 @@ async function operator(proxies = [], targetPlatform, context) {
   function logCountryCodeAso(proxy = {}, api = {}) {
     const text = formatCountryAsoAsInfo(api);
     info(`[${proxy.name}] ${text}`);
+  }
+  function getSourceName(source = {}) {
+    const firstSource = Object.values(source || {})?.[0] || {};
+    const name = String(firstSource?.name || "").trim();
+    const displayName = String(firstSource?.displayName || "").trim();
+    const combined = `${name}:${displayName}`.trim();
+    return combined && combined !== ":" ? combined : "unknown-source";
+  }
+  function getSourceStore(sourceName = "") {
+    const safeSourceName = String(sourceName || "").trim() || "unknown-source";
+    const store = cache.get(safeSourceName);
+    return isPlainObject(store) ? store : {};
+  }
+  function persistSourceStore(sourceName = "", store = {}) {
+    const safeSourceName = String(sourceName || "").trim() || "unknown-source";
+    cache.set(safeSourceName, isPlainObject(store) ? store : {});
+  }
+  function getStructuredEntranceEntry(serverWithPort = "") {
+    const safeServerWithPort = String(serverWithPort || "").trim();
+    if (!safeServerWithPort) return null;
+    const entry = sourceStore[safeServerWithPort];
+    return isPlainObject(entry) ? entry : null;
+  }
+  function setStructuredEntranceEntry({ serverWithPort = "", ipApi = {} } = {}) {
+    const safeServerWithPort = String(serverWithPort || "").trim();
+    if (!safeServerWithPort) return;
+    const existingEntry = isPlainObject(sourceStore[safeServerWithPort])
+      ? sourceStore[safeServerWithPort]
+      : {};
+    sourceStore[safeServerWithPort] = {
+      ...existingEntry,
+      entrance: {
+        "ip-api": isPlainObject(ipApi) ? ipApi : {},
+      },
+    };
+  }
+  function isPlainObject(value) {
+    return value && typeof value === "object" && !Array.isArray(value);
   }
   function executeAsyncTasks(tasks, { wrap, result, concurrency = 1 } = {}) {
     return new Promise(async (resolve, reject) => {

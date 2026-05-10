@@ -20,8 +20,8 @@ function operator(proxies = [], targetPlatform, context) {
     proxies = proxies
       .map((proxy, originalIndex) => ({ proxy, originalIndex }))
       .sort((leftItem, rightItem) => {
-        const leftCountryCode = leftItem.proxy?.egressCountryCode;
-        const rightCountryCode = rightItem.proxy?.egressCountryCode;
+        const leftCountryCode = leftItem.proxy?.egress?.countryCode;
+        const rightCountryCode = rightItem.proxy?.egress?.countryCode;
 
         const leftSortIndex =
           countryCodeToSortIndex[leftCountryCode] ??
@@ -39,17 +39,35 @@ function operator(proxies = [], targetPlatform, context) {
   }
 
   proxies.forEach((proxy) => {
+    proxy.entrance ??= {};
+    proxy.egress ??= {};
+    proxy.entrance.ip ??= "";
+    proxy.entrance.countryCode ??= "";
+    proxy.entrance.regionCode ??= "";
+    proxy.entrance.country ??= "";
+    proxy.entrance.city ??= "";
+    proxy.entrance.isp ??= "";
+    proxy.egress.ip ??= "";
+    proxy.egress.countryCode ??= "";
+    proxy.egress.country ??= "";
+    proxy.egress.city ??= "";
+    proxy.egress.isp ??= "";
+    proxy.egress.isResidential ??= false;
+
+    const entranceIp = proxy.entrance.ip;
+    const entranceCountryCode = proxy.entrance.countryCode;
+    const egressIp = proxy.egress.ip;
+    const egressCountryCode = proxy.egress.countryCode;
+
     proxy.subscriptionName = proxy._subName;
 
-    proxy.entranceIp ??= "";
-
-    if (proxy.entranceIp) {
-      counters[proxy.entranceCountryCode + proxy.entranceIp] ??= {
+    if (entranceIp) {
+      counters[entranceCountryCode + entranceIp] ??= {
         count: 0,
         index: 0,
       };
     }
-    counters[proxy.egressCountryCode + proxy.egressIp] ??= {
+    counters[egressCountryCode + egressIp] ??= {
       count: 0,
       index: 0,
     };
@@ -57,22 +75,35 @@ function operator(proxies = [], targetPlatform, context) {
 
   let counter, index;
   proxies.forEach((proxy) => {
-    let entrance = [];
-    if (proxy.entranceIp && proxy.entranceIp != proxy.egressIp) {
+    const entranceIp = proxy.entrance.ip;
+    const entranceCountryCode = proxy.entrance.countryCode;
+    const entranceRegionCode = proxy.entrance.regionCode;
+    const entranceCountry = proxy.entrance.country;
+    const entranceCity = proxy.entrance.city;
+    const entranceIsp = proxy.entrance.isp;
+    const egressIp = proxy.egress.ip;
+    const egressCountryCode = proxy.egress.countryCode;
+    const egressCountry = proxy.egress.country;
+    const egressCity = proxy.egress.city;
+    const egressIsp = proxy.egress.isp;
+    const egressIsResidential = proxy.egress.isResidential;
+
+    let entranceParts = [];
+    if (entranceIp && entranceIp != egressIp) {
       index = "";
-      counter = counters[proxy.entranceCountryCode + proxy.entranceIp];
+      counter = counters[entranceCountryCode + entranceIp];
       if (counter.count > 1) {
         index = (++counter.index).toString().padStart(2, "0");
       }
-      entrance = [
-        proxy.entranceCountryCode,
-        proxy.entranceCountryCode == "CN" ? proxy.entranceRegionCode : "",
+      entranceParts = [
+        entranceCountryCode,
+        entranceCountryCode == "CN" ? entranceRegionCode : "",
         index,
         // $server.ipCity,
         normalizedIsp(
-          proxy.entranceIsp,
-          proxy.entranceCountry,
-          proxy.entranceCity,
+          entranceIsp,
+          entranceCountry,
+          entranceCity,
         ),
         "-",
       ];
@@ -82,22 +113,22 @@ function operator(proxies = [], targetPlatform, context) {
     if (multiplier) multiplier = parseFloat(multiplier) + "\u00D7";
 
     index = "";
-    counter = counters[proxy.egressCountryCode + proxy.egressIp];
+    counter = counters[egressCountryCode + egressIp];
     if (counter.count > 1) {
       index = (++counter.index).toString().padStart(2, "0");
     }
 
     proxy.name = [
-      flagMap[proxy.egressCountryCode],
-      ...entrance,
-      proxy.egressCountryCode ?? "ERR",
+      flagMap[egressCountryCode],
+      ...entranceParts,
+      egressCountryCode ?? "ERR",
       index,
-      normalizedIsp(proxy.egressIsp, proxy.egressCountry, proxy.egressCity),
-      proxy.egressIsResidential ? "Resi" : "",
+      normalizedIsp(egressIsp, egressCountry, egressCity),
+      egressIsResidential ? "Resi" : "",
       multiplier,
       proxy?.measuredSpeed ?? "",
       proxy?.guaranteedSpeed ?? "",
-      proxy?.tagAi ?? "",
+      proxy?.ai?.tag ?? "",
     ]
       .join(" ")
       .replace(/\s{2,}/g, " ")
@@ -138,7 +169,7 @@ function normalizedIsp(isp, country, city) {
       .replace(/Television/i, "TV")
       .replace(/and/i, "&")
       .replace(
-        /\b(?:networks?|technolog(?:y|ies)|telecom|telecommunications|mass|internet|shared|cloud|servers|services|group|company|co|ltd|inc|pte|kk|sa|llc|pty|information|corporation|data|communications|limited|labs|the|link|europe|srl|sas|servers)\b/gi,
+        /\b(?:networks?|technolog(?:y|ies)|global|telecom|telecommunications|mass|internet|shared|cloud|servers|services|group|company|co|ltd|inc|pte|kk|sa|llc|pty|information|corporation|data|communications|limited|labs|the|link|europe|srl|sas|servers)\b/gi,
         "",
       )
       .replace(RegExp(country + "|" + city, "i"), "")

@@ -48,7 +48,6 @@ async function operator(proxies = [], targetPlatform, context) {
   const mmdb_country_path = $arguments.mmdb_country_path;
   const mmdb_asn_path = $arguments.mmdb_asn_path;
   const regex = $arguments.regex;
-  const uniq_key = $arguments.uniq_key || "^server$|^port$";
 
   let valid = $arguments.valid || `ProxyUtils.isIP('{{api.ip || api.query}}')`;
   const shouldRename = Boolean($arguments.format);
@@ -76,50 +75,50 @@ async function operator(proxies = [], targetPlatform, context) {
   }
 
   const isIpApiUrl = /^https?:\/\/ip-api\.com\/json(?:\/|\?|$)/i.test(url);
-  const ipApiRawCacheReadEnabled = useCache && isIpApiUrl;
-  const ipApiRawCacheWriteEnabled = shouldWriteCache && isIpApiUrl;
-  const ippureRawCacheReadEnabled = useCache && isIpApiUrl;
-  const ippureRawCacheWriteEnabled = shouldWriteCache && isIpApiUrl;
-  const ipwhoRawCacheReadEnabled = useCache && isIpApiUrl;
-  const ipwhoRawCacheWriteEnabled = shouldWriteCache && isIpApiUrl;
   const ipApiInFlight = new Map();
   const ipApiRequestCache = new Map();
+  const sourceName = getSourceName(context?.source);
+  const sourceStore = getSourceStore(sourceName);
   const nodeCount = proxies.length;
   let ipApiRequestCount = 0;
-  const requestStatusLogs = [];
-  const finalResultLogs = [];
+  const pendingLogsByIndex = new Map();
+  const completedLogIndices = new Set();
+  let nextLogIndex = 0;
 
   if (useCache) {
     for (const proxy of Array.isArray(proxies) ? proxies : []) {
       const serverWithPort = getServerWithPort(proxy);
-      const queryServer = String(proxy.server || "").trim();
-      const id = shouldWriteCache ? getCacheId(proxy, queryServer) : undefined;
 
       // Keep output fields deterministic in cache-only mode.
       applyEgressInfo(proxy, {});
 
-      const cached = cache.get(id);
-      if (cached?.api) {
+      const cachedEntry = getStructuredEgressEntry(serverWithPort);
+      const cachedApi = mergeApiResult(
+        cachedEntry?.egress?.["ip-api"],
+        cachedEntry?.egress?.ippure,
+        cachedEntry?.egress?.ipwho,
+      );
+      if (hasMergedApiData(cachedApi)) {
         const cacheInfo = internal
-          ? formatCountryAsoAsInfo(cached.api)
-          : formatIpApiInfo(cached.api);
+          ? formatCountryAsoAsInfo(cachedApi)
+          : formatIpApiInfo(cachedApi);
         info(
-          `USE CACHE, [${proxy.name}] ${formatServerWithIp(serverWithPort, cached.api)}, ${cacheInfo}`,
+          `USE CACHE, [${proxy.name}] ${formatServerWithIp(serverWithPort, cachedApi)}, ${cacheInfo}`,
         );
-        applyEgressInfo(proxy, cached.api);
+        applyEgressInfo(proxy, cachedApi);
         if (shouldRename) {
           proxy.name = formatter({
             proxy,
-            api: cached.api,
+            api: cachedApi,
             format,
             regex,
           });
         }
-        proxy._egress = cached.api;
+        proxy._egress = cachedApi;
         continue;
       }
 
-      if (cached) {
+      if (cachedEntry) {
         if (disableFailedCache) {
           info(`[${proxy.name}] skip failed cache (cache-only)`);
         } else {
@@ -156,12 +155,13 @@ async function operator(proxies = [], targetPlatform, context) {
 
     const uniqueEgressIpCount = new Set(
       proxies
-        .map((proxy) => String(proxy?.egressIp ?? "").trim())
+        .map((proxy) => String(proxy?.egress?.ip ?? "").trim())
         .filter(Boolean),
     ).size;
     info(
       `[stats] nodes: ${nodeCount}, dual-api requests: ${ipApiRequestCount}, unique egress ip: ${uniqueEgressIpCount}`,
     );
+    persistSourceStore(sourceName, sourceStore);
     logBoundary("END");
     return proxies;
   }
@@ -193,6 +193,7 @@ async function operator(proxies = [], targetPlatform, context) {
 
   info(`Core supported nodes: ${internalProxies.length}/${proxies.length}`);
   if (!internalProxies.length) {
+    persistSourceStore(sourceName, sourceStore);
     logBoundary("END");
     return proxies;
   }
@@ -224,6 +225,7 @@ async function operator(proxies = [], targetPlatform, context) {
 
   const { ports, pid } = startBody;
   if (!pid || !ports) {
+    persistSourceStore(sourceName, sourceStore);
     logBoundary("END");
     throw new Error(`HTTP META start failed: ${startBody}`);
   }
@@ -242,7 +244,6 @@ async function operator(proxies = [], targetPlatform, context) {
     internalProxies.map((proxy) => () => check(proxy)),
     { concurrency },
   );
-  flushBufferedLogs();
 
   try {
     const stopRes = await http({
@@ -291,23 +292,22 @@ async function operator(proxies = [], targetPlatform, context) {
 
   const uniqueEgressIpCount = new Set(
     proxies
-      .map((proxy) => String(proxy?.egressIp ?? "").trim())
+      .map((proxy) => String(proxy?.egress?.ip ?? "").trim())
       .filter(Boolean),
   ).size;
   info(
     `[stats] nodes: ${nodeCount}, dual-api requests: ${ipApiRequestCount}, unique egress ip: ${uniqueEgressIpCount}`,
   );
+  persistSourceStore(sourceName, sourceStore);
   logBoundary("END");
   return proxies;
 
   async function check(proxy) {
     const index = internalProxies.indexOf(proxy);
     if (index < 0) return;
-    const proxyOrderIndex = proxy._proxies_index;
 
     const serverWithPort = getServerWithPort(proxy);
     const queryServer = String(proxy.server || "").trim();
-    const id = shouldWriteCache ? getCacheId(proxy, queryServer) : undefined;
     const targetProxy = proxies[proxy._proxies_index];
 
     // Always prefill egress fields to empty values.
@@ -316,28 +316,33 @@ async function operator(proxies = [], targetPlatform, context) {
 
     try {
       if (useCache) {
-        const cached = cache.get(id);
-        if (cached?.api) {
+        const cachedEntry = getStructuredEgressEntry(serverWithPort);
+        const cachedApi = mergeApiResult(
+          cachedEntry?.egress?.["ip-api"],
+          cachedEntry?.egress?.ippure,
+          cachedEntry?.egress?.ipwho,
+        );
+        if (hasMergedApiData(cachedApi)) {
           const cacheInfo = internal
-            ? formatCountryAsoAsInfo(cached.api)
-            : formatIpApiInfo(cached.api);
+            ? formatCountryAsoAsInfo(cachedApi)
+            : formatIpApiInfo(cachedApi);
           info(
-            `USE CACHE, [${proxy.name}] ${formatServerWithIp(serverWithPort, cached.api)}, ${cacheInfo}`,
+            `USE CACHE, [${proxy.name}] ${formatServerWithIp(serverWithPort, cachedApi)}, ${cacheInfo}`,
           );
-          applyEgressInfo(targetProxy, cached.api);
+          applyEgressInfo(targetProxy, cachedApi);
           if (shouldRename) {
             targetProxy.name = formatter({
               proxy: targetProxy,
-              api: cached.api,
+              api: cachedApi,
               format,
               regex,
             });
           }
-          targetProxy._egress = cached.api;
+          targetProxy._egress = cachedApi;
           return;
         }
 
-        if (cached) {
+        if (cachedEntry) {
           if (disableFailedCache) {
             info(`[${proxy.name}] skip failed cache`);
           } else {
@@ -369,6 +374,14 @@ async function operator(proxies = [], targetPlatform, context) {
           aso: utils.ipaso(ip) || "",
           query: ip,
         };
+        if (shouldWriteCache) {
+          setStructuredEgressEntry({
+            serverWithPort,
+            ipApi: api,
+            ippure: {},
+            ipwho: {},
+          });
+        }
 
         if (
           (api.countryCode || api.aso) &&
@@ -387,9 +400,6 @@ async function operator(proxies = [], targetPlatform, context) {
           info(
             `[${proxy.name}] ${formatServerWithIp(serverWithPort, api)}, ${formatCountryAsoAsInfo(api)}`,
           );
-          if (shouldWriteCache) {
-            cache.set(id, { api });
-          }
         }
       } else {
         const ipApiResult = await getIpApiResult(
@@ -401,6 +411,14 @@ async function operator(proxies = [], targetPlatform, context) {
         );
         api = ipApiResult.api;
         const status = ipApiResult.status;
+        if (shouldWriteCache) {
+          setStructuredEgressEntry({
+            serverWithPort,
+            ipApi: ipApiResult?.sourceApi?.["ip-api"] ?? {},
+            ippure: ipApiResult?.sourceApi?.ippure ?? {},
+            ipwho: ipApiResult?.sourceApi?.ipwho ?? {},
+          });
+        }
 
         const validApi = eval(formatter({ api, format: valid, regex }));
         if (status === 200 && validApi) {
@@ -416,20 +434,19 @@ async function operator(proxies = [], targetPlatform, context) {
           targetProxy._egress = api;
           if (ipApiResult.source === "network") {
             enqueueFinalResultLog(
-              proxyOrderIndex,
+              index,
               `[${proxy.name}] ${formatServerWithIp(serverWithPort, api)}, ${formatIpApiInfo(api)}`,
             );
-          }
-          if (shouldWriteCache) {
-            cache.set(id, { api });
           }
         } else {
           if (isIpApiUrl) {
             enqueueRequestStatusLog(
+              index,
               `[${proxy.name}] dual-api invalid response, log only`,
             );
           } else {
             enqueueRequestStatusLog(
+              index,
               `[${proxy.name}] invalid response, skip cache update`,
             );
           }
@@ -438,10 +455,12 @@ async function operator(proxies = [], targetPlatform, context) {
     } catch (e) {
       error(`[${proxy.name}] ${e.message ?? e}`);
       if (isIpApiUrl && !internal) {
-        enqueueRequestStatusLog(`[${proxy.name}] dual-api error/timeout, log only`);
+        enqueueRequestStatusLog(index, `[${proxy.name}] dual-api error/timeout, log only`);
         return;
       }
-      enqueueRequestStatusLog(`[${proxy.name}] request failed, skip cache update`);
+      enqueueRequestStatusLog(index, `[${proxy.name}] request failed, skip cache update`);
+    } finally {
+      markNodeLogCompleted(index);
     }
   }
 
@@ -453,31 +472,6 @@ async function operator(proxies = [], targetPlatform, context) {
     index,
   ) {
     const requestKey = String(serverWithPort || queryServer || "").trim();
-    if (useCache && isIpApiUrl) {
-      const cachedIpApi = ipApiRawCacheReadEnabled
-        ? cache.get(getIpApiCacheId(requestKey), 0, true)
-        : null;
-      const cachedIppure = ippureRawCacheReadEnabled
-        ? cache.get(getIppureCacheId(requestKey), 0, true)
-        : null;
-      const cachedIpwho = ipwhoRawCacheReadEnabled
-        ? cache.get(getIpwhoCacheId(requestKey), 0, true)
-        : null;
-      const mergedCached = mergeApiResult(
-        cachedIpApi,
-        cachedIppure,
-        cachedIpwho,
-      );
-      if (hasMergedApiData(mergedCached)) {
-        return {
-          api: mergedCached,
-          status: 200,
-          latency: "",
-          source: "persistent-cache",
-        };
-      }
-    }
-
     if (useCache) {
       if (ipApiRequestCache.has(requestKey)) {
         return { ...ipApiRequestCache.get(requestKey), source: "shared-cache" };
@@ -499,6 +493,11 @@ async function operator(proxies = [], targetPlatform, context) {
 
       let api = {};
       let status = 500;
+      let sourceApi = {
+        "ip-api": {},
+        ippure: {},
+        ipwho: {},
+      };
 
       if (isIpApiUrl) {
         const [ipApiSettled, ippureSettled] = await Promise.allSettled([
@@ -531,10 +530,12 @@ async function operator(proxies = [], targetPlatform, context) {
         if (!ipApiPayload.ok) {
           if (isRequestTimeoutError(ipApiPayload)) {
             enqueueRequestStatusLog(
+              index,
               `[${proxy.name}] dual-api error [ip-api]: ${formatApiErrorDetail(ipApiPayload)}, timeout, skip ipwho fallback`,
             );
           } else {
             enqueueRequestStatusLog(
+              index,
               `[${proxy.name}] dual-api error [ip-api]: ${formatApiErrorDetail(ipApiPayload)}, trigger ipwho fallback`,
             );
             ipwhoPayload = await requestJson({
@@ -555,6 +556,7 @@ async function operator(proxies = [], targetPlatform, context) {
             }
             if (!ipwhoPayload.ok) {
               enqueueRequestStatusLog(
+                index,
                 `[${proxy.name}] dual-api error [ipwho]: ${formatApiErrorDetail(ipwhoPayload)}`,
               );
             }
@@ -562,22 +564,18 @@ async function operator(proxies = [], targetPlatform, context) {
         }
         if (!ippurePayload.ok) {
           enqueueRequestStatusLog(
+            index,
             `[${proxy.name}] dual-api error [ippure]: ${formatApiErrorDetail(ippurePayload)}`,
           );
         }
 
         api = mergeApiResult(ipApiPayload.api, ippurePayload.api, ipwhoPayload.api);
         status = ipApiPayload.ok || ippurePayload.ok || ipwhoPayload.ok ? 200 : 500;
-
-        if (ipApiRawCacheWriteEnabled && ipApiPayload.ok) {
-          cache.set(getIpApiCacheId(requestKey), ipApiPayload.api);
-        }
-        if (ippureRawCacheWriteEnabled && ippurePayload.ok) {
-          cache.set(getIppureCacheId(requestKey), ippurePayload.api);
-        }
-        if (ipwhoRawCacheWriteEnabled && ipwhoPayload.ok) {
-          cache.set(getIpwhoCacheId(requestKey), ipwhoPayload.api);
-        }
+        sourceApi = {
+          "ip-api": isPlainObject(ipApiPayload.api) ? ipApiPayload.api : {},
+          ippure: sanitizeIppurePayload(ippurePayload.api),
+          ipwho: isPlainObject(ipwhoPayload.api) ? ipwhoPayload.api : {},
+        };
       } else {
         const res = await http({
           proxy: proxyUrl,
@@ -593,12 +591,18 @@ async function operator(proxies = [], targetPlatform, context) {
           api = JSON.parse(api);
         } catch (e) {}
         status = parseInt(res.status || res.statusCode || 200, 10);
+        sourceApi = {
+          "ip-api": isPlainObject(api) ? api : {},
+          ippure: {},
+          ipwho: {},
+        };
       }
 
       const payload = {
         api,
         status,
         latency: `${Date.now() - startedAt}`,
+        sourceApi,
       };
       if (useCache) {
         ipApiRequestCache.set(requestKey, payload);
@@ -647,16 +651,28 @@ async function operator(proxies = [], targetPlatform, context) {
   }
 
   function applyEgressInfo(proxy = {}, api = {}) {
-    proxy.egressIp = getReturnedIp(api) ?? "";
-    proxy.egressCountryCode = api.countryCode ?? "";
-    proxy.egressCountry = api.country ?? "";
-    proxy.egressRegionCode = api.region ?? "";
-    proxy.egressRegion = api.regionName ?? "";
-    proxy.egressCity = api.city ?? "";
-    proxy.egressIsp = api.isp ?? "";
-    proxy.egressAsn = api.asn ?? "";
-    proxy.egressIsResidential =
-      typeof api.isResidential === "boolean" ? api.isResidential : "";
+    proxy.egress = {
+      ip: getReturnedIp(api) ?? "",
+      countryCode: api.countryCode ?? "",
+      country: api.country ?? "",
+      regionCode: api.region ?? "",
+      region: api.regionName ?? "",
+      city: api.city ?? "",
+      isp: api.isp ?? "",
+      asn: api.asn ?? "",
+      isResidential:
+        typeof api.isResidential === "boolean" ? api.isResidential : "",
+    };
+    // Clear legacy flat fields to avoid mixed output during transition.
+    delete proxy.egressIp;
+    delete proxy.egressCountryCode;
+    delete proxy.egressCountry;
+    delete proxy.egressRegionCode;
+    delete proxy.egressRegion;
+    delete proxy.egressCity;
+    delete proxy.egressIsp;
+    delete proxy.egressAsn;
+    delete proxy.egressIsResidential;
     delete proxy.egressGroup;
   }
 
@@ -708,37 +724,52 @@ async function operator(proxies = [], targetPlatform, context) {
     info(`[${proxy.name}] ${text}`);
   }
 
-  function getCacheId(proxy, queryServer) {
-    return `egress:${url}:${format}:${regex}:${internal}:${getMmdbCacheVariant()}:${queryServer}:${JSON.stringify(
-      Object.fromEntries(
-        Object.entries(proxy).filter(([key]) => {
-          const re = new RegExp(uniq_key);
-          return re.test(key);
-        }),
-      ),
-    )}`;
+  function getSourceName(source = {}) {
+    const firstSource = Object.values(source || {})?.[0] || {};
+    const name = String(firstSource?.name || "").trim();
+    const displayName = String(firstSource?.displayName || "").trim();
+    const combined = `${name}:${displayName}`.trim();
+    return combined && combined !== ":" ? combined : "unknown-source";
   }
 
-  function getMmdbCacheVariant() {
-    if (!internal) return "";
-    return [
-      mmdb_country_path ||
-        eval("process.env.SUB_STORE_MMDB_COUNTRY_PATH") ||
-        "",
-      mmdb_asn_path || eval("process.env.SUB_STORE_MMDB_ASN_PATH") || "",
-    ].join("|");
+  function getSourceStore(sourceName = "") {
+    const safeSourceName = String(sourceName || "").trim() || "unknown-source";
+    const store = cache.get(safeSourceName);
+    return isPlainObject(store) ? store : {};
   }
 
-  function getIpApiCacheId(ip) {
-    return `egress:ip-api:${ip}`;
+  function persistSourceStore(sourceName = "", store = {}) {
+    const safeSourceName = String(sourceName || "").trim() || "unknown-source";
+    cache.set(safeSourceName, isPlainObject(store) ? store : {});
   }
 
-  function getIppureCacheId(ip) {
-    return `egress:ippure:${ip}`;
+  function getStructuredEgressEntry(serverWithPort = "") {
+    const safeServerWithPort = String(serverWithPort || "").trim();
+    if (!safeServerWithPort) return null;
+    const entry = sourceStore[safeServerWithPort];
+    return isPlainObject(entry) ? entry : null;
   }
 
-  function getIpwhoCacheId(ip) {
-    return `egress:ipwho:${ip}`;
+  function setStructuredEgressEntry({
+    serverWithPort = "",
+    ipApi = {},
+    ippure = {},
+    ipwho = {},
+  } = {}) {
+    const safeServerWithPort = String(serverWithPort || "").trim();
+    if (!safeServerWithPort) return;
+    const existingEntry = isPlainObject(sourceStore[safeServerWithPort])
+      ? sourceStore[safeServerWithPort]
+      : {};
+
+    sourceStore[safeServerWithPort] = {
+      ...existingEntry,
+      egress: {
+        "ip-api": isPlainObject(ipApi) ? ipApi : {},
+        ippure: sanitizeIppurePayload(ippure),
+        ipwho: isPlainObject(ipwho) ? ipwho : {},
+      },
+    };
   }
 
   function getIpApiUrl(ip) {
@@ -753,25 +784,9 @@ async function operator(proxies = [], targetPlatform, context) {
   function mergeApiResult(ipApi = {}, ippure = {}, ipwho = {}) {
     const merged = isPlainObject(ipApi) ? { ...ipApi } : {};
     merged.asn = extractAsnCode(merged.asn || merged.as || "");
-    if (isPlainObject(ippure)) {
-      if (typeof ippure.isResidential === "boolean") {
-        merged.isResidential = ippure.isResidential;
-      }
-      if (!merged.ip && ippure.ip) {
-        merged.ip = ippure.ip;
-      }
-      if (!merged.country && ippure.country) {
-        merged.country = ippure.country;
-      }
-      if (!merged.countryCode && ippure.countryCode) {
-        merged.countryCode = ippure.countryCode;
-      }
-      if (!merged.region && ippure.region) {
-        merged.region = ippure.region;
-      }
-      if (!merged.city && ippure.city) {
-        merged.city = ippure.city;
-      }
+    const sanitizedIppure = sanitizeIppurePayload(ippure);
+    if (typeof sanitizedIppure.isResidential === "boolean") {
+      merged.isResidential = sanitizedIppure.isResidential;
     }
     if (isPlainObject(ipwho)) {
       if (!merged.query && ipwho.query) {
@@ -837,6 +852,12 @@ async function operator(proxies = [], targetPlatform, context) {
   function hasMergedApiData(api = {}) {
     if (!isPlainObject(api)) return false;
     return Boolean(api.ip || api.query || api.countryCode || api.country);
+  }
+
+  function sanitizeIppurePayload(source = {}) {
+    if (!isPlainObject(source)) return {};
+    if (typeof source.isResidential !== "boolean") return {};
+    return { isResidential: source.isResidential };
   }
 
   function isPlainObject(value) {
@@ -935,26 +956,42 @@ async function operator(proxies = [], targetPlatform, context) {
     return text.includes("timeout");
   }
 
-  function enqueueRequestStatusLog(message = "") {
-    requestStatusLogs.push(String(message));
+  function enqueueRequestStatusLog(proxyIndex, message = "") {
+    enqueueNodeLog(proxyIndex, message);
   }
 
   function enqueueFinalResultLog(proxyIndex, message = "") {
-    const index = Number.isInteger(proxyIndex) ? proxyIndex : Number.MAX_SAFE_INTEGER;
-    finalResultLogs.push({ index, message: String(message) });
+    enqueueNodeLog(proxyIndex, message);
   }
 
-  function flushBufferedLogs() {
-    for (const message of requestStatusLogs) {
-      info(message);
+  function enqueueNodeLog(proxyIndex, message = "") {
+    const index = Number.isInteger(proxyIndex) ? proxyIndex : Number.MAX_SAFE_INTEGER;
+    if (index === Number.MAX_SAFE_INTEGER) {
+      info(String(message));
+      return;
     }
-    requestStatusLogs.length = 0;
+    if (!pendingLogsByIndex.has(index)) {
+      pendingLogsByIndex.set(index, []);
+    }
+    pendingLogsByIndex.get(index).push(String(message));
+  }
 
-    finalResultLogs.sort((left, right) => left.index - right.index);
-    for (const entry of finalResultLogs) {
-      info(entry.message);
+  function markNodeLogCompleted(proxyIndex) {
+    if (!Number.isInteger(proxyIndex) || proxyIndex < 0) return;
+    completedLogIndices.add(proxyIndex);
+    flushInOrderNodeLogs();
+  }
+
+  function flushInOrderNodeLogs() {
+    while (completedLogIndices.has(nextLogIndex)) {
+      const logs = pendingLogsByIndex.get(nextLogIndex) || [];
+      for (const message of logs) {
+        info(message);
+      }
+      pendingLogsByIndex.delete(nextLogIndex);
+      completedLogIndices.delete(nextLogIndex);
+      nextLogIndex += 1;
     }
-    finalResultLogs.length = 0;
   }
 
   function extractTitleAndBody(raw = "") {

@@ -2,7 +2,8 @@ let enableFallback = $arguments.fallback || $file.sourceType == "collection";
 let isMainProxyGroupOnly = /true|1/i.test(
   $arguments.proxy_group_only ?? enableFallback,
 );
-let regions, allowPatterns, blockPatterns, ai;
+let enableSmart = /true|1/i.test($arguments.smart ?? 0);
+let regions, allowPatterns, blockPatterns;
 
 try {
   regions = JSON.parse($arguments.regions ?? "[]");
@@ -20,14 +21,6 @@ try {
   blockPatterns = JSON.parse($arguments.block ?? "[]");
 } catch {
   blockPatterns = [$arguments.block];
-}
-
-try {
-  aiPatterns = JSON.parse(
-    $arguments.ai ?? JSON.stringify(["\bAI\b"]).replaceAll("\\", "\\\\"),
-  );
-} catch {
-  aiPatterns = [$arguments.ai];
 }
 
 // 使用 reduce 将数组转换为单个对象
@@ -51,25 +44,24 @@ let ruleProviders = [
   //   },
   // },
 ].reduce((providers, provider) => {
+  let providerName;
+
   if (typeof provider === "string") {
-    providers[provider] = {
-      type: "http",
-      behavior: provider.includes("idr") ? "ipcidr" : "domain",
-      url: `https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/${provider}.txt`, // 修复：这里应该是 provider 而不是 name
-      interval: 86400,
-      path: `./ruleset/${provider}.yaml`, // 建议加上路径
+    providerName = provider;
+    providers[providerName] = {
+      url: `https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/${providerName}.txt`,
     };
   } else {
     // 处理已经定义的特殊对象 (如 adblockfilters)
-    const key = Object.keys(provider)[0];
-    providers[key] = {
-      ...provider[key],
-      type: "http",
-      behavior: provider[key].behavior ?? "domain",
-      interval: 86400,
-      path: `./ruleset/${key}.yaml`,
-    };
+    providerName = Object.keys(provider)[0];
   }
+
+  providers[providerName].type = "http";
+  // providers[providerName].interval = 86400;
+  providers[providerName].behavior = providerName.includes("idr")
+    ? "ipcidr"
+    : "domain";
+
   return providers;
 }, {});
 
@@ -106,23 +98,12 @@ let routingRules = [
   "MATCH,Final",
 ];
 
-Object.values(ruleProviders).forEach((provider) => {
-  provider.type = "http";
-  provider.interval = 86400;
-});
-
 let strategyGroups = [
-  {
-    name: "Auto_AI",
-    icon: "Urltest.png",
-    type: "url-test",
-    proxies: [],
-  },
   {
     name: "AI",
     icon: "OpenAI.png",
     type: "select",
-    proxies: ["Auto_AI"],
+    proxies: ["Proxy"],
   },
   {
     name: "Netflix",
@@ -210,10 +191,10 @@ function main(config) {
     autoTimeLimitedGroup,
     autoNoExpiryGroup,
     airportGroups = [],
+    autoType = enableSmart ? "smart" : "url-test",
     healthCheck = {
       url: "http://www.gstatic.com/generate_204",
-      interval: 300,
-      timeout: 300,
+      timeout: 1500,
       tolerance: 200,
       "max-failed-times": 1,
     };
@@ -261,7 +242,7 @@ function main(config) {
         return {
           name,
           icon: "Urltest.png",
-          type: "url-test",
+          type: autoType,
           proxies: airportProxies,
         };
       },
@@ -270,7 +251,7 @@ function main(config) {
     autoSelectGroup = {
       name: "Auto",
       icon: "Auto.png",
-      type: "url-test",
+      type: autoType,
       proxies: [],
     };
 
@@ -306,19 +287,13 @@ function main(config) {
       Object.assign(group, healthCheck);
     }
 
+    if (group.type === "smart") {
+      group.uselightgbm = true;
+    }
+
     // Append all nodes to common manual selection groups for fallback use.
     if (fullNodeGroupNames.includes(group.name)) {
       group.proxies = group.proxies.concat(allProxyNames);
-    }
-
-    if (group.name == "Auto_AI") {
-      if (aiPatterns.length) {
-        group.proxies = allProxyNames.filter((name) =>
-          aiPatterns.every((pattern) => RegExp(pattern).test(name)),
-        );
-      }
-
-      group.proxies = group.proxies.length ? group.proxies : allProxyNames;
     }
   }
 
