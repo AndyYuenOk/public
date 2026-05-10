@@ -1,21 +1,21 @@
 function operator(proxies, targetPlatform, context) {
   const proxyMap = new Map();
   proxies.forEach((proxy) => {
-    let entranceInfo = proxy.entranceIp;
-    let egressInfo = proxy.egressIp;
+    let entranceInfo = proxy.entrance.ip;
+    let egressInfo = proxy.egress.ip;
 
     if (/true|1/i.test($arguments.use_asn)) {
       entranceInfo =
-        proxy.entranceCountryCode +
-        proxy.entranceRegion +
-        proxy.entranceCity +
-        proxy.entranceAsn;
+        proxy.entrance.countryCode +
+        proxy.entrance.region +
+        proxy.entrance.city +
+        proxy.entrance.asn;
 
       egressInfo =
-        proxy.egressCountryCode +
-        proxy.egressRegion +
-        proxy.egressCity +
-        proxy.egressAsn;
+        proxy.egress.countryCode +
+        proxy.egress.region +
+        proxy.egress.city +
+        proxy.egress.asn;
     }
 
     proxyMap.set(
