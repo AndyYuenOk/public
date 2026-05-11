@@ -2,7 +2,8 @@ let enableFallback = $arguments.fallback || $file.sourceType == "collection";
 let isMainProxyGroupOnly = /true|1/i.test(
   $arguments.proxy_group_only ?? enableFallback,
 );
-let enableSmart = /true|1/i.test($arguments.smart ?? 0);
+
+let enableSmart = /true|1/i.test($options?._req?.query?.smart);
 let regions, allowPatterns, blockPatterns;
 
 try {
@@ -298,6 +299,15 @@ function main(config) {
   }
 
   config["proxy-groups"] = strategyGroups;
+
+  $options ??= {};
+  $options._res ??= {};
+  $options._res.headers ??= {};
+  $options._res.headers["content-disposition"] =
+    'attachment; filename="' +
+    $file.name +
+    (enableSmart ? "-Smart" : "") +
+    '";';
 
   return config;
 }

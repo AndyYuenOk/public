@@ -109,7 +109,7 @@ async function operator(proxies = [], targetPlatform, context) {
   const encodedAistudioKey = encodeURIComponent(aistudioKey);
   const hasAistudioKey = Boolean(aistudioKey);
   const enabledDetectionKeys = parseAiDetectKeys(
-    $arguments.ai_detect ?? "openai,aistudio",
+    $arguments.ai_detect ?? "openai,aistudio,claude",
   );
   const geminiCountry3AllowSet = toCountryCodeSet(
     $arguments.gemini_country3_allow ?? "",
@@ -206,7 +206,9 @@ async function operator(proxies = [], targetPlatform, context) {
       const proxy = proxies[proxyIndex];
       const serverWithPort = getServerWithPort(proxy);
       const cachedEntry = getStructuredAiEntry(serverWithPort);
-      const cachedAiPayload = isPlainObject(cachedEntry?.ai) ? cachedEntry.ai : {};
+      const cachedAiPayload = isPlainObject(cachedEntry?.ai)
+        ? cachedEntry.ai
+        : {};
       for (const detection of detectionConfigs) {
         const hasCached = Object.prototype.hasOwnProperty.call(
           cachedAiPayload,
@@ -394,7 +396,9 @@ async function operator(proxies = [], targetPlatform, context) {
       const index = proxyIndex;
 
       const requestMethod =
-        detection.key === "gemini" || detection.key === "aistudio" ? "get" : method;
+        detection.key === "gemini" || detection.key === "aistudio"
+          ? "get"
+          : method;
 
       const res = await http({
         proxy: `http://${http_meta_host}:${http_meta_ports[index]}`,
@@ -601,7 +605,9 @@ async function operator(proxies = [], targetPlatform, context) {
     const proxy = proxies[proxyIndex];
     if (!proxy) return;
     ensureProxyAiShape(proxy);
-    const bucket = isPlainObject(proxy.ai[detection.key]) ? proxy.ai[detection.key] : {};
+    const bucket = isPlainObject(proxy.ai[detection.key])
+      ? proxy.ai[detection.key]
+      : {};
     const nextBucket = {};
 
     if (isPlainObject(payload)) {
@@ -1021,7 +1027,9 @@ async function operator(proxies = [], targetPlatform, context) {
     };
   }
   function enqueueNodeLog(proxyIndex, message = "") {
-    const index = Number.isInteger(proxyIndex) ? proxyIndex : Number.MAX_SAFE_INTEGER;
+    const index = Number.isInteger(proxyIndex)
+      ? proxyIndex
+      : Number.MAX_SAFE_INTEGER;
     if (index === Number.MAX_SAFE_INTEGER) {
       log(String(message));
       return;
