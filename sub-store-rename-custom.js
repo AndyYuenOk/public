@@ -100,11 +100,7 @@ function operator(proxies = [], targetPlatform, context) {
         entranceCountryCode == "CN" ? entranceRegionCode : "",
         index,
         // $server.ipCity,
-        normalizedIsp(
-          entranceIsp,
-          entranceCountry,
-          entranceCity,
-        ),
+        normalizedIsp(entranceIsp, entranceCountry, entranceCity),
         "-",
       ];
     }
@@ -121,7 +117,7 @@ function operator(proxies = [], targetPlatform, context) {
     proxy.name = [
       flagMap[egressCountryCode],
       ...entranceParts,
-      egressCountryCode ?? "ERR",
+      egressCountryCode || "ERR",
       index,
       normalizedIsp(egressIsp, egressCountry, egressCity),
       egressIsResidential ? "Resi" : "",

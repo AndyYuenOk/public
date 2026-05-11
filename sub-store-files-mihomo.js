@@ -103,8 +103,7 @@ let strategyGroups = [
   {
     name: "AI",
     icon: "OpenAI.png",
-    type: "select",
-    proxies: ["Proxy"],
+    proxies: [],
   },
   {
     name: "Netflix",
@@ -182,11 +181,7 @@ function main(config) {
     type: "select",
     proxies: [],
   };
-  let fullNodeGroupNames = [
-    isMainProxyGroupOnly ? "" : "Proxy",
-    "AI",
-    "Netflix",
-  ];
+  let fullNodeGroupNames = [isMainProxyGroupOnly ? "" : "Proxy", "Netflix"];
 
   let autoSelectGroup,
     autoTimeLimitedGroup,
@@ -209,13 +204,11 @@ function main(config) {
     };
     autoTimeLimitedGroup = {
       name: "Auto_TimeLimited",
-      icon: "Auto.png",
       type: "url-test",
       proxies: [],
     };
     autoNoExpiryGroup = {
       name: "Auto_NoExpiry",
-      icon: "Auto.png",
       type: "url-test",
       proxies: [],
     };
@@ -242,7 +235,6 @@ function main(config) {
 
         return {
           name,
-          icon: "Urltest.png",
           type: autoType,
           proxies: airportProxies,
         };
@@ -251,7 +243,6 @@ function main(config) {
   } else {
     autoSelectGroup = {
       name: "Auto",
-      icon: "Auto.png",
       type: autoType,
       proxies: [],
     };
@@ -276,6 +267,10 @@ function main(config) {
   let allProxyNames = config.proxies.map((proxy) => proxy.name);
 
   for (const group of strategyGroups) {
+    if (group.name.includes("Auto")) {
+      group.icon = "Auto.png";
+    }
+
     group.icon =
       "https://raw.githubusercontent.com/Orz-3/mini/master/Color/" + group.icon;
 
@@ -295,6 +290,13 @@ function main(config) {
     // Append all nodes to common manual selection groups for fallback use.
     if (fullNodeGroupNames.includes(group.name)) {
       group.proxies = group.proxies.concat(allProxyNames);
+    }
+
+    if (group.name === "AI") {
+      group.type = autoType;
+      group.proxies = group.proxies.concat(
+        allProxyNames.filter((name) => name.includes("AI")),
+      );
     }
   }
 

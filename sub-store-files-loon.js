@@ -19,8 +19,8 @@ function buildRemoteProxyItems(subscriptions) {
   const usedAutoNames = new Set();
   const items = [];
   for (const subInfo of Array.isArray(subscriptions) ? subscriptions : []) {
-    const subName = String(subInfo?.name || "").trim();
-    const displayName = String(subInfo?.displayName || "").trim();
+    const subName = subInfo?.name;
+    const displayName = subInfo?.displayName;
     const baseName = displayName || subName || "Sub";
     const remoteName = makeUniqueName(baseName, usedRemoteNames);
     const autoName = makeUniqueName(`Auto_${baseName}`, usedAutoNames);
@@ -76,19 +76,16 @@ function replaceAutoProxyGroups(text, items) {
   const urlTestLineRegex = /^\s*([^=\s][^=]*?)\s*=\s*url-test\s*,/i;
   const templateLine = bodyLines.find((line) => urlTestLineRegex.test(line));
   const templateRhs =
-    templateLine?.split("=").slice(1).join("=").trim() ||
+    templateLine?.split("=").slice(1).join("=") ||
     "url-test, url=http://www.gstatic.com/generate_204, interval=300, tolerance=200, max-timeout=1500, img-url=https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Auto.png";
 
   const keptLines = [];
   for (const line of bodyLines) {
-    if (/^\s*Auto_AI\s*=/i.test(line)) {
+    const groupName = line.split("=")[0];
+    if (groupName && /Auto/i.test(groupName)) {
       continue;
     }
-    const match = line.match(urlTestLineRegex);
-    if (!match) {
-      keptLines.push(line);
-      continue;
-    }
+    keptLines.push(line);
   }
 
   const generatedAutoLineMap = new Map(
@@ -149,10 +146,10 @@ function mergeRemoteIntoProxySelectLine(line, remoteNames, autoMembers) {
   const eqIndex = line.indexOf("=");
   if (eqIndex < 0) return line;
   const left = line.slice(0, eqIndex + 1);
-  const right = line.slice(eqIndex + 1).trim();
+  const right = line.slice(eqIndex + 1);
   const parts = right
     .split(",")
-    .map((s) => s.trim())
+    .map((s) => s)
     .filter(Boolean);
   if (!parts.length) return line;
 
@@ -164,28 +161,28 @@ function mergeRemoteIntoProxySelectLine(line, remoteNames, autoMembers) {
 
   const remoteMap = new Map(
     (Array.isArray(remoteNames) ? remoteNames : []).map((n) => [
-      String(n).toLowerCase(),
+      n.toLowerCase(),
       n,
     ]),
   );
   const autoMap = new Map(
     (Array.isArray(autoMembers) ? autoMembers : []).map((n) => [
-      String(n).toLowerCase(),
+      n.toLowerCase(),
       n,
     ]),
   );
   const filteredPolicies = policyParts.filter(
     (p) =>
-      !/^Auto_AI$/i.test(String(p).trim()) &&
-      !remoteMap.has(String(p).toLowerCase()) &&
-      !autoMap.has(String(p).toLowerCase()),
+      !/^Auto_AI$/i.test(p) &&
+      !remoteMap.has(p.toLowerCase()) &&
+      !autoMap.has(p.toLowerCase()),
   );
 
   // Keep Proxy group clean: do not add remote policy names back.
   // We only keep Auto_<displayName> entries in Proxy.
 
   const fallbackMemberIndex = filteredPolicies.findIndex((p) =>
-    /^Fallback$/i.test(String(p).trim()),
+    /^Fallback$/i.test(p),
   );
   const autoInsertAt =
     fallbackMemberIndex >= 0
@@ -202,7 +199,7 @@ function mergeRemoteIntoProxySelectLine(line, remoteNames, autoMembers) {
   const dedupedPolicies = [];
   const seen = new Set();
   for (const p of filteredPolicies) {
-    const key = String(p).toLowerCase();
+    const key = p.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
     dedupedPolicies.push(p);
@@ -218,23 +215,22 @@ function buildAutoUrlTestRhs(rhs, alias) {
 
 function buildAutoAggregateUrlTestRhs(rhs, aliases) {
   const members = Array.isArray(aliases)
-    ? aliases.map((item) => String(item || "").trim()).filter(Boolean)
+    ? aliases.map((item) => item).filter(Boolean)
     : [];
 
   const urlMatch = rhs.match(/,\s*url\s*=/i);
   if (!urlMatch) return rhs;
 
   const cutIndex = urlMatch.index;
-  const left = rhs.slice(0, cutIndex).trim();
-  const right = rhs.slice(cutIndex + 1).trim();
+  const left = rhs.slice(0, cutIndex);
+  const right = rhs.slice(cutIndex + 1);
   const leftPayload = left
     .replace(/^url-test\s*,?\s*/i, "")
-    .trim()
     .replace(/,\s*$/, "");
   const leftParts = leftPayload
     ? leftPayload
         .split(",")
-        .map((item) => item.trim())
+        .map((item) => item)
         .filter(Boolean)
     : [];
   const leftOptionParts = leftParts.filter((part) => /=/.test(part));
@@ -249,32 +245,32 @@ function rewriteFallbackLineWithAutoMembers(line, autoMembers) {
   const eqIndex = line.indexOf("=");
   if (eqIndex < 0) return line;
 
-  const name = line.slice(0, eqIndex).trim() || "Fallback";
-  const rhs = line.slice(eqIndex + 1).trim();
+  const name = line.slice(0, eqIndex) || "Fallback";
+  const rhs = line.slice(eqIndex + 1);
   const parts = rhs
     .split(",")
-    .map((s) => s.trim())
+    .map((s) => s)
     .filter(Boolean);
   if (!parts.length) return line;
 
   const type = parts.shift();
-  if (!/^fallback$/i.test(type)) return line;
+  if (!/^\s*fallback\s*$/i.test(type)) return line;
 
   const optionsStart = parts.findIndex((p) => /=/.test(p));
   const options = (optionsStart >= 0 ? parts.slice(optionsStart) : []).filter(
-    (p) => !/^Auto_AI$/i.test(String(p).trim()),
+    (p) => !/^Auto_AI$/i.test(p),
   );
 
   const dedupedMembers = [];
   const seen = new Set();
   for (const m of Array.isArray(autoMembers) ? autoMembers : []) {
-    const key = String(m).toLowerCase();
+    const key = m.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
     dedupedMembers.push(m);
   }
 
-  const rebuilt = [type, ...dedupedMembers, ...options].join(", ");
+  const rebuilt = ["fallback", ...dedupedMembers, ...options].join(", ");
   return `${name} = ${rebuilt}`;
 }
 
@@ -291,15 +287,14 @@ async function loadCollectionSubscriptions(collectionName) {
   for (const subName of Array.isArray(collection.subscriptions)
     ? collection.subscriptions
     : []) {
-    const normalized = String(subName || "").trim();
+    const normalized = subName;
     if (!normalized || seen.has(normalized)) continue;
     seen.add(normalized);
     const sub = Array.isArray(allSubscriptions)
       ? allSubscriptions.find((item) => item?.name === normalized)
       : null;
-    const displayName = String(
-      sub?.displayName || sub?.["display-name"] || sub?.name || normalized,
-    ).trim();
+    const displayName =
+      sub?.displayName || sub?.["display-name"] || sub?.name || normalized;
     const isNoExpiry = Array.isArray(sub?.tag)
       ? sub.tag.includes("NoExpiry")
       : false;
@@ -336,7 +331,7 @@ function replaceSection(text, sectionName, lines) {
 }
 
 function setDownloadFilenameHeader() {
-  const rawName = String($arguments?.filename ?? "loon.conf").trim();
+  const rawName = $arguments?.filename ?? "loon.conf";
   if (!rawName) return;
 
   const safeName = sanitizeHeaderValue(rawName);
@@ -356,21 +351,18 @@ function setDownloadFilenameHeader() {
 }
 
 function sanitizeHeaderValue(value) {
-  return String(value || "")
+  return value
     .replace(/[\r\n"]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+    .replace(/\s+/g, " ");
 }
 
 function toAsciiFilename(value) {
-  const ascii = String(value || "")
-    .replace(/[^\x20-\x7E]/g, "_")
-    .trim();
+  const ascii = value.replace(/[^\x20-\x7E]/g, "_");
   return ascii || "loon.conf";
 }
 
 function encodeRFC5987ValueChars(value) {
-  return encodeURIComponent(String(value || ""))
+  return encodeURIComponent(value)
     .replace(/[\'()]/g, escape)
     .replace(/\*/g, "%2A")
     .replace(/%(7C|60|5E)/g, (match) => match.toLowerCase());
