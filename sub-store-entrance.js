@@ -20,13 +20,8 @@
  * - cache, disable_failed_cache / ignore_failed_error
  */
 async function operator(proxies = [], targetPlatform, context) {
-  // Always cache for the client.
-  let useCache = 1; // Default for all non-JSON platforms
-  if (targetPlatform === "JSON") {
-    // For JSON platform, cache is controlled by script argument
-    useCache = /true|1/i.test($arguments.cache ?? 0);
-  }
-  // Read/write cache are decoupled: cache=false still writes latest result
+  let useCache = context.entranceCache ?? 1;
+
   const shouldWriteCache = true;
   const $ = $substore;
   const info = (msg = "") => console.log(`[entrance] ${msg}`);
@@ -50,7 +45,9 @@ async function operator(proxies = [], targetPlatform, context) {
   if (resolveDomain) {
     if (!isNode) {
       logBoundary("END");
-      throw new Error("resolve_domain is only supported in Node.js environment");
+      throw new Error(
+        "resolve_domain is only supported in Node.js environment",
+      );
     }
     dns = require("dns").promises;
   }
@@ -135,8 +132,8 @@ async function operator(proxies = [], targetPlatform, context) {
   }
 
   await executeAsyncTasks(
-    Array.from(groupedByQueryServer.values()).map((groupContexts) => async () =>
-      processQueryServerGroup(groupContexts),
+    Array.from(groupedByQueryServer.values()).map(
+      (groupContexts) => async () => processQueryServerGroup(groupContexts),
     ),
     { concurrency },
   );
@@ -311,9 +308,7 @@ async function operator(proxies = [], targetPlatform, context) {
         for (const context of pendingContexts) {
           const { proxy } = context;
           if (isIpApiUrl) {
-            info(
-              `[${proxy.name}] ip-api invalid response, log only`,
-            );
+            info(`[${proxy.name}] ip-api invalid response, log only`);
           }
         }
       }
@@ -402,7 +397,11 @@ async function operator(proxies = [], targetPlatform, context) {
   }
   function formatCountryAsoAsInfo(api = {}) {
     const asnCode = extractAsnCode(api.asn || api.as || api.aso || "");
-    const parts = [api.countryCode || "", api.aso || "", asnCode || api.aso || ""]
+    const parts = [
+      api.countryCode || "",
+      api.aso || "",
+      asnCode || api.aso || "",
+    ]
       .map((v) => String(v).trim())
       .filter(Boolean);
     return parts.join(", ");
@@ -449,7 +448,9 @@ async function operator(proxies = [], targetPlatform, context) {
       }
       return resolved;
     } catch (e) {
-      throw new Error(`Local DNS resolve failed: ${server} (${e.message ?? e})`);
+      throw new Error(
+        `Local DNS resolve failed: ${server} (${e.message ?? e})`,
+      );
     }
   }
   function lodash_get(source, path, defaultValue = undefined) {
@@ -545,7 +546,10 @@ async function operator(proxies = [], targetPlatform, context) {
     const entry = sourceStore[safeServerWithPort];
     return isPlainObject(entry) ? entry : null;
   }
-  function setStructuredEntranceEntry({ serverWithPort = "", ipApi = {} } = {}) {
+  function setStructuredEntranceEntry({
+    serverWithPort = "",
+    ipApi = {},
+  } = {}) {
     const safeServerWithPort = String(serverWithPort || "").trim();
     if (!safeServerWithPort) return;
     const existingEntry = isPlainObject(sourceStore[safeServerWithPort])
@@ -614,6 +618,3 @@ async function operator(proxies = [], targetPlatform, context) {
     });
   }
 }
-
-
-

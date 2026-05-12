@@ -16,12 +16,7 @@ async function operator(proxies = [], targetPlatform, context) {
     info(`==================== [HTTP META ${phase}] ====================`);
   logBoundary("START");
 
-  // Always cache for the client.
-  let useCache = 1;
-  if (targetPlatform === "JSON") {
-    useCache = /true|1/i.test($arguments.cache ?? 0);
-  }
-  // Read/write decoupled: JSON + cache=false still writes latest result.
+  let useCache = context.egressCache ?? 1;
   const shouldWriteCache = true;
 
   const disableFailedCache =
@@ -449,10 +444,16 @@ async function operator(proxies = [], targetPlatform, context) {
     } catch (e) {
       error(`[${proxy.name}] ${e.message ?? e}`);
       if (isIpApiUrl && !internal) {
-        enqueueRequestStatusLog(index, `[${proxy.name}] dual-api error/timeout, log only`);
+        enqueueRequestStatusLog(
+          index,
+          `[${proxy.name}] dual-api error/timeout, log only`,
+        );
         return;
       }
-      enqueueRequestStatusLog(index, `[${proxy.name}] request failed, skip cache update`);
+      enqueueRequestStatusLog(
+        index,
+        `[${proxy.name}] request failed, skip cache update`,
+      );
     } finally {
       markNodeLogCompleted(index);
     }
@@ -545,7 +546,9 @@ async function operator(proxies = [], targetPlatform, context) {
                 ...ipwhoPayload,
                 ok: normalizedOk,
                 api: normalizedOk ? normalizedIpwho : {},
-                error: normalizedOk ? ipwhoPayload.error : "empty ipwho payload",
+                error: normalizedOk
+                  ? ipwhoPayload.error
+                  : "empty ipwho payload",
               };
             }
             if (!ipwhoPayload.ok) {
@@ -563,8 +566,13 @@ async function operator(proxies = [], targetPlatform, context) {
           );
         }
 
-        api = mergeApiResult(ipApiPayload.api, ippurePayload.api, ipwhoPayload.api);
-        status = ipApiPayload.ok || ippurePayload.ok || ipwhoPayload.ok ? 200 : 500;
+        api = mergeApiResult(
+          ipApiPayload.api,
+          ippurePayload.api,
+          ipwhoPayload.api,
+        );
+        status =
+          ipApiPayload.ok || ippurePayload.ok || ipwhoPayload.ok ? 200 : 500;
         sourceApi = {
           "ip-api": isPlainObject(ipApiPayload.api) ? ipApiPayload.api : {},
           ippure: sanitizeIppurePayload(ippurePayload.api),
@@ -811,7 +819,9 @@ async function operator(proxies = [], targetPlatform, context) {
     if (!isPlainObject(source)) {
       return {};
     }
-    const connection = isPlainObject(source.connection) ? source.connection : {};
+    const connection = isPlainObject(source.connection)
+      ? source.connection
+      : {};
     const asn = Number(connection.asn);
     const asnCode = Number.isFinite(asn) && asn > 0 ? `AS${asn}` : "";
     const query = String(source.ip || "").trim();
@@ -957,7 +967,9 @@ async function operator(proxies = [], targetPlatform, context) {
   }
 
   function enqueueNodeLog(proxyIndex, message = "") {
-    const index = Number.isInteger(proxyIndex) ? proxyIndex : Number.MAX_SAFE_INTEGER;
+    const index = Number.isInteger(proxyIndex)
+      ? proxyIndex
+      : Number.MAX_SAFE_INTEGER;
     if (index === Number.MAX_SAFE_INTEGER) {
       info(String(message));
       return;
@@ -1118,4 +1130,3 @@ async function operator(proxies = [], targetPlatform, context) {
     });
   }
 }
-

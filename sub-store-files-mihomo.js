@@ -62,6 +62,7 @@ let ruleProviders = [
   providers[providerName].behavior = providerName.includes("idr")
     ? "ipcidr"
     : "domain";
+  providers[providerName].path = `./rules/${providerName}.yaml`;
 
   return providers;
 }, {});
@@ -71,6 +72,7 @@ let ruleProviders = [
 // https://github.com/v2fly/domain-list-community/tree/master/data
 // Rule order is top-down; earlier entries have higher priority.
 let routingRules = [
+  "RULE-SET,lancidr,DIRECT",
   "RULE-SET,private,DIRECT",
   "RULE-SET,reject,Reject",
   // "RULE-SET,adblockfilters,Reject",
@@ -85,14 +87,14 @@ let routingRules = [
   "GEOSITE,microsoft,Microsoft",
   "GEOSITE,netflix,Netflix",
 
-  "RULE-SET,icloud,DIRECT",
-  "RULE-SET,apple,DIRECT",
   "RULE-SET,google,Proxy",
+  "RULE-SET,telegramcidr,Proxy",
+  "RULE-SET,apple,DIRECT",
+  "RULE-SET,icloud,DIRECT",
+
   "RULE-SET,proxy,Proxy",
   "RULE-SET,direct,DIRECT",
-  "RULE-SET,lancidr,DIRECT",
   "RULE-SET,cncidr,DIRECT",
-  "RULE-SET,telegramcidr,Proxy",
 
   "GEOIP,LAN,DIRECT",
   "GEOIP,CN,DIRECT",
@@ -141,11 +143,6 @@ let strategyGroups = [
 ];
 
 function main(config) {
-  const userinfoSubName = $arguments?.userinfo_sub_name;
-  if (userinfoSubName) {
-    setSubUserinfo(userinfoSubName);
-  }
-
   config["geodata-mode"] = true;
   config["geox-url"] = {
     geosite:
@@ -302,6 +299,10 @@ function main(config) {
 
   config["proxy-groups"] = strategyGroups;
 
+  if (enableFallback) {
+    setSubUserinfo();
+  }
+
   $options ??= {};
   $options._res ??= {};
   $options._res.headers ??= {};
@@ -314,18 +315,42 @@ function main(config) {
   return config;
 }
 
-function setSubUserinfo(subcriptionName) {
+function setSubUserinfo() {
   const subscriptions = $substore.read("subs") || [];
+  const headers = JSON.parse(
+    $substore.read("#sub-store-cached-headers-resource"),
+  );
+  let userInfos = [];
 
   for (const subscription of subscriptions) {
-    if (subscription.name === subcriptionName) {
-      $options ??= {};
-      $options._res = {
-        headers: {
-          "subscription-userinfo": subscription.subUserinfo,
-        },
-      };
+    if (!subscription.tag.includes("NoExpiry")) {
+      if (subscription?.subUserinfo) {
+        userInfos.push(flowUtils.parseFlowHeaders(subscription.subUserinfo));
+      } else {
+        const id = ProxyUtils.hex_md5(`clash.meta/v1.19.24${subscription.url}`);
+        if (headers[id]) {
+          userInfos.push(flowUtils.parseFlowHeaders(headers[id].data));
+        }
+      }
     }
+  }
+
+  let first = userInfos
+    .sort((a, b) => {
+      const aRemaining = a.total - a.usage.upload - a.usage.download;
+      const bRemaining = b.total - b.usage.upload - b.usage.download;
+      return aRemaining - bRemaining;
+    })
+    .find((info) => info.usage.upload + info.usage.download < info.total);
+
+  if (first) {
+    $options ??= {};
+    $options._res = {
+      headers: {
+        "subscription-userinfo": `upload=${first.usage.upload}; download=${first.usage.download}; total=${first.total}; expire=${first.expires}`,
+      },
+    };
+    // console.log($options);
   }
 }
 

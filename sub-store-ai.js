@@ -66,12 +66,7 @@ const AI_VENDOR_TAG_FIELD = "tag";
 async function operator(proxies = [], targetPlatform, context) {
   const $ = $substore;
   const log = (...args) => console.log("[ai]", ...args);
-  // Always cache for the client.
-  let useCache = 1; // 默认为 1 (涵盖了非 JSON 平台)
-  if (targetPlatform === "JSON") {
-    // 只有在 JSON 平台且匹配失败或未定义时，才设为 0
-    useCache = /true|1/i.test($arguments.cache ?? 0);
-  }
+  let useCache = context.aiCache ?? 1;
   // JSON + cache=false: 不读缓存，但仍写入最新检测结果缓存
   const shouldWriteCache = true;
   const { sourceName, sourceStore } = getSourceCacheContext(context.source);
@@ -1066,4 +1061,3 @@ async function operator(proxies = [], targetPlatform, context) {
     });
   }
 }
-
