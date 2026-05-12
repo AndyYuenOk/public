@@ -116,6 +116,7 @@ function operator(proxies = [], targetPlatform, context) {
 
     proxy.name = [
       flagMap[egressCountryCode],
+      proxy._subName,
       ...entranceParts,
       egressCountryCode || "ERR",
       index,

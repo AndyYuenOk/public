@@ -3,7 +3,8 @@ let isMainProxyGroupOnly = /true|1/i.test(
   $arguments.proxy_group_only ?? enableFallback,
 );
 
-let enableSmart = /true|1/i.test($options?._req?.query?.smart);
+let enableSmart = /true|1/i.test($options?._req?.query?.smart),
+  autoType = enableSmart ? "smart" : "url-test";
 let regions, allowPatterns, blockPatterns;
 
 try {
@@ -105,18 +106,22 @@ let strategyGroups = [
   {
     name: "AI",
     icon: "OpenAI.png",
-    proxies: [],
+    type: autoType,
+    "include-all": true,
+    filter: "AI",
   },
   {
     name: "Netflix",
     icon: "Netflix.png",
     type: "select",
+    "include-all": true,
     proxies: ["Proxy"],
   },
   {
     name: "Microsoft",
     icon: "Microsoft.png",
     type: "select",
+    "include-all": true,
     proxies: ["Proxy", "DIRECT"],
   },
 
@@ -142,7 +147,7 @@ let strategyGroups = [
   },
 ];
 
-function main(config) {
+function main(config = {}) {
   config["geodata-mode"] = true;
   config["geox-url"] = {
     geosite:
@@ -172,19 +177,27 @@ function main(config) {
     );
   }
 
+  let subs = $substore
+    .read("subs")
+    .filter(
+      (sub) => sub.tag.includes("TimeLimited") || sub.tag.includes("NoExpiry"),
+    );
+
+  enableFallback = subs.length > 1;
+
   let mainProxyGroup = {
     name: "Proxy",
     icon: "Static.png",
     type: "select",
     proxies: [],
   };
-  let fullNodeGroupNames = [isMainProxyGroupOnly ? "" : "Proxy", "Netflix"];
+
+  config["proxy-providers"] ??= {};
 
   let autoSelectGroup,
     autoTimeLimitedGroup,
     autoNoExpiryGroup,
     airportGroups = [],
-    autoType = enableSmart ? "smart" : "url-test",
     healthCheck = {
       url: "http://www.gstatic.com/generate_204",
       timeout: 1500,
@@ -210,48 +223,39 @@ function main(config) {
       proxies: [],
     };
 
-    let noExpiryNames = $substore
-      .read("subs")
-      .filter((sub) => sub.tag.includes("NoExpiry"))
-      .map((sub) => sub.displayName);
+    subs.forEach((sub) => {
+      let name = sub.displayName;
 
-    const airportProxyMap = config.proxies.reduce((airportProxyMap, proxy) => {
-      (airportProxyMap[proxy.subscriptionDisplayName] ??= []).push(proxy.name);
-      return airportProxyMap;
-    }, {});
+      config["proxy-providers"][name] = {
+        type: "http",
+        url: `http://${$options?._req?.headers?.host}${process.env.SUB_STORE_FRONTEND_BACKEND_PATH}/download/${sub.name}/ClashMeta`,
+        path: `./proxy_providers/${name}.yaml`,
+      };
 
-    airportGroups = Object.entries(airportProxyMap).map(
-      ([airportCode, airportProxies], groupInsertIndex) => {
-        let name = "Auto_" + airportCode;
+      airportGroups.push({
+        name: "Auto_" + name,
+        type: autoType,
+        use: [name],
+      });
 
-        if (noExpiryNames.includes(airportCode)) {
-          autoNoExpiryGroup.proxies.push(name);
-        } else {
-          autoTimeLimitedGroup.proxies.push(name);
-        }
-
-        return {
-          name,
-          type: autoType,
-          proxies: airportProxies,
-        };
-      },
-    );
+      if (sub.tag.includes("TimeLimited")) {
+        autoTimeLimitedGroup.proxies.push("Auto_" + name);
+      }
+      if (sub.tag.includes("NoExpiry")) {
+        autoNoExpiryGroup.proxies.push("Auto_" + name);
+      }
+    });
   } else {
     autoSelectGroup = {
       name: "Auto",
       type: autoType,
       proxies: [],
     };
-
-    fullNodeGroupNames.unshift("Auto");
   }
 
   mainProxyGroup.proxies.push(
     autoSelectGroup.name,
-    ...(enableFallback
-      ? [...autoTimeLimitedGroup.proxies, ...autoNoExpiryGroup.proxies]
-      : []),
+    ...(enableFallback ? airportGroups.map((group) => group.name) : []),
   );
 
   strategyGroups.unshift(
@@ -260,8 +264,6 @@ function main(config) {
     ...(enableFallback ? [autoTimeLimitedGroup, autoNoExpiryGroup] : []),
     ...airportGroups,
   );
-
-  let allProxyNames = config.proxies.map((proxy) => proxy.name);
 
   for (const group of strategyGroups) {
     if (group.name.includes("Auto")) {
@@ -282,18 +284,6 @@ function main(config) {
 
     if (group.type === "smart") {
       group.uselightgbm = true;
-    }
-
-    // Append all nodes to common manual selection groups for fallback use.
-    if (fullNodeGroupNames.includes(group.name)) {
-      group.proxies = group.proxies.concat(allProxyNames);
-    }
-
-    if (group.name === "AI") {
-      group.type = autoType;
-      group.proxies = group.proxies.concat(
-        allProxyNames.filter((name) => name.includes("AI")),
-      );
     }
   }
 
@@ -354,6 +344,6 @@ function setSubUserinfo() {
   }
 }
 
-if ($content) {
+if (typeof $content === "string") {
   $content = ProxyUtils.yaml.dump(main(ProxyUtils.yaml.load($content)));
 }
