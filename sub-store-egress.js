@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Egress info for Sub-Store Node.js
  * - Align cache behavior with entrance script
  * - Mount only egress* field set + optional _egress payload
@@ -24,7 +24,6 @@ async function operator(proxies = [], targetPlatform, context) {
   // Read/write decoupled: JSON + cache=false still writes latest result.
   const shouldWriteCache = true;
 
-  const cache = scriptResourceCache;
   const disableFailedCache =
     $arguments.disable_failed_cache || $arguments.ignore_failed_error;
   const remove_failed = $arguments.remove_failed;
@@ -77,8 +76,7 @@ async function operator(proxies = [], targetPlatform, context) {
   const isIpApiUrl = /^https?:\/\/ip-api\.com\/json(?:\/|\?|$)/i.test(url);
   const ipApiInFlight = new Map();
   const ipApiRequestCache = new Map();
-  const sourceName = getSourceName(context?.source);
-  const sourceStore = getSourceStore(sourceName);
+  const { sourceName, sourceStore } = getSourceCacheContext(context.source);
   const nodeCount = proxies.length;
   let ipApiRequestCount = 0;
   const pendingLogsByIndex = new Map();
@@ -161,9 +159,8 @@ async function operator(proxies = [], targetPlatform, context) {
     info(
       `[stats] nodes: ${nodeCount}, dual-api requests: ${ipApiRequestCount}, unique egress ip: ${uniqueEgressIpCount}`,
     );
-    persistSourceStore(sourceName, sourceStore);
     logBoundary("END");
-    return proxies;
+    return finalize(proxies);
   }
 
   const internalProxies = [];
@@ -193,9 +190,8 @@ async function operator(proxies = [], targetPlatform, context) {
 
   info(`Core supported nodes: ${internalProxies.length}/${proxies.length}`);
   if (!internalProxies.length) {
-    persistSourceStore(sourceName, sourceStore);
     logBoundary("END");
-    return proxies;
+    return finalize(proxies);
   }
 
   const http_meta_timeout =
@@ -225,7 +221,6 @@ async function operator(proxies = [], targetPlatform, context) {
 
   const { ports, pid } = startBody;
   if (!pid || !ports) {
-    persistSourceStore(sourceName, sourceStore);
     logBoundary("END");
     throw new Error(`HTTP META start failed: ${startBody}`);
   }
@@ -298,9 +293,8 @@ async function operator(proxies = [], targetPlatform, context) {
   info(
     `[stats] nodes: ${nodeCount}, dual-api requests: ${ipApiRequestCount}, unique egress ip: ${uniqueEgressIpCount}`,
   );
-  persistSourceStore(sourceName, sourceStore);
   logBoundary("END");
-  return proxies;
+  return finalize(proxies);
 
   async function check(proxy) {
     const index = internalProxies.indexOf(proxy);
@@ -724,23 +718,15 @@ async function operator(proxies = [], targetPlatform, context) {
     info(`[${proxy.name}] ${text}`);
   }
 
-  function getSourceName(source = {}) {
-    const firstSource = Object.values(source || {})?.[0] || {};
-    const name = String(firstSource?.name || "").trim();
-    const displayName = String(firstSource?.displayName || "").trim();
-    const combined = `${name}:${displayName}`.trim();
-    return combined && combined !== ":" ? combined : "unknown-source";
+  function getSourceCacheContext(source) {
+    const firstSource = Object.values(source)[0];
+    const sourceName = `${firstSource.name}-${firstSource.displayName}`;
+    const sourceStore = $.read(`#${sourceName}`) ?? {};
+    return { sourceName, sourceStore };
   }
-
-  function getSourceStore(sourceName = "") {
-    const safeSourceName = String(sourceName || "").trim() || "unknown-source";
-    const store = cache.get(safeSourceName);
-    return isPlainObject(store) ? store : {};
-  }
-
-  function persistSourceStore(sourceName = "", store = {}) {
-    const safeSourceName = String(sourceName || "").trim() || "unknown-source";
-    cache.set(safeSourceName, isPlainObject(store) ? store : {});
+  function finalize(result) {
+    $.write(sourceStore, `#${sourceName}`);
+    return result;
   }
 
   function getStructuredEgressEntry(serverWithPort = "") {
@@ -1126,3 +1112,4 @@ async function operator(proxies = [], targetPlatform, context) {
     });
   }
 }
+

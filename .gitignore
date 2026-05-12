@@ -1,5 +1,4 @@
 captures/
 *.log
-node_modules/
-proxy/
-Sub-Store/
+ednovas/
+private-sub-store/

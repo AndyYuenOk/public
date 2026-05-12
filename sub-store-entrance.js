@@ -91,13 +91,11 @@ async function operator(proxies = [], targetPlatform, context) {
     $arguments.disable_failed_cache || $arguments.ignore_failed_error;
   const remove_failed = $arguments.remove_failed;
   const entranceEnabled = $arguments.entrance;
-  const cache = scriptResourceCache;
   const method = $arguments.method || "get";
   const url =
     $arguments.api || `http://ip-api.com/json/{{proxy.server}}?lang=en`;
   const isIpApiUrl = /^https?:\/\/ip-api\.com\/json\//i.test(url);
-  const sourceName = getSourceName(context?.source);
-  const sourceStore = getSourceStore(sourceName);
+  const { sourceName, sourceStore } = getSourceCacheContext(context.source);
   const nodeCount = proxies.length;
   let ipApiRequestCount = 0;
   const concurrency = parseInt($arguments.concurrency || 10); // Batch concurrency
@@ -170,9 +168,8 @@ async function operator(proxies = [], targetPlatform, context) {
     `[stats] nodes: ${nodeCount}, ip-api requests: ${ipApiRequestCount}, unique entrance ip: ${uniqueEntranceIpCount}`,
   );
 
-  persistSourceStore(sourceName, sourceStore);
   logBoundary("END");
-  return proxies;
+  return finalize(proxies);
 
   async function buildProxyContext(proxy = {}) {
     let queryServer = String(proxy.server || "").trim();
@@ -532,21 +529,15 @@ async function operator(proxies = [], targetPlatform, context) {
     const text = formatCountryAsoAsInfo(api);
     info(`[${proxy.name}] ${text}`);
   }
-  function getSourceName(source = {}) {
-    const firstSource = Object.values(source || {})?.[0] || {};
-    const name = String(firstSource?.name || "").trim();
-    const displayName = String(firstSource?.displayName || "").trim();
-    const combined = `${name}:${displayName}`.trim();
-    return combined && combined !== ":" ? combined : "unknown-source";
+  function getSourceCacheContext(source) {
+    const firstSource = Object.values(source)[0];
+    const sourceName = `${firstSource.name}-${firstSource.displayName}`;
+    const sourceStore = $.read(`#${sourceName}`) ?? {};
+    return { sourceName, sourceStore };
   }
-  function getSourceStore(sourceName = "") {
-    const safeSourceName = String(sourceName || "").trim() || "unknown-source";
-    const store = cache.get(safeSourceName);
-    return isPlainObject(store) ? store : {};
-  }
-  function persistSourceStore(sourceName = "", store = {}) {
-    const safeSourceName = String(sourceName || "").trim() || "unknown-source";
-    cache.set(safeSourceName, isPlainObject(store) ? store : {});
+  function finalize(result) {
+    $.write(sourceStore, `#${sourceName}`);
+    return result;
   }
   function getStructuredEntranceEntry(serverWithPort = "") {
     const safeServerWithPort = String(serverWithPort || "").trim();
@@ -613,5 +604,6 @@ async function operator(proxies = [], targetPlatform, context) {
     });
   }
 }
+
 
 

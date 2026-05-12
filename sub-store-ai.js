@@ -19,36 +19,27 @@
  * - [retries] 重试次数 默认 1
  * - [retry_delay] 重试延时(单位: 毫秒) 默认 1000
  * - [take] 并发数 默认 10
- * - [client] OpenAI 检测的客户端类型(兼容保留). 不再影响 OpenAI URL
  * - [method] 请求方法. 默认 get
- * - [ai_detect] 启用检测项, 逗号分隔. 允许值: openai,gemini,claude,aistudio. 默认 openai,aistudio
- * - [aistudio_key] AI Studio 检测 key。默认读取环境变量 SUB_STORE_GOOGLE_API_KEY。aistudio 检测将调用 generativelanguage.googleapis.com/v1/models
- * - [openai_prefix] 已弃用(仅兼容保留). 脚本不再改名, 只挂载 tagOpenai/tagGemini/tagClaude
+ * - [ai_detect] 启用检测项, 逗号分隔. 允许值: openai,gemini,claude,google-ai-studio. 默认 openai,google-ai-studio,claude
+ * - [googleAiStudio_key] Google AI Studio 检测 key。默认读取环境变量 SUB_STORE_GOOGLE_API_KEY。google-ai-studio 检测将调用 generativelanguage.googleapis.com/v1/models
  * - [openai_country2_deny] OpenAI 两位国家码黑名单, 逗号分隔. 默认 CN,HK
  * - OpenAI 当前检测端点为 https://chat.openai.com/cdn-cgi/trace, 规则为 status=200 且 country2 不在黑名单
- * - [gemini_prefix] 已弃用(仅兼容保留). 脚本不再改名, 只挂载 tagOpenai/tagGemini/tagClaude
  * - [gemini_country3_allow] Gemini 三位国家码允许列表, 逗号分隔. 默认空表示任意非拒绝国家
  * - [gemini_country3_deny] Gemini 三位国家码拒绝列表, 逗号分隔. 默认 CHN
- * - [claude_prefix] 已弃用(仅兼容保留). 脚本不再改名, 只挂载 tagOpenai/tagGemini/tagClaude
  * - [claude_country2_deny] Claude 两位国家码黑名单, 逗号分隔. 默认 CN,HK
- * - [aistudio_prefix] 已弃用(仅兼容保留). 脚本不再改名, 只挂载 tagOpenai/tagGemini/tagClaude/tagAistudio
  * 注:
  * - 节点上会按需添加 canAccessOpenai/openaiLatency, 指 OpenAI 检测结果与响应延迟
  * - 节点上会按需添加 canAccessGemini/geminiLatency, 指 Gemini 检测结果与响应延迟
  * - 节点上会按需添加 canAccessClaude/claudeLatency, 指 Claude 检测结果与响应延迟
- * - 节点上会按需添加 canAccessAistudio/aistudioLatency, 指 AI Studio 检测结果与响应延迟
+ * - 节点上会按需添加 canAccessGoogleAiStudio/googleAiStudioLatency, 指 Google AI Studio 检测结果与响应延迟
  * - 当 ai_detect 实际参与检测项全部通过时, 节点会挂载 tagAi=AI
  * - [cache] 使用缓存结果直接返回; 关闭时实时检测并保存最后测试结果
  * - 缓存时长使用 Sub-Store 默认配置
  * - 失败结果和不支持地区结果也会缓存, 便于后续直接复用
  * 关于缓存时长
- * 当使用相关脚本时, 若在对应的脚本中使用参数(⚠ 别忘了这个, 一般为 cache, 值设为 true 即可)开启缓存
+ * 当使用相关脚本时, 若在对应的脚本中使用参数(? 别忘了这个, 一般为 cache, 值设为 true 即可)开启缓存
  * 可在前端(>=2.16.0) 配置各项缓存的默认时长
  * 持久化缓存数据在 JSON 里
- * 可以在脚本的前面添加一个脚本操作, 实现保留 1 小时的缓存. 这样比较灵活
- * async function operator() {
- *     scriptResourceCache._cleanup(undefined, 1 * 3600 * 1000);
- * }
  */
 
 const BROWSER_UA =
@@ -58,13 +49,13 @@ const AI_TAG_FIELD_BY_KEY = {
   openai: "tagOpenai",
   gemini: "tagGemini",
   claude: "tagClaude",
-  aistudio: "tagAistudio",
+  googleAiStudio: "tagGoogleAiStudio",
 };
 const AI_TAG_VALUE_BY_KEY = {
   openai: "OAI",
   gemini: "GME",
   claude: "CLD",
-  aistudio: "GAI",
+  googleAiStudio: "GAI",
 };
 const AI_ALL_TAG_FIELD = "tag";
 const AI_ALL_TAG_VALUE = "AI";
@@ -83,9 +74,7 @@ async function operator(proxies = [], targetPlatform, context) {
   }
   // JSON + cache=false: 不读缓存，但仍写入最新检测结果缓存
   const shouldWriteCache = true;
-  const cache = scriptResourceCache;
-  const sourceName = getSourceName(context?.source);
-  const sourceStore = getSourceStore(sourceName);
+  const { sourceName, sourceStore } = getSourceCacheContext(context.source);
   const pendingLogsByIndex = new Map();
   const completedLogIndices = new Set();
   let nextLogIndex = 0;
@@ -101,15 +90,15 @@ async function operator(proxies = [], targetPlatform, context) {
     $arguments.http_meta_proxy_timeout ?? 10000,
   );
   const method = $arguments.method || "get";
-  const aistudioKey = `${
-    $arguments.aistudio_key ??
+  const googleAiStudioKey = `${
+    $arguments.googleAiStudio_key ??
     eval("process.env.SUB_STORE_GOOGLE_API_KEY") ??
     ""
-  }`.trim();
-  const encodedAistudioKey = encodeURIComponent(aistudioKey);
-  const hasAistudioKey = Boolean(aistudioKey);
+  }`;
+  const encodedGoogleAiStudioKey = encodeURIComponent(googleAiStudioKey);
+  const hasGoogleAiStudioKey = Boolean(googleAiStudioKey);
   const enabledDetectionKeys = parseAiDetectKeys(
-    $arguments.ai_detect ?? "openai,aistudio,claude",
+    $arguments.ai_detect ?? "openai,google-ai-studio,claude",
   );
   const geminiCountry3AllowSet = toCountryCodeSet(
     $arguments.gemini_country3_allow ?? "",
@@ -164,21 +153,25 @@ async function operator(proxies = [], targetPlatform, context) {
       userAgent: BROWSER_UA,
     },
     {
-      key: "aistudio",
-      cacheAiName: "aistudio",
-      name: "AI Studio",
-      url: `https://generativelanguage.googleapis.com/v1/models?key=${encodedAistudioKey}`,
-      flagKey: "canAccessAistudio",
-      latencyKey: "aistudioLatency",
+      key: "googleAiStudio",
+      cacheAiName: "googleAiStudio",
+      name: "Google AI Studio",
+      url: `https://generativelanguage.googleapis.com/v1/models?key=${encodedGoogleAiStudioKey}`,
+      flagKey: "canAccessGoogleAiStudio",
+      latencyKey: "googleAiStudioLatency",
       userAgent: BROWSER_UA,
     },
   ];
-  if (enabledDetectionKeys.has("aistudio") && !hasAistudioKey) {
-    log("[aistudio] 未提供 aistudio_key, 跳过 AI Studio 检测");
+  if (enabledDetectionKeys.has("googleAiStudio") && !hasGoogleAiStudioKey) {
+    log(
+      "[googleAiStudio] 未提供 googleAiStudio_key, 跳过 Google AI Studio 检测",
+    );
   }
   const detectionConfigs = allDetectionConfigs
     .filter((detection) => enabledDetectionKeys.has(detection.key))
-    .filter((detection) => detection.key !== "aistudio" || hasAistudioKey);
+    .filter(
+      (detection) => detection.key !== "googleAiStudio" || hasGoogleAiStudioKey,
+    );
   log(
     `[gemini-country3] allow=${Array.from(geminiCountry3AllowSet).join("|") || "ANY"}, deny=${Array.from(geminiCountry3DenySet).join("|") || "NONE"}`,
   );
@@ -193,8 +186,7 @@ async function operator(proxies = [], targetPlatform, context) {
   );
   if (!detectionConfigs.length) {
     log("[ai-detect] 未匹配到可用检测项, 跳过检测");
-    persistSourceStore(sourceName, sourceStore);
-    return proxies;
+    return finalize(proxies);
   }
 
   for (const proxy of proxies) {
@@ -247,8 +239,7 @@ async function operator(proxies = [], targetPlatform, context) {
       }
       applyAggregateAiTag(proxyIndex);
     }
-    persistSourceStore(sourceName, sourceStore);
-    return proxies;
+    return finalize(proxies);
   }
 
   const internalProxies = [];
@@ -277,8 +268,7 @@ async function operator(proxies = [], targetPlatform, context) {
   });
   log(`核心支持节点数: ${internalProxies.length}/${proxies.length}`);
   if (!internalProxies.length) {
-    persistSourceStore(sourceName, sourceStore);
-    return proxies;
+    return finalize(proxies);
   }
 
   const http_meta_timeout =
@@ -307,7 +297,6 @@ async function operator(proxies = [], targetPlatform, context) {
   } catch (e) {}
   const { ports, pid } = body;
   if (!pid || !ports) {
-    persistSourceStore(sourceName, sourceStore);
     throw new Error(`HTTP META 启动失败\n${body}`);
   }
   http_meta_pid = pid;
@@ -346,14 +335,13 @@ async function operator(proxies = [], targetPlatform, context) {
         pid: [http_meta_pid],
       }),
     });
-    const stopStatus = String(res?.status ?? res?.statusCode ?? "");
-    const stopBody = String(res?.body ?? "");
+    const stopStatus = res?.status ?? res?.statusCode ?? "";
+    const stopBody = res.body;
     log(`HTTP META 关闭响应: status=${stopStatus}, body=${stopBody}`);
   } catch (e) {
     log(e);
   }
-  persistSourceStore(sourceName, sourceStore);
-  return proxies;
+  return finalize(proxies);
 
   async function check(proxy) {
     // log(`[${proxy.name}] 检测`)
@@ -396,7 +384,7 @@ async function operator(proxies = [], targetPlatform, context) {
       const index = proxyIndex;
 
       const requestMethod =
-        detection.key === "gemini" || detection.key === "aistudio"
+        detection.key === "gemini" || detection.key === "googleAiStudio"
           ? "get"
           : method;
 
@@ -427,18 +415,17 @@ async function operator(proxies = [], targetPlatform, context) {
       let claudeCountry2 = "";
       if (detection.key === "gemini") {
         const locationHeader = getHeaderValue(res.headers, "location");
-        geminiLocation = String(locationHeader || "");
-        bodyText = String(res.body ?? res.rawBody ?? "");
+        geminiLocation = locationHeader || "";
+        bodyText = res.body;
         geminiCountry3 = getGeminiCountry3(bodyText);
         const details = [];
         if (locationHeader) details.push(`location: ${locationHeader}`);
         if (geminiCountry3) details.push(`gbar_country3: ${geminiCountry3}`);
         msg = details.join(", ");
       } else if (detection.key === "openai") {
-        const rawBody = String(res.body ?? res.rawBody ?? "");
-        bodyText = rawBody;
-        const trace = parseTraceFields(rawBody);
-        openaiCountry2 = String(trace.loc || "").toUpperCase();
+        bodyText = res.body;
+        const trace = parseTraceFields(res.body);
+        openaiCountry2 = (trace.loc || "").toUpperCase();
         const details = [];
         if (trace.h) details.push(`h: ${trace.h}`);
         if (openaiCountry2) details.push(`country2: ${openaiCountry2}`);
@@ -446,40 +433,34 @@ async function operator(proxies = [], targetPlatform, context) {
         if (trace.colo) details.push(`colo: ${trace.colo}`);
         msg = details.join(", ");
       } else if (detection.key === "claude") {
-        const rawBody = String(res.body ?? res.rawBody ?? "");
-        bodyText = rawBody;
-        claudeCountry2 = getClaudeCountry2(rawBody);
+        bodyText = res.body;
+        claudeCountry2 = getClaudeCountry2(res.body);
         msg = claudeCountry2 ? `country: ${claudeCountry2}` : "";
-      } else if (detection.key === "aistudio") {
-        const rawBody = String(res.body ?? res.rawBody ?? "");
-        body = rawBody;
+      } else if (detection.key === "googleAiStudio") {
+        body = res.body;
         try {
-          body = JSON.parse(rawBody);
+          body = JSON.parse(res.body);
         } catch (e) {}
-        msg = String(
+        msg =
           body?.error?.code ||
-            body?.error?.error_type ||
-            body?.error?.status ||
-            body?.error?.message ||
-            body?.message ||
-            "",
-        );
-        bodyText = typeof body === "string" ? body : rawBody;
+          body?.error?.error_type ||
+          body?.error?.status ||
+          body?.error?.message ||
+          body?.message ||
+          "";
+        bodyText = typeof body === "string" ? body : res.body;
       } else {
-        const rawBody = String(res.body ?? res.rawBody ?? "");
-
-        body = rawBody;
+        body = res.body;
         try {
-          body = JSON.parse(rawBody);
+          body = JSON.parse(res.body);
         } catch (e) {}
-        msg = String(
+        msg =
           body?.error?.code ||
-            body?.error?.error_type ||
-            body?.cf_details ||
-            body?.message ||
-            "",
-        );
-        bodyText = typeof body === "string" ? body : rawBody;
+          body?.error?.error_type ||
+          body?.cf_details ||
+          body?.message ||
+          "";
+        bodyText = typeof body === "string" ? body : res.body;
       }
       const latency = Date.now() - startedAt;
       const outcome = classifyDetectionResult({
@@ -571,11 +552,10 @@ async function operator(proxies = [], targetPlatform, context) {
         e?.response?.status || e?.response?.statusCode || 0,
         10,
       );
-      const errorLocation = String(
-        getHeaderValue(e?.response?.headers, "location") || "",
-      );
-      const errorMessage = String(e?.message ?? e ?? "");
-      const errorBody = String(e?.response?.body ?? e?.response?.rawBody ?? "");
+      const errorLocation =
+        getHeaderValue(e?.response?.headers, "location") || "";
+      const errorMessage = e?.message ?? e ?? "";
+      const errorBody = e?.response?.body ?? e?.response?.rawBody ?? "";
       const detailText = buildErrorText(
         errorBody || errorMessage,
         errorStatus === 302 ? errorLocation : "",
@@ -643,7 +623,7 @@ async function operator(proxies = [], targetPlatform, context) {
     delete proxy.tagOpenai;
     delete proxy.tagGemini;
     delete proxy.tagClaude;
-    delete proxy.tagAistudio;
+    delete proxy.tagGoogleAiStudio;
     delete proxy.tagAi;
     delete proxy.canAccessOpenai;
     delete proxy.openaiLatency;
@@ -651,22 +631,13 @@ async function operator(proxies = [], targetPlatform, context) {
     delete proxy.geminiLatency;
     delete proxy.canAccessClaude;
     delete proxy.claudeLatency;
-    delete proxy.canAccessAistudio;
-    delete proxy.aistudioLatency;
-
-    delete proxy._openai;
-    delete proxy._openai_latency;
-    delete proxy._gemini;
-    delete proxy._gemini_latency;
-    delete proxy._claude;
-    delete proxy._claude_latency;
-    delete proxy._aistudio;
-    delete proxy._aistudio_latency;
+    delete proxy.canAccessGoogleAiStudio;
+    delete proxy.googleAiStudioLatency;
 
     proxy.ai.openai = {};
     proxy.ai.gemini = {};
     proxy.ai.claude = {};
-    proxy.ai.aistudio = {};
+    proxy.ai.googleAiStudio = {};
     delete proxy.ai[AI_ALL_TAG_FIELD];
   }
   function applyAggregateAiTag(proxyIndex) {
@@ -694,7 +665,7 @@ async function operator(proxies = [], targetPlatform, context) {
     if (!isPlainObject(proxy.ai)) {
       proxy.ai = {};
     }
-    for (const key of ["openai", "gemini", "claude", "aistudio"]) {
+    for (const key of ["openai", "gemini", "claude", "googleAiStudio"]) {
       if (!isPlainObject(proxy.ai[key])) {
         proxy.ai[key] = {};
       }
@@ -704,7 +675,7 @@ async function operator(proxies = [], targetPlatform, context) {
     if (detection.cacheAiName === "gemini") return "GEMINI";
 
     if (detection.cacheAiName === "claude") return "CLAUDE";
-    if (detection.cacheAiName === "aistudio") return "AISTUDIO";
+    if (detection.cacheAiName === "googleAiStudio") return "GOOGLEAISTUDIO";
     return "OPENAI";
   }
   function isUnsupportedResult({ message = "", bodyText = "" }) {
@@ -735,8 +706,8 @@ async function operator(proxies = [], targetPlatform, context) {
     if (detection.key === "claude") {
       return classifyClaudeCountry2Result({ status, bodyText });
     }
-    if (detection.key === "aistudio") {
-      return classifyAistudioResult({ status, body });
+    if (detection.key === "googleAiStudio") {
+      return classifyGoogleAiStudioResult({ status, body });
     }
 
     if (isUnsupportedResult({ message, bodyText })) {
@@ -801,7 +772,7 @@ async function operator(proxies = [], targetPlatform, context) {
     if (!country2) return "error";
     return claudeCountryDenySet.has(country2) ? "unsupported" : "supported";
   }
-  function classifyAistudioResult({ status, body }) {
+  function classifyGoogleAiStudioResult({ status, body }) {
     if (
       status === 200 &&
       Array.isArray(body?.models) &&
@@ -816,9 +787,9 @@ async function operator(proxies = [], targetPlatform, context) {
   }
 
   function getHeaderValue(headers = {}, key = "") {
-    const lowered = String(key).toLowerCase();
+    const lowered = key.toLowerCase();
     for (const headerKey in headers || {}) {
-      if (String(headerKey).toLowerCase() === lowered) {
+      if (headerKey.toLowerCase() === lowered) {
         return headers[headerKey];
       }
     }
@@ -837,7 +808,7 @@ async function operator(proxies = [], targetPlatform, context) {
     return false;
   }
   function getCachedSupportedRegionText({ detection, cached }) {
-    const region = String(cached?.supported_region || "");
+    const region = cached?.supported_region || "";
     if (!region) return "";
     if (detection.key === "openai") return `, country2=${region}`;
     if (detection.key === "gemini") return `, country3=${region}`;
@@ -858,14 +829,14 @@ async function operator(proxies = [], targetPlatform, context) {
     return parts.join(", ");
   }
   function extractHtmlTitle(raw = "") {
-    const text = String(raw ?? "");
+    const text = raw ?? "";
     if (!text) return "";
     const matched = text.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
     if (!matched?.[1]) return "";
     return toPlainText(matched[1]);
   }
   function toPlainText(raw = "") {
-    let text = String(raw ?? "");
+    let text = raw ?? "";
     if (!text) return "";
     text = text
       .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
@@ -878,12 +849,11 @@ async function operator(proxies = [], targetPlatform, context) {
       .replace(/&gt;/gi, ">")
       .replace(/&quot;/gi, '"')
       .replace(/&#39;/gi, "'")
-      .replace(/\s+/g, " ")
-      .trim();
+      .replace(/\s+/g, " ");
     return text;
   }
   function truncateText(text = "", maxLength = 300) {
-    const value = String(text ?? "");
+    const value = text ?? "";
     if (!value) return "";
     const max = Math.max(1, parseInt(maxLength, 10) || 300);
     if (value.length <= max) return value;
@@ -891,19 +861,19 @@ async function operator(proxies = [], targetPlatform, context) {
   }
   function parseTraceFields(bodyText = "") {
     const trace = {};
-    const lines = String(bodyText ?? "").split(/\r?\n/g);
+    const lines = (bodyText ?? "").split(/\r?\n/g);
     for (const line of lines) {
       const idx = line.indexOf("=");
       if (idx <= 0) continue;
-      const key = line.slice(0, idx).trim();
-      const value = line.slice(idx + 1).trim();
+      const key = line.slice(0, idx);
+      const value = line.slice(idx + 1);
       if (!key) continue;
       trace[key] = value;
     }
     return trace;
   }
   function getGeminiCountry3(bodyText = "") {
-    const text = String(bodyText ?? "");
+    const text = bodyText ?? "";
     if (!text) return "";
 
     const patterns = [
@@ -919,7 +889,7 @@ async function operator(proxies = [], targetPlatform, context) {
     return "";
   }
   function getClaudeCountry2(bodyText = "") {
-    const text = String(bodyText ?? "");
+    const text = bodyText ?? "";
     if (!text) return "";
     const matched =
       text.match(/data-ion-ip-country="([A-Z]{2})"/i) ||
@@ -927,35 +897,36 @@ async function operator(proxies = [], targetPlatform, context) {
     return matched?.[1] ? matched[1].toUpperCase() : "";
   }
   function parseAiDetectKeys(raw = "") {
-    const text = `${raw ?? ""}`.trim();
+    const text = `${raw ?? ""}`;
 
-    if (!text) return new Set(["openai", "gemini", "claude", "aistudio"]);
-    const allowed = new Set(["openai", "gemini", "claude", "aistudio"]);
+    if (!text) return new Set(["openai", "gemini", "claude", "googleAiStudio"]);
+    const allowed = new Set(["openai", "gemini", "claude", "google-ai-studio"]);
 
     return new Set(
       text
         .split(",")
-        .map((item) => item.trim().toLowerCase())
-        .filter((item) => allowed.has(item)),
+        .map((item) => item.toLowerCase())
+        .filter((item) => allowed.has(item))
+        .map((item) => (item === "google-ai-studio" ? "googleAiStudio" : item)),
     );
   }
   function toCountryCodeSet(raw = "") {
-    const text = `${raw ?? ""}`.trim();
+    const text = `${raw ?? ""}`;
     if (!text) return new Set();
     return new Set(
       text
         .split(",")
-        .map((item) => item.trim().toUpperCase())
+        .map((item) => item.toUpperCase())
         .filter((item) => /^[A-Z]{3}$/.test(item)),
     );
   }
   function toCountryCode2Set(raw = "") {
-    const text = `${raw ?? ""}`.trim();
+    const text = `${raw ?? ""}`;
     if (!text) return new Set();
     return new Set(
       text
         .split(",")
-        .map((item) => item.trim().toUpperCase())
+        .map((item) => item.toUpperCase())
         .filter((item) => /^[A-Z]{2}$/.test(item)),
     );
   }
@@ -987,36 +958,30 @@ async function operator(proxies = [], targetPlatform, context) {
     };
     return await fn();
   }
-  function getSourceName(source = {}) {
-    const firstSource = Object.values(source || {})?.[0] || {};
-    const name = String(firstSource?.name || "").trim();
-    const displayName = String(firstSource?.displayName || "").trim();
-    const combined = `${name}:${displayName}`.trim();
-    return combined && combined !== ":" ? combined : "unknown-source";
+  function getSourceCacheContext(source) {
+    const firstSource = Object.values(source)[0];
+    const sourceName = `${firstSource.name}-${firstSource.displayName}`;
+    const sourceStore = $.read(`#${sourceName}`) ?? {};
+    return { sourceName, sourceStore };
   }
-  function getSourceStore(sourceName = "") {
-    const safeSourceName = String(sourceName || "").trim() || "unknown-source";
-    const store = cache.get(safeSourceName);
-    return isPlainObject(store) ? store : {};
-  }
-  function persistSourceStore(sourceName = "", store = {}) {
-    const safeSourceName = String(sourceName || "").trim() || "unknown-source";
-    cache.set(safeSourceName, isPlainObject(store) ? store : {});
+  function finalize(result) {
+    $.write(sourceStore, `#${sourceName}`);
+    return result;
   }
   function getServerWithPort(proxy = {}) {
-    const server = String(proxy?._origin_server ?? proxy?.server ?? "").trim();
+    const server = proxy?._origin_server ?? proxy?.server ?? "";
     const port = proxy?._origin_port ?? proxy?.port;
-    const hasPort = port !== undefined && port !== null && String(port) !== "";
+    const hasPort = port !== undefined && port !== null && port !== "";
     return hasPort ? `${server}:${port}` : server;
   }
   function getStructuredAiEntry(serverWithPort = "") {
-    const safeServerWithPort = String(serverWithPort || "").trim();
+    const safeServerWithPort = serverWithPort || "";
     if (!safeServerWithPort) return null;
     const entry = sourceStore[safeServerWithPort];
     return isPlainObject(entry) ? entry : null;
   }
   function setStructuredAiEntry({ serverWithPort = "", aiPayload = {} } = {}) {
-    const safeServerWithPort = String(serverWithPort || "").trim();
+    const safeServerWithPort = serverWithPort || "";
     if (!safeServerWithPort) return;
     const existingEntry = isPlainObject(sourceStore[safeServerWithPort])
       ? sourceStore[safeServerWithPort]
@@ -1031,13 +996,13 @@ async function operator(proxies = [], targetPlatform, context) {
       ? proxyIndex
       : Number.MAX_SAFE_INTEGER;
     if (index === Number.MAX_SAFE_INTEGER) {
-      log(String(message));
+      log(message);
       return;
     }
     if (!pendingLogsByIndex.has(index)) {
       pendingLogsByIndex.set(index, []);
     }
-    pendingLogsByIndex.get(index).push(String(message));
+    pendingLogsByIndex.get(index).push(message);
   }
   function markNodeLogCompleted(proxyIndex) {
     if (!Number.isInteger(proxyIndex) || proxyIndex < 0) return;
@@ -1101,3 +1066,4 @@ async function operator(proxies = [], targetPlatform, context) {
     });
   }
 }
+
