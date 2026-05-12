@@ -554,9 +554,19 @@ async function operator(proxies = [], targetPlatform, context) {
     sourceStore[safeServerWithPort] = {
       ...existingEntry,
       entrance: {
-        "ip-api": isPlainObject(ipApi) ? ipApi : {},
+        "ip-api": sanitizeEntranceIpApiPayload(ipApi),
       },
     };
+  }
+  function sanitizeEntranceIpApiPayload(source = {}) {
+    if (!isPlainObject(source)) return {};
+    const sanitized = { ...source };
+    delete sanitized.status;
+    delete sanitized.zip;
+    delete sanitized.lat;
+    delete sanitized.lon;
+    delete sanitized.timezone;
+    return sanitized;
   }
   function isPlainObject(value) {
     return value && typeof value === "object" && !Array.isArray(value);

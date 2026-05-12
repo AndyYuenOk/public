@@ -753,7 +753,7 @@ async function operator(proxies = [], targetPlatform, context) {
       egress: {
         "ip-api": isPlainObject(ipApi) ? ipApi : {},
         ippure: sanitizeIppurePayload(ippure),
-        ipwho: isPlainObject(ipwho) ? ipwho : {},
+        ipwho: sanitizeIpwhoPayload(ipwho),
       },
     };
   }
@@ -844,6 +844,12 @@ async function operator(proxies = [], targetPlatform, context) {
     if (!isPlainObject(source)) return {};
     if (typeof source.isResidential !== "boolean") return {};
     return { isResidential: source.isResidential };
+  }
+  function sanitizeIpwhoPayload(source = {}) {
+    if (!isPlainObject(source)) return {};
+    const sanitized = { ...source };
+    delete sanitized.query;
+    return sanitized;
   }
 
   function isPlainObject(value) {
