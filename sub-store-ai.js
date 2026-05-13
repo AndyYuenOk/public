@@ -66,24 +66,14 @@ const AI_VENDOR_TAG_FIELD = "tag";
 async function operator(proxies = [], targetPlatform, context) {
   const $ = $substore;
   const log = (...args) => console.log("[ai]", ...args);
-  const logBanner = (title = "", lines = []) => {
-    const border = "=".repeat(64);
-    log(border);
-    log(`[BANNER] ${title}`);
-    if (Array.isArray(lines)) {
-      for (const line of lines) {
-        log(`[BANNER] ${line}`);
-      }
-    }
-    log(border);
-  };
+  const logBoundary = (phase = "") =>
+    log(`==================== [SUB-STORE-AI ${phase}] ====================`);
+  logBoundary("START");
   let useCache = context.aiCache ?? 1;
   // JSON + cache=false: 不读缓存，但仍写入最新检测结果缓存
   const shouldWriteCache = true;
   const { sourceName, sourceStore } = getSourceCacheContext(context.source);
   const pendingLogsByIndex = new Map();
-  const completedLogIndices = new Set();
-  let nextLogIndex = 0;
   const http_meta_host = $arguments.http_meta_host ?? "127.0.0.1";
   const http_meta_port = $arguments.http_meta_port ?? 9876;
   const http_meta_protocol = $arguments.http_meta_protocol ?? "http";
@@ -190,14 +180,9 @@ async function operator(proxies = [], targetPlatform, context) {
   log(
     `[ai-detect] enabled=${detectionConfigs.map((item) => item.key).join("|") || "NONE"}`,
   );
-  logBanner("AI DETECT START", [
-    `cache=${useCache ? "ON" : "OFF"}`,
-    `proxies=${proxies.length}`,
-    `enabled=${detectionConfigs.map((item) => item.key).join("|") || "NONE"}`,
-    `method=${method}`,
-    `take=${Math.max(1, parseInt($arguments.take ?? 10, 10) || 10)}`,
-    `http_meta=${http_meta_protocol}://${http_meta_host}:${http_meta_port}`,
-  ]);
+  log(
+    `cache=${useCache ? "ON" : "OFF"}, proxies=${proxies.length}, method=${method}, take=${Math.max(1, parseInt($arguments.take ?? 10, 10) || 10)}, http_meta=${http_meta_protocol}://${http_meta_host}:${http_meta_port}`,
+  );
   if (!detectionConfigs.length) {
     log("[ai-detect] 未匹配到可用检测项, 跳过检测");
     return finalize(proxies);
@@ -311,6 +296,7 @@ async function operator(proxies = [], targetPlatform, context) {
   } catch (e) {}
   const { ports, pid } = body;
   if (!pid || !ports) {
+    logBoundary("END");
     throw new Error(`HTTP META 启动失败\n${body}`);
   }
   http_meta_pid = pid;
@@ -979,6 +965,7 @@ async function operator(proxies = [], targetPlatform, context) {
     return { sourceName, sourceStore };
   }
   function finalize(result) {
+    logBoundary("END");
     $.write(sourceStore, `#${sourceName}`);
     return result;
   }
@@ -1020,19 +1007,11 @@ async function operator(proxies = [], targetPlatform, context) {
   }
   function markNodeLogCompleted(proxyIndex) {
     if (!Number.isInteger(proxyIndex) || proxyIndex < 0) return;
-    completedLogIndices.add(proxyIndex);
-    flushInOrderNodeLogs();
-  }
-  function flushInOrderNodeLogs() {
-    while (completedLogIndices.has(nextLogIndex)) {
-      const logs = pendingLogsByIndex.get(nextLogIndex) || [];
-      for (const message of logs) {
-        log(message);
-      }
-      pendingLogsByIndex.delete(nextLogIndex);
-      completedLogIndices.delete(nextLogIndex);
-      nextLogIndex += 1;
+    const logs = pendingLogsByIndex.get(proxyIndex) || [];
+    for (const message of logs) {
+      log(message);
     }
+    pendingLogsByIndex.delete(proxyIndex);
   }
   function isPlainObject(value) {
     return value && typeof value === "object" && !Array.isArray(value);
