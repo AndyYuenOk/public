@@ -170,7 +170,7 @@ function normalizedIsp(isp, country, city) {
         "",
       )
       .replace(RegExp(country + "|" + city, "i"), "")
-      .replace(/\[|\]/g, "")
+      .replace(/[\[\]\(\)]/g, "")
       .trim()
   );
   // .split(" ")

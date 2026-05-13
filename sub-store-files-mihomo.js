@@ -59,7 +59,7 @@ let ruleProviders = [
   }
 
   providers[providerName].type = "http";
-  // providers[providerName].interval = 86400;
+  providers[providerName].interval = 86400;
   providers[providerName].behavior = providerName.includes("idr")
     ? "ipcidr"
     : "domain";
@@ -199,7 +199,8 @@ function main(config = {}) {
     autoNoExpiryGroup,
     airportGroups = [],
     healthCheck = {
-      url: "http://www.gstatic.com/generate_204",
+      // url: "https://www.gstatic.com/generate_204",
+      url: "https://cp.cloudflare.com/generate_204",
       timeout: 1500,
       tolerance: 200,
       "max-failed-times": 1,
@@ -223,13 +224,46 @@ function main(config = {}) {
       proxies: [],
     };
 
+    const userInfoMap = getSubUserinfo();
+    if (enableFallback) {
+      let first = Object.values(userInfoMap)
+        .sort((a, b) => {
+          const aRemaining = a.total - a.usage.upload - a.usage.download;
+          const bRemaining = b.total - b.usage.upload - b.usage.download;
+          return aRemaining - bRemaining;
+        })
+        .find((info) => info.usage.upload + info.usage.download < info.total);
+
+      if (first) {
+        $options ??= {};
+        $options._res = {
+          headers: {
+            "subscription-userinfo": `upload=${first.usage.upload}; download=${first.usage.download}; total=${first.total}; expire=${first.expires}`,
+          },
+        };
+      }
+    }
+
     subs.forEach((sub) => {
+      const userInfo = userInfoMap[sub.name];
+      if (
+        userInfo &&
+        userInfo.usage.upload + userInfo.usage.download >= userInfo.total
+      ) {
+        return;
+      }
+
       let name = sub.displayName;
 
       config["proxy-providers"][name] = {
         type: "http",
         url: `http://${$options?._req?.headers?.host}${process.env.SUB_STORE_FRONTEND_BACKEND_PATH}/download/${sub.name}/ClashMeta`,
-        path: `./proxy_providers/${name}.yaml`,
+        interval: 86400,
+        path: `./proxies/${name}.yaml`,
+        "health-check": {
+          enable: true,
+          url: healthCheck.url,
+        },
       };
 
       airportGroups.push({
@@ -289,59 +323,42 @@ function main(config = {}) {
 
   config["proxy-groups"] = strategyGroups;
 
-  if (enableFallback) {
-    setSubUserinfo();
-  }
-
   $options ??= {};
   $options._res ??= {};
   $options._res.headers ??= {};
   $options._res.headers["content-disposition"] =
-    'attachment; filename="' +
-    $file.name +
-    (enableSmart ? "-Smart" : "") +
-    '";';
+    'attachment; filename="Fallback' + (enableSmart ? "-Smart" : "") + '"';
 
   return config;
 }
 
-function setSubUserinfo() {
+function getSubUserinfo() {
   const subscriptions = $substore.read("subs") || [];
   const headers = JSON.parse(
     $substore.read("#sub-store-cached-headers-resource"),
   );
-  let userInfos = [];
+  let userInfoMap = {};
 
   for (const subscription of subscriptions) {
     if (!subscription.tag.includes("NoExpiry")) {
       if (subscription?.subUserinfo) {
-        userInfos.push(flowUtils.parseFlowHeaders(subscription.subUserinfo));
+        userInfoMap[subscription.name] = flowUtils.parseFlowHeaders(
+          subscription.subUserinfo,
+        );
       } else {
-        const id = ProxyUtils.hex_md5(`clash.meta/v1.19.24${subscription.url}`);
+        const id = ProxyUtils.hex_md5(
+          `clash.meta/v1.19.24${subscription.url.split("#")[0]}`,
+        );
         if (headers[id]) {
-          userInfos.push(flowUtils.parseFlowHeaders(headers[id].data));
+          userInfoMap[subscription.name] = flowUtils.parseFlowHeaders(
+            headers[id].data,
+          );
         }
       }
     }
   }
 
-  let first = userInfos
-    .sort((a, b) => {
-      const aRemaining = a.total - a.usage.upload - a.usage.download;
-      const bRemaining = b.total - b.usage.upload - b.usage.download;
-      return aRemaining - bRemaining;
-    })
-    .find((info) => info.usage.upload + info.usage.download < info.total);
-
-  if (first) {
-    $options ??= {};
-    $options._res = {
-      headers: {
-        "subscription-userinfo": `upload=${first.usage.upload}; download=${first.usage.download}; total=${first.total}; expire=${first.expires}`,
-      },
-    };
-    // console.log($options);
-  }
+  return userInfoMap;
 }
 
 if (typeof $content === "string") {

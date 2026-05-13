@@ -6,7 +6,7 @@ const baseUrl = $arguments?.base_url;
 const remoteProxyItems = buildRemoteProxyItems(subscriptions);
 
 const remoteProxyLines = remoteProxyItems.map(({ subName, remoteName }) => {
-  const subUrl = `${baseUrl}${process.env.SUB_STORE_FRONTEND_BACKEND_PATH}/download/${encodeURIComponent(subName)}/Loon`;
+  const subUrl = `http://${$options?._req?.headers?.host}${process.env.SUB_STORE_FRONTEND_BACKEND_PATH}/download/${encodeURIComponent(subName)}/Loon`;
   return `${remoteName} = ${subUrl},enabled=true`;
 });
 
@@ -331,7 +331,7 @@ function replaceSection(text, sectionName, lines) {
 }
 
 function setDownloadFilenameHeader() {
-  const rawName = $arguments?.filename ?? "loon.conf";
+  const rawName = $arguments?.filename ?? "Fallback";
   if (!rawName) return;
 
   const safeName = sanitizeHeaderValue(rawName);
@@ -351,9 +351,7 @@ function setDownloadFilenameHeader() {
 }
 
 function sanitizeHeaderValue(value) {
-  return value
-    .replace(/[\r\n"]/g, " ")
-    .replace(/\s+/g, " ");
+  return value.replace(/[\r\n"]/g, " ").replace(/\s+/g, " ");
 }
 
 function toAsciiFilename(value) {
