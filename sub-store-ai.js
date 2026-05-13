@@ -66,6 +66,17 @@ const AI_VENDOR_TAG_FIELD = "tag";
 async function operator(proxies = [], targetPlatform, context) {
   const $ = $substore;
   const log = (...args) => console.log("[ai]", ...args);
+  const logBanner = (title = "", lines = []) => {
+    const border = "=".repeat(64);
+    log(border);
+    log(`[BANNER] ${title}`);
+    if (Array.isArray(lines)) {
+      for (const line of lines) {
+        log(`[BANNER] ${line}`);
+      }
+    }
+    log(border);
+  };
   let useCache = context.aiCache ?? 1;
   // JSON + cache=false: 不读缓存，但仍写入最新检测结果缓存
   const shouldWriteCache = true;
@@ -179,6 +190,14 @@ async function operator(proxies = [], targetPlatform, context) {
   log(
     `[ai-detect] enabled=${detectionConfigs.map((item) => item.key).join("|") || "NONE"}`,
   );
+  logBanner("AI DETECT START", [
+    `cache=${useCache ? "ON" : "OFF"}`,
+    `proxies=${proxies.length}`,
+    `enabled=${detectionConfigs.map((item) => item.key).join("|") || "NONE"}`,
+    `method=${method}`,
+    `take=${Math.max(1, parseInt($arguments.take ?? 10, 10) || 10)}`,
+    `http_meta=${http_meta_protocol}://${http_meta_host}:${http_meta_port}`,
+  ]);
   if (!detectionConfigs.length) {
     log("[ai-detect] 未匹配到可用检测项, 跳过检测");
     return finalize(proxies);
