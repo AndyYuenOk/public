@@ -179,9 +179,7 @@ function main(config = {}) {
 
   let subs = $substore
     .read("subs")
-    .filter(
-      (sub) => sub.tag.includes("TimeLimited") || sub.tag.includes("NoExpiry"),
-    );
+    .filter((sub) => sub.tag.includes("Primary") || sub.tag.includes("Backup"));
 
   enableFallback = subs.length > 1;
 
@@ -195,8 +193,8 @@ function main(config = {}) {
   config["proxy-providers"] ??= {};
 
   let autoSelectGroup,
-    autoTimeLimitedGroup,
-    autoNoExpiryGroup,
+    autoPrimayGroup,
+    autoBackupGroup,
     airportGroups = [],
     healthCheck = {
       // url: "https://www.gstatic.com/generate_204",
@@ -213,12 +211,12 @@ function main(config = {}) {
       type: "fallback",
       proxies: ["Auto_Primary", "Auto_Backup"],
     };
-    autoTimeLimitedGroup = {
+    autoPrimayGroup = {
       name: "Auto_Primary",
       type: "url-test",
       proxies: [],
     };
-    autoNoExpiryGroup = {
+    autoBackupGroup = {
       name: "Auto_Backup",
       type: "url-test",
       proxies: [],
@@ -232,7 +230,11 @@ function main(config = {}) {
           const bRemaining = b.total - b.usage.upload - b.usage.download;
           return aRemaining - bRemaining;
         })
-        .find((info) => info.usage.upload + info.usage.download < info.total);
+        .find(
+          (info) =>
+            info.expires &&
+            info.usage.upload + info.usage.download < info.total,
+        );
 
       if (first) {
         $options ??= {};
@@ -258,7 +260,7 @@ function main(config = {}) {
       config["proxy-providers"][name] = {
         type: "http",
         url: `http://${$options?._req?.headers?.host}${process.env.SUB_STORE_FRONTEND_BACKEND_PATH}/download/${sub.name}/ClashMeta`,
-        interval: 86400,
+        interval: name == "Free" ? 3600 : 86400,
         path: `./proxies/${name}.yaml`,
         "health-check": {
           enable: true,
@@ -272,11 +274,11 @@ function main(config = {}) {
         use: [name],
       });
 
-      if (sub.tag.includes("TimeLimited")) {
-        autoTimeLimitedGroup.proxies.push("Auto_" + name);
+      if (sub.tag.includes("Primary")) {
+        autoPrimayGroup.proxies.push("Auto_" + name);
       }
-      if (sub.tag.includes("NoExpiry")) {
-        autoNoExpiryGroup.proxies.push("Auto_" + name);
+      if (sub.tag.includes("Backup")) {
+        autoBackupGroup.proxies.push("Auto_" + name);
       }
     });
   } else {
@@ -295,7 +297,7 @@ function main(config = {}) {
   strategyGroups.unshift(
     mainProxyGroup,
     autoSelectGroup,
-    ...(enableFallback ? [autoTimeLimitedGroup, autoNoExpiryGroup] : []),
+    ...(enableFallback ? [autoPrimayGroup, autoBackupGroup] : []),
     ...airportGroups,
   );
 
@@ -340,7 +342,7 @@ function getSubUserinfo() {
   let userInfoMap = {};
 
   for (const subscription of subscriptions) {
-    if (!subscription.tag.includes("NoExpiry")) {
+    if (!subscription.tag.includes("Backup")) {
       if (subscription?.subUserinfo) {
         userInfoMap[subscription.name] = flowUtils.parseFlowHeaders(
           subscription.subUserinfo,

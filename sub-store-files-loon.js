@@ -1,5 +1,4 @@
-﻿const targetCollectionName = "Fallback";
-const subscriptions = await loadCollectionSubscriptions(targetCollectionName);
+const subscriptions = loadTaggedSubscriptions();
 setDownloadFilenameHeader();
 
 const baseUrl = $arguments?.base_url;
@@ -28,10 +27,20 @@ function buildRemoteProxyItems(subscriptions) {
       subName,
       remoteName,
       autoName,
+      role: getRoleFromTaggedSub(subInfo),
+      isPrimary: Boolean(subInfo?.isPrimary),
+      isBackup: Boolean(subInfo?.isBackup),
       isNoExpiry: Boolean(subInfo?.isNoExpiry),
     });
   }
   return items;
+}
+
+function getRoleFromTaggedSub(subInfo = {}) {
+  if (subInfo?.isPrimary && subInfo?.isBackup) return "primary_backup";
+  if (subInfo?.isPrimary) return "primary";
+  if (subInfo?.isBackup) return "backup";
+  return "";
 }
 
 function makeUniqueName(base, used) {
@@ -60,13 +69,13 @@ function replaceAutoProxyGroups(text, items) {
   if (!section) return text;
 
   const remoteNames = items.map((item) => item.remoteName);
-  const autoTimeLimitedName = "Auto_Primary";
-  const autoNoExpiryName = "Auto_Backup";
-  const noExpiryAutoNames = items
-    .filter((item) => item.isNoExpiry)
+  const autoPrimaryName = "Auto_Primary";
+  const autoBackupName = "Auto_Backup";
+  const primaryAutoNames = items
+    .filter((item) => item.isPrimary)
     .map((item) => item.autoName);
-  const timeLimitedAutoNames = items
-    .filter((item) => !item.isNoExpiry)
+  const backupAutoNames = items
+    .filter((item) => item.isBackup)
     .map((item) => item.autoName);
 
   const rawLines = section.split(/\r?\n/);
@@ -94,22 +103,22 @@ function replaceAutoProxyGroups(text, items) {
       `${item.autoName} = ${buildAutoUrlTestRhs(templateRhs, item.remoteName)}`,
     ]),
   );
-  const generatedTimeLimitedAutoLines = timeLimitedAutoNames
+  const generatedPrimaryAutoLines = primaryAutoNames
     .map((name) => generatedAutoLineMap.get(name))
     .filter(Boolean);
-  const generatedNoExpiryAutoLines = noExpiryAutoNames
+  const generatedBackupAutoLines = backupAutoNames
     .map((name) => generatedAutoLineMap.get(name))
     .filter(Boolean);
-  const generatedAutoTimeLimitedLine = `${autoTimeLimitedName} = ${buildAutoAggregateUrlTestRhs(templateRhs, timeLimitedAutoNames)}`;
-  const generatedAutoNoExpiryLine = `${autoNoExpiryName} = ${buildAutoAggregateUrlTestRhs(templateRhs, noExpiryAutoNames)}`;
+  const generatedAutoPrimaryLine = `${autoPrimaryName} = ${buildAutoAggregateUrlTestRhs(templateRhs, primaryAutoNames)}`;
+  const generatedAutoBackupLine = `${autoBackupName} = ${buildAutoAggregateUrlTestRhs(templateRhs, backupAutoNames)}`;
   const fallbackLineIndex = keptLines.findIndex((line) =>
     /^\s*Fallback\s*=/i.test(line),
   );
   const generatedLines = [
-    generatedAutoTimeLimitedLine,
-    generatedAutoNoExpiryLine,
-    ...generatedTimeLimitedAutoLines,
-    ...generatedNoExpiryAutoLines,
+    generatedAutoPrimaryLine,
+    generatedAutoBackupLine,
+    ...generatedPrimaryAutoLines,
+    ...generatedBackupAutoLines,
   ];
   if (fallbackLineIndex >= 0) {
     keptLines.splice(fallbackLineIndex + 1, 0, ...generatedLines);
@@ -123,14 +132,14 @@ function replaceAutoProxyGroups(text, items) {
   if (fallbackIndex >= 0) {
     keptLines[fallbackIndex] = rewriteFallbackLineWithAutoMembers(
       keptLines[fallbackIndex],
-      [autoTimeLimitedName, autoNoExpiryName],
+      [autoPrimaryName, autoBackupName],
     );
   }
   const proxyIndex = keptLines.findIndex((line) =>
     /^\s*Proxy\s*=\s*select\s*,/i.test(line),
   );
   if (proxyIndex >= 0) {
-    const proxyAutoMembers = [...timeLimitedAutoNames, ...noExpiryAutoNames];
+    const proxyAutoMembers = items.map((item) => item.autoName);
     keptLines[proxyIndex] = mergeRemoteIntoProxySelectLine(
       keptLines[proxyIndex],
       remoteNames,
@@ -177,9 +186,6 @@ function mergeRemoteIntoProxySelectLine(line, remoteNames, autoMembers) {
       !remoteMap.has(p.toLowerCase()) &&
       !autoMap.has(p.toLowerCase()),
   );
-
-  // Keep Proxy group clean: do not add remote policy names back.
-  // We only keep Auto_<displayName> entries in Proxy.
 
   const fallbackMemberIndex = filteredPolicies.findIndex((p) =>
     /^Fallback$/i.test(p),
@@ -274,38 +280,39 @@ function rewriteFallbackLineWithAutoMembers(line, autoMembers) {
   return `${name} = ${rebuilt}`;
 }
 
-async function loadCollectionSubscriptions(collectionName) {
-  const allCollections = $substore.read("collections") || [];
+function loadTaggedSubscriptions() {
   const allSubscriptions = $substore.read("subs") || [];
-  const collection = Array.isArray(allCollections)
-    ? allCollections.find((item) => item?.name === collectionName)
-    : null;
-  if (!collection) throw new Error(`collection ${collectionName} not found`);
 
   const list = [];
   const seen = new Set();
-  for (const subName of Array.isArray(collection.subscriptions)
-    ? collection.subscriptions
-    : []) {
-    const normalized = subName;
+  for (const sub of Array.isArray(allSubscriptions) ? allSubscriptions : []) {
+    const normalized = `${sub?.name ?? ""}`.trim();
     if (!normalized || seen.has(normalized)) continue;
+    const tags = Array.isArray(sub?.tag)
+      ? sub.tag.filter((item) => typeof item === "string")
+      : [];
+    const isPrimary = tags.includes("Primary");
+    const isBackup = tags.includes("Backup");
+    if (!isPrimary && !isBackup) continue;
+
     seen.add(normalized);
-    const sub = Array.isArray(allSubscriptions)
-      ? allSubscriptions.find((item) => item?.name === normalized)
-      : null;
     const displayName =
       sub?.displayName || sub?.["display-name"] || sub?.name || normalized;
-    const isNoExpiry = Array.isArray(sub?.tag)
-      ? sub.tag.includes("NoExpiry")
-      : false;
+    const isNoExpiry = tags.includes("NoExpiry");
     list.push({
       name: normalized,
       displayName: displayName || normalized,
+      tags,
+      isPrimary,
+      isBackup,
       isNoExpiry,
     });
   }
-  if (!list.length)
-    throw new Error(`collection ${collectionName} has no subscriptions`);
+  if (!list.length) {
+    throw new Error(
+      "subs has no Primary/Backup tagged subscriptions for Loon grouping",
+    );
+  }
   return list;
 }
 

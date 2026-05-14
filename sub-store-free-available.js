@@ -9,7 +9,7 @@ const DEFAULT_TIMEOUT_MS = 5000;
 const SPEED_REFERENCE_LABEL = "A";
 const BROWSER_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36";
-const AI_DEFAULT_OPTIONS = ["openai", "google-ai-studio"];
+const AI_DEFAULT_OPTIONS = ["openai", "claude", "google-ai-studio"];
 const AI_ALLOWED_OPTIONS = ["openai", "gemini", "claude", "google-ai-studio"];
 const AI_TAG_VALUE_BY_KEY = {
   openai: "OAI",
@@ -64,7 +64,9 @@ async function operator(proxies = [], targetPlatform, context) {
   let storeDirty = false;
   const logInfo = (...args) => console.log(...args);
   const logError = (...args) => console.error(...args);
-  const logAi = (...args) => logInfo("[ai]", ...args);
+  const logAiInfo = (...args) => logInfo("[ai]", ...args);
+  const logAiError = (...args) => logError("[ai]", ...args);
+  const logAi = (...args) => logAiInfo(...args);
   const logBoundary = (phase = "") =>
     logInfo(
       `==================== [SUB-STORE-FREE-AVAILABLE ${phase}] ====================`,
@@ -391,8 +393,9 @@ async function operator(proxies = [], targetPlatform, context) {
   }
   finalSelectedRecords.sort(compareCandidateRecords);
 
-  const finalProxies = finalSelectedRecords.map((item) =>
-    item.isAi
+  const finalProxies = finalSelectedRecords.map((item) => {
+    const keepAiResult = aiCheckedSet.has(item.sortedIndex);
+    return item.isAi
       ? toAiProxyOutput(
           item.proxy,
           item.measuredSpeedKb ?? 0,
@@ -402,8 +405,9 @@ async function operator(proxies = [], targetPlatform, context) {
           item.proxy,
           item.measuredSpeedKb ?? 0,
           item.durationMs ?? 0,
-        ),
-  );
+          keepAiResult,
+        );
+  });
 
   // Persist fully formatted final output for fast return in cache mode.
   saveFinalProxiesCache(finalProxies);
@@ -621,10 +625,14 @@ async function operator(proxies = [], targetPlatform, context) {
     const googleAiStudioTag = aiTagByKey.googleAiStudio;
     const allTag = aiTagByKey.all;
     const aiPayload = proxy.ai;
-    const openaiTagField = `${aiPayload.openai?.[AI_VENDOR_TAG_FIELD] ?? ""}`.trim();
-    const geminiTagField = `${aiPayload.gemini?.[AI_VENDOR_TAG_FIELD] ?? ""}`.trim();
-    const claudeTagField = `${aiPayload.claude?.[AI_VENDOR_TAG_FIELD] ?? ""}`.trim();
-    const googleAiStudioTagField = `${aiPayload.googleAiStudio?.[AI_VENDOR_TAG_FIELD] ?? ""}`.trim();
+    const openaiTagField =
+      `${aiPayload.openai?.[AI_VENDOR_TAG_FIELD] ?? ""}`.trim();
+    const geminiTagField =
+      `${aiPayload.gemini?.[AI_VENDOR_TAG_FIELD] ?? ""}`.trim();
+    const claudeTagField =
+      `${aiPayload.claude?.[AI_VENDOR_TAG_FIELD] ?? ""}`.trim();
+    const googleAiStudioTagField =
+      `${aiPayload.googleAiStudio?.[AI_VENDOR_TAG_FIELD] ?? ""}`.trim();
     const allTagField = `${aiPayload[AI_ALL_TAG_FIELD] ?? ""}`.trim();
     if (
       openaiTagField ||
@@ -650,10 +658,7 @@ async function operator(proxies = [], targetPlatform, context) {
     ) {
       if (googleAiStudioTag) tags.push(googleAiStudioTag);
     }
-    if (
-      allTagField ||
-      aiPayload[AI_ALL_TAG_FIELD] === aiTagByKey.all
-    ) {
+    if (allTagField || aiPayload[AI_ALL_TAG_FIELD] === aiTagByKey.all) {
       if (allTag) tags.push(allTag);
     }
     return tags;
@@ -915,6 +920,17 @@ async function operator(proxies = [], targetPlatform, context) {
                   allSuccess = false;
                   break;
                 }
+                if (cached !== undefined) {
+                  enqueueNodeLog(
+                    sortedIndex,
+                    `[${proxy.name}] [${detection.name}] 错误, status=CACHE`,
+                  );
+                } else {
+                  enqueueNodeLog(
+                    sortedIndex,
+                    `[${proxy.name}] [${detection.name}] 未检测(未命中缓存), status=CACHE`,
+                  );
+                }
               }
 
               const result = await checkAiWithHttpMeta(
@@ -940,7 +956,9 @@ async function operator(proxies = [], targetPlatform, context) {
         { concurrency: aiConcurrency },
       );
     } catch (e) {
-      logError(e);
+      logAiError(
+        `[ai-stage-batch] failed: ${e?.stack || e?.message || String(e)}`,
+      );
     } finally {
       flushReadyNodeLogs(aiBatchOrder);
       await stopHttpMetaForBatch(httpMetaPid, "ai");
@@ -1421,22 +1439,19 @@ async function operator(proxies = [], targetPlatform, context) {
       logHttpMetaBoundary("END", label);
       logInfo(`[status] ${stopStatus} [pid] ${pid}`);
     } catch (e) {
-      logError(e);
+      if (label === "ai") {
+        logAiError(
+          `[http-meta ${label}] stop failed: ${e?.stack || e?.message || String(e)}`,
+        );
+      } else {
+        logError(e);
+      }
     }
   }
 
   function toAiProxyOutput(proxy, measuredSpeedKb = 0, durationMs = 0) {
-    let parsed = clearOutputAiFields(safeParseProxy(proxy));
-    const sourceAi = proxy.ai;
-    parsed.ai = {
-      openai: { ...sourceAi.openai },
-      gemini: { ...sourceAi.gemini },
-      claude: { ...sourceAi.claude },
-      googleAiStudio: { ...sourceAi.googleAiStudio },
-    };
-    if (sourceAi[AI_ALL_TAG_FIELD] === aiTagByKey.all) {
-      parsed.ai[AI_ALL_TAG_FIELD] = aiTagByKey.all;
-    }
+    let parsed = clearLegacyOutputAiFields(safeParseProxy(proxy));
+    parsed.ai = buildOutputAiPayload(proxy?.ai, true);
     const baseName = getBaseNameWithSpeed(proxy);
     parsed.measuredSpeed = formatLabeledSpeedText(proxy._speed_kb, "A");
     parsed.guaranteedSpeed = formatLabeledSpeedText(measuredSpeedKb, "B");
@@ -1444,8 +1459,14 @@ async function operator(proxies = [], targetPlatform, context) {
     return parsed;
   }
 
-  function toNormalProxyOutput(proxy, measuredSpeedKb, durationMs) {
-    const parsed = clearOutputAiFields(safeParseProxy(proxy));
+  function toNormalProxyOutput(
+    proxy,
+    measuredSpeedKb,
+    durationMs,
+    keepAiResult = false,
+  ) {
+    const parsed = clearLegacyOutputAiFields(safeParseProxy(proxy));
+    parsed.ai = buildOutputAiPayload(proxy?.ai, keepAiResult);
     parsed.name = getOutputProxyName(proxy);
     parsed.measuredSpeed = formatLabeledSpeedText(proxy._speed_kb, "A");
     parsed.guaranteedSpeed = formatLabeledSpeedText(measuredSpeedKb, "B");
@@ -1494,7 +1515,7 @@ async function operator(proxies = [], targetPlatform, context) {
   }
 
   function cleanupOutputAiStatusFields(proxy = {}) {
-    const cleaned = clearOutputAiFields(proxy);
+    const cleaned = clearLegacyOutputAiFields(proxy);
     return { proxy: cleaned, changed: cleaned !== proxy };
   }
 
@@ -1551,9 +1572,8 @@ async function operator(proxies = [], targetPlatform, context) {
     delete proxy.ai[AI_ALL_TAG_FIELD];
   }
 
-  function clearOutputAiFields(proxy = {}) {
+  function clearLegacyOutputAiFields(proxy = {}) {
     const nextProxy = { ...proxy };
-    ensureProxyAiShape(nextProxy);
     delete nextProxy.tagOpenai;
     delete nextProxy.tagGemini;
     delete nextProxy.tagClaude;
@@ -1578,14 +1598,68 @@ async function operator(proxies = [], targetPlatform, context) {
     delete nextProxy._claude_latency;
     delete nextProxy._aistudio;
     delete nextProxy._aistudio_latency;
-    nextProxy.ai = {
-      openai: {},
-      gemini: {},
-      claude: {},
-      googleAiStudio: {},
-    };
-    delete nextProxy.ai[AI_ALL_TAG_FIELD];
     return nextProxy;
+  }
+
+  function buildOutputAiPayload(sourceAi = {}, keepAiResult = false) {
+    if (!keepAiResult) {
+      return {
+        openai: {},
+        gemini: {},
+        claude: {},
+        googleAiStudio: {},
+      };
+    }
+
+    const source =
+      sourceAi && typeof sourceAi === "object" && !Array.isArray(sourceAi)
+        ? sourceAi
+        : {};
+    const payload = {
+      openai: pickOutputAiVendorFields(source.openai),
+      gemini: pickOutputAiVendorFields(source.gemini),
+      claude: pickOutputAiVendorFields(source.claude),
+      googleAiStudio: pickOutputAiVendorFields(source.googleAiStudio),
+    };
+    if (source[AI_ALL_TAG_FIELD] === aiTagByKey.all) {
+      payload[AI_ALL_TAG_FIELD] = aiTagByKey.all;
+    }
+    return payload;
+  }
+
+  function pickOutputAiVendorFields(vendorPayload = {}) {
+    const source =
+      vendorPayload &&
+      typeof vendorPayload === "object" &&
+      !Array.isArray(vendorPayload)
+        ? vendorPayload
+        : {};
+    const picked = {};
+    if (source[AI_CACHE_CAN_ACCESS_FIELD] === true) {
+      picked[AI_CACHE_CAN_ACCESS_FIELD] = true;
+    }
+    if (AI_CACHE_LATENCY_FIELD in source) {
+      picked[AI_CACHE_LATENCY_FIELD] = source[AI_CACHE_LATENCY_FIELD];
+    }
+    if (AI_VENDOR_TAG_FIELD in source) {
+      picked[AI_VENDOR_TAG_FIELD] = source[AI_VENDOR_TAG_FIELD];
+    }
+    if ("supported_region" in source) {
+      picked.supported_region = source.supported_region;
+    }
+    if ("unsupported" in source) {
+      picked.unsupported = source.unsupported;
+    }
+    if ("unsupported_message" in source) {
+      picked.unsupported_message = source.unsupported_message;
+    }
+    if ("unsupported_latency" in source) {
+      picked.unsupported_latency = source.unsupported_latency;
+    }
+    if ("unsupported_region" in source) {
+      picked.unsupported_region = source.unsupported_region;
+    }
+    return picked;
   }
 
   function ensureProxyAiShape(proxy = {}) {
