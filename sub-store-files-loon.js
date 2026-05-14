@@ -60,8 +60,8 @@ function replaceAutoProxyGroups(text, items) {
   if (!section) return text;
 
   const remoteNames = items.map((item) => item.remoteName);
-  const autoTimeLimitedName = "Auto_TimeLimited";
-  const autoNoExpiryName = "Auto_NoExpiry";
+  const autoTimeLimitedName = "Auto_Primary";
+  const autoNoExpiryName = "Auto_Backup";
   const noExpiryAutoNames = items
     .filter((item) => item.isNoExpiry)
     .map((item) => item.autoName);

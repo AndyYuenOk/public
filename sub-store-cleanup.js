@@ -1,5 +1,6 @@
 async function operator(proxies, targetPlatform, context) {
   if (targetPlatform === "JSON") {
+    context.freeCache = 0;
     context.entranceCache = 0;
     context.egressCache = 0;
     context.aiCache = 0;

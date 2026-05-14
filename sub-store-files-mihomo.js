@@ -211,15 +211,15 @@ function main(config = {}) {
       name: "Fallback",
       icon: "Auto.png",
       type: "fallback",
-      proxies: ["Auto_TimeLimited", "Auto_NoExpiry"],
+      proxies: ["Auto_Primary", "Auto_Backup"],
     };
     autoTimeLimitedGroup = {
-      name: "Auto_TimeLimited",
+      name: "Auto_Primary",
       type: "url-test",
       proxies: [],
     };
     autoNoExpiryGroup = {
-      name: "Auto_NoExpiry",
+      name: "Auto_Backup",
       type: "url-test",
       proxies: [],
     };

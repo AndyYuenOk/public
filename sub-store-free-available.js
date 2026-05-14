@@ -1,4 +1,4 @@
-﻿const FINAL_PROXIES_CACHE_KEY = "sub-store-free-optimized:final-proxies";
+﻿const FREE_STORE_FINAL_PROXIES_FIELD = "finalProxies";
 // 测速文件，需要在超时时间内下载完成，目标越小越好。
 // 由于下载爬坡等因素，估算速度 != 实际速度，但能保证最低速度。
 // https://github.com/litterinchina/large-file-download-test
@@ -9,25 +9,25 @@ const DEFAULT_TIMEOUT_MS = 5000;
 const SPEED_REFERENCE_LABEL = "A";
 const BROWSER_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36";
-const AI_DEFAULT_OPTIONS = ["openai", "aistudio"];
-const AI_ALLOWED_OPTIONS = ["openai", "gemini", "claude", "aistudio"];
+const AI_DEFAULT_OPTIONS = ["openai", "google-ai-studio"];
+const AI_ALLOWED_OPTIONS = ["openai", "gemini", "claude", "google-ai-studio"];
 const AI_TAG_VALUE_BY_KEY = {
   openai: "OAI",
   gemini: "GME",
   claude: "CLD",
-  aistudio: "GAI",
+  googleAiStudio: "GAI",
   all: "AI",
 };
+const AI_CACHE_CAN_ACCESS_FIELD = "canAccess";
+const AI_CACHE_LATENCY_FIELD = "latency";
+const AI_ALL_TAG_FIELD = "tag";
+const AI_VENDOR_TAG_FIELD = "tag";
 const AI_DETECTION_CONFIG = {
   openai: {
     key: "openai",
     cacheAiName: "openai",
     name: "OpenAI",
     url: "https://chat.openai.com/cdn-cgi/trace",
-    flagKey: "canAccessOpenai",
-    latencyKey: "openaiLatency",
-    cacheKey: "canAccessOpenai",
-    cacheLatencyKey: "openaiLatency",
     userAgent: BROWSER_UA,
   },
   gemini: {
@@ -35,10 +35,6 @@ const AI_DETECTION_CONFIG = {
     cacheAiName: "gemini",
     name: "Gemini",
     url: "https://gemini.google.com/app",
-    flagKey: "canAccessGemini",
-    latencyKey: "geminiLatency",
-    cacheKey: "canAccessGemini",
-    cacheLatencyKey: "geminiLatency",
     userAgent: BROWSER_UA,
   },
   claude: {
@@ -46,30 +42,29 @@ const AI_DETECTION_CONFIG = {
     cacheAiName: "claude",
     name: "Claude",
     url: "https://claude.ai/",
-    flagKey: "canAccessClaude",
-    latencyKey: "claudeLatency",
-    cacheKey: "canAccessClaude",
-    cacheLatencyKey: "claudeLatency",
     userAgent: BROWSER_UA,
   },
-  aistudio: {
-    key: "aistudio",
-    cacheAiName: "aistudio",
+  googleAiStudio: {
+    key: "googleAiStudio",
+    cacheAiName: "googleAiStudio",
     name: "AI Studio",
     url: "",
-    flagKey: "canAccessAistudio",
-    latencyKey: "aistudioLatency",
-    cacheKey: "canAccessAistudio",
-    cacheLatencyKey: "aistudioLatency",
     userAgent: BROWSER_UA,
   },
 };
 
 async function operator(proxies = [], targetPlatform, context) {
+  const firstSource = Object.values(context.source)[0];
+  const sourceName = `${firstSource.name}-${firstSource.displayName}`;
+  const FREE_STORE_KEY = `#${sourceName}`;
+
   const $ = $substore;
-  const cache = scriptResourceCache;
+  let useCache = context.freeCache ?? 1;
+  const store = useCache ? ($.read(FREE_STORE_KEY) ?? {}) : {};
+  let storeDirty = false;
   const logInfo = (...args) => console.log(...args);
   const logError = (...args) => console.error(...args);
+  const logAi = (...args) => logInfo("[ai]", ...args);
   const logBoundary = (phase = "") =>
     logInfo(
       `==================== [SUB-STORE-FREE-AVAILABLE ${phase}] ====================`,
@@ -79,6 +74,20 @@ async function operator(proxies = [], targetPlatform, context) {
       `==================== [HTTP META ${phase}${label ? ` ${label}` : ""}] ====================`,
     );
   logBoundary("START");
+  const markStoreDirty = () => {
+    storeDirty = true;
+  };
+  const flushStore = () => {
+    if (!storeDirty) return;
+    try {
+      $.write(store, FREE_STORE_KEY);
+      storeDirty = false;
+    } catch (e) {
+      logError(
+        `[cache-store] write failed key=${FREE_STORE_KEY}: ${e?.message ?? e}`,
+      );
+    }
+  };
   // Incoming node names carry speed in text form; sort by parsed speed first.
   const compareProxySpeedDesc = (a, b) => {
     const speedA = normalizeProxyName(a?.name).speedKb ?? -1;
@@ -89,13 +98,13 @@ async function operator(proxies = [], targetPlatform, context) {
   // Runtime knobs from script arguments.
   const take = parseInt($arguments.take ?? 10, 10);
   const appendMeasuredSpeed = /true|1/i.test(`${$arguments.speed ?? 1}`);
-  const aistudioKey = `${
-    $arguments.aistudio_key ??
+  const googleAiStudioKey = `${
+    $arguments.googleAiStudio_key ??
     eval("process.env.SUB_STORE_GOOGLE_API_KEY") ??
     ""
   }`.trim();
-  const encodedAistudioKey = encodeURIComponent(aistudioKey);
-  const hasAistudioKey = Boolean(aistudioKey);
+  const encodedGoogleAiStudioKey = encodeURIComponent(googleAiStudioKey);
+  const hasGoogleAiStudioKey = Boolean(googleAiStudioKey);
   const aiTagByKey = {
     ...AI_TAG_VALUE_BY_KEY,
   };
@@ -103,18 +112,11 @@ async function operator(proxies = [], targetPlatform, context) {
     openai: "tagOpenai",
     gemini: "tagGemini",
     claude: "tagClaude",
-    aistudio: "tagAistudio",
+    googleAiStudio: "tagGoogleAiStudio",
     all: "tagAi",
   };
   const aiTags = Object.values(aiTagByKey).filter(Boolean);
   let aiDetections = [];
-
-  // Always cache for the client.
-  let useCache = 1; // 默认为 1 (涵盖了非 JSON 平台)
-  if (targetPlatform === "JSON") {
-    // 只有在 JSON 平台且匹配失败或未定义时，才设为 0
-    useCache = /true|1/i.test($arguments.cache ?? 0);
-  }
 
   const speedSortedInputProxies = [...proxies].sort(compareProxySpeedDesc);
 
@@ -124,10 +126,12 @@ async function operator(proxies = [], targetPlatform, context) {
     const cachedFinalProxies = tryReturnFinalProxiesCache();
     if (cachedFinalProxies) {
       logBoundary("END");
+      flushStore();
       return cachedFinalProxies;
     }
     logInfo("[cache-final] miss, cache=1 return empty proxies");
     logBoundary("END");
+    flushStore();
     return [];
   }
 
@@ -136,6 +140,7 @@ async function operator(proxies = [], targetPlatform, context) {
     const normalizedName = normalizeProxyName(proxy?.name);
     return {
       ...proxy,
+      _original_name: proxy?.name,
       _base_name_speed: normalizedName.displayName,
       _speed_kb: normalizedName.speedKb,
     };
@@ -143,19 +148,19 @@ async function operator(proxies = [], targetPlatform, context) {
 
   const aiDetectionConfigByKey = {
     ...AI_DETECTION_CONFIG,
-    aistudio: {
-      ...AI_DETECTION_CONFIG.aistudio,
-      url: hasAistudioKey
-        ? `https://generativelanguage.googleapis.com/v1/models?key=${encodedAistudioKey}`
+    googleAiStudio: {
+      ...AI_DETECTION_CONFIG.googleAiStudio,
+      url: hasGoogleAiStudioKey
+        ? `https://generativelanguage.googleapis.com/v1/models?key=${encodedGoogleAiStudioKey}`
         : "",
     },
   };
   const aiOptions = normalizeAiOptions($arguments.ai_detect);
-  if (aiOptions.includes("aistudio") && !hasAistudioKey) {
-    logInfo("[aistudio] 未提供 aistudio_key, 跳过 AI Studio 检测");
+  if (aiOptions.includes("googleAiStudio") && !hasGoogleAiStudioKey) {
+    logInfo("[googleAiStudio] 未提供 googleAiStudio_key, 跳过 AI Studio 检测");
   }
   aiDetections = buildAiDetections(aiOptions, aiDetectionConfigByKey).filter(
-    (detection) => detection.key !== "aistudio" || hasAistudioKey,
+    (detection) => detection.key !== "googleAiStudio" || hasGoogleAiStudioKey,
   );
   const aiTarget = aiDetections.length ? Math.ceil(take / 2) : 0;
   const batchSize = Math.max(1, take);
@@ -273,6 +278,7 @@ async function operator(proxies = [], targetPlatform, context) {
   );
   if (!internalProxies.length) {
     logBoundary("END");
+    flushStore();
     return [];
   }
   // Candidate tracking across all batches.
@@ -282,6 +288,7 @@ async function operator(proxies = [], targetPlatform, context) {
   const speedCheckedSet = new Set();
   const candidateSet = new Set();
   const speedResultByIndex = new Map();
+  const pendingLogsByIndex = new Map();
   const proxyBySortedIndex = new Map(
     internalProxies.map((proxy) => [proxy._sorted_index, proxy]),
   );
@@ -400,11 +407,13 @@ async function operator(proxies = [], targetPlatform, context) {
 
   // Persist fully formatted final output for fast return in cache mode.
   saveFinalProxiesCache(finalProxies);
+  pruneStoreToFinalProxies(finalSelectedRecords);
 
   logInfo(
     `[done] ai=${aiPassSet.size}, ai_candidate=${aiCandidateCount}, ai_quota=${aiQuota}, speed=${speedPassSet.size}, candidate=${candidateSet.size}, filled=${Math.max(0, finalSelectedRecords.length - selectedRecords.length)}, output=${finalProxies.length}`,
   );
   logBoundary("END");
+  flushStore();
   return finalProxies;
 
   function countAiCandidates() {
@@ -445,19 +454,16 @@ async function operator(proxies = [], targetPlatform, context) {
 
   function tryReturnFinalProxiesCache() {
     // Return deep-cloned records to avoid mutation leaks.
-    const cached = cache.get(FINAL_PROXIES_CACHE_KEY);
-    if (!cached) return null;
+    const cached = store[FREE_STORE_FINAL_PROXIES_FIELD];
+    if (!Array.isArray(cached)) return null;
 
-    const cachedProxies = Array.isArray(cached.proxies)
-      ? cloneProxyList(cached.proxies)
-      : [];
+    const cachedProxies = Array.isArray(cached) ? cloneProxyList(cached) : [];
 
     const { proxies: normalizedProxies, changed } =
       normalizeFinalProxyNames(cachedProxies);
     if (changed) {
-      cache.set(FINAL_PROXIES_CACHE_KEY, {
-        proxies: cloneProxyList(normalizedProxies),
-      });
+      store[FREE_STORE_FINAL_PROXIES_FIELD] = cloneProxyList(normalizedProxies);
+      markStoreDirty();
       logInfo(
         `[cache-final] normalize names proxies=${normalizedProxies.length}`,
       );
@@ -472,27 +478,37 @@ async function operator(proxies = [], targetPlatform, context) {
       ? normalizeFinalProxyNames(records).proxies
       : [];
 
-    cache.set(FINAL_PROXIES_CACHE_KEY, {
-      proxies: proxiesForCache,
-    });
+    store[FREE_STORE_FINAL_PROXIES_FIELD] = proxiesForCache;
+    markStoreDirty();
     logInfo(`[cache-final] save proxies=${proxiesForCache.length}`);
+  }
+
+  function pruneStoreToFinalProxies(records = []) {
+    const keepKeys = new Set([FREE_STORE_FINAL_PROXIES_FIELD]);
+    for (const record of records) {
+      const serverWithPort = getServerWithPortFromProxy(record?.proxy);
+      if (serverWithPort) {
+        keepKeys.add(serverWithPort);
+      }
+    }
+
+    let changed = false;
+    for (const key of Object.keys(store)) {
+      if (!keepKeys.has(key)) {
+        delete store[key];
+        changed = true;
+      }
+    }
+    if (changed) {
+      markStoreDirty();
+      logInfo(`[cache-store] prune keep=${keepKeys.size - 1}`);
+    }
   }
 
   function normalizeFinalProxyNames(records = []) {
     let changed = false;
     const proxies = cloneProxyList(records).map((proxy) => {
       let nextProxy = proxy;
-      if (
-        nextProxy._duration_ms === undefined &&
-        nextProxy._latency !== undefined
-      ) {
-        changed = true;
-        nextProxy = {
-          ...nextProxy,
-          _duration_ms: nextProxy._latency,
-        };
-        delete nextProxy._latency;
-      }
       if (
         nextProxy.measuredSpeed === undefined &&
         nextProxy._speed_kb !== undefined
@@ -530,9 +546,7 @@ async function operator(proxies = [], targetPlatform, context) {
         toSpeedKbFromAny(nextProxy.measuredSpeed, "A"),
         "A",
       );
-      if (
-        `${nextProxy.measuredSpeed ?? ""}` !== normalizedMeasuredSpeed
-      ) {
+      if (`${nextProxy.measuredSpeed ?? ""}` !== normalizedMeasuredSpeed) {
         changed = true;
         nextProxy = {
           ...nextProxy,
@@ -543,9 +557,7 @@ async function operator(proxies = [], targetPlatform, context) {
         toSpeedKbFromAny(nextProxy.guaranteedSpeed, "B"),
         "B",
       );
-      if (
-        `${nextProxy.guaranteedSpeed ?? ""}` !== normalizedGuaranteedSpeed
-      ) {
+      if (`${nextProxy.guaranteedSpeed ?? ""}` !== normalizedGuaranteedSpeed) {
         changed = true;
         nextProxy = {
           ...nextProxy,
@@ -569,18 +581,15 @@ async function operator(proxies = [], targetPlatform, context) {
       if (
         nextProxy._avg_speed_kb !== undefined ||
         nextProxy._speed_kb !== undefined ||
-        nextProxy._speed !== undefined
+        nextProxy._speed !== undefined ||
+        nextProxy._latency !== undefined
       ) {
         changed = true;
         nextProxy = { ...nextProxy };
         delete nextProxy._avg_speed_kb;
         delete nextProxy._speed_kb;
         delete nextProxy._speed;
-      }
-      const normalizedName = normalizeFinalProxyName(nextProxy);
-      if (normalizedName && normalizedName !== nextProxy.name) {
-        changed = true;
-        return { ...nextProxy, name: normalizedName };
+        delete nextProxy._latency;
       }
       return nextProxy;
     });
@@ -588,12 +597,10 @@ async function operator(proxies = [], targetPlatform, context) {
   }
 
   function normalizeFinalProxyName(proxy = {}) {
-    const measuredSpeedKb = toSpeedKbFromAny(
-      proxy.guaranteedSpeed,
-      "B",
-    ) || toSpeedKbFromAny(proxy._avg_speed_kb) || toSpeedKbFromAny(
-      proxy._speed ? Number(proxy._speed) * 128 : 0,
-    );
+    const measuredSpeedKb =
+      toSpeedKbFromAny(proxy.guaranteedSpeed, "B") ||
+      toSpeedKbFromAny(proxy._avg_speed_kb) ||
+      toSpeedKbFromAny(proxy._speed ? Number(proxy._speed) * 128 : 0);
     const rawName = `${proxy.name ?? ""}`.trim();
     if (!rawName) return rawName;
 
@@ -602,69 +609,50 @@ async function operator(proxies = [], targetPlatform, context) {
     baseName = normalizeProxyName(baseName).displayName;
     if (!baseName) return rawName;
 
-    return formatMeasuredName(
-      baseName,
-      measuredSpeedKb,
-      proxy._duration_ms ?? proxy._latency,
-    );
+    return formatMeasuredName(baseName, measuredSpeedKb, 0);
   }
 
   function getOutputTags(proxy = {}, name = "") {
+    ensureProxyAiShape(proxy);
     const tags = [];
     const openaiTag = aiTagByKey.openai;
     const geminiTag = aiTagByKey.gemini;
     const claudeTag = aiTagByKey.claude;
-    const aistudioTag = aiTagByKey.aistudio;
+    const googleAiStudioTag = aiTagByKey.googleAiStudio;
     const allTag = aiTagByKey.all;
-    const openaiTagField = `${proxy[aiTagFieldByKey.openai] ?? ""}`.trim();
-    const geminiTagField = `${proxy[aiTagFieldByKey.gemini] ?? ""}`.trim();
-    const claudeTagField = `${proxy[aiTagFieldByKey.claude] ?? ""}`.trim();
-    const aistudioTagField = `${proxy[aiTagFieldByKey.aistudio] ?? ""}`.trim();
-    const allTagField = `${proxy[aiTagFieldByKey.all] ?? ""}`.trim();
+    const aiPayload = proxy.ai;
+    const openaiTagField = `${aiPayload.openai?.[AI_VENDOR_TAG_FIELD] ?? ""}`.trim();
+    const geminiTagField = `${aiPayload.gemini?.[AI_VENDOR_TAG_FIELD] ?? ""}`.trim();
+    const claudeTagField = `${aiPayload.claude?.[AI_VENDOR_TAG_FIELD] ?? ""}`.trim();
+    const googleAiStudioTagField = `${aiPayload.googleAiStudio?.[AI_VENDOR_TAG_FIELD] ?? ""}`.trim();
+    const allTagField = `${aiPayload[AI_ALL_TAG_FIELD] ?? ""}`.trim();
     if (
       openaiTagField ||
-      proxy.canAccessOpenai === true ||
-      proxy._openai === true ||
-      (openaiTag &&
-        new RegExp(
-          `\\s${escapeRegExp(openaiTag)}\\s*$|\\s${escapeRegExp(openaiTag)}\\s+${escapeRegExp(geminiTag)}\\s*$`,
-          "i",
-        ).test(name))
+      aiPayload.openai[AI_CACHE_CAN_ACCESS_FIELD] === true
     ) {
       if (openaiTag) tags.push(openaiTag);
     }
     if (
       geminiTagField ||
-      proxy.canAccessGemini === true ||
-      proxy._gemini === true ||
-      (geminiTag &&
-        new RegExp(`\\s${escapeRegExp(geminiTag)}\\s*$`, "i").test(name))
+      aiPayload.gemini[AI_CACHE_CAN_ACCESS_FIELD] === true
     ) {
       if (geminiTag) tags.push(geminiTag);
     }
     if (
       claudeTagField ||
-      proxy.canAccessClaude === true ||
-      proxy._claude === true ||
-      (claudeTag &&
-        new RegExp(`\\s${escapeRegExp(claudeTag)}\\s*$`, "i").test(name))
+      aiPayload.claude[AI_CACHE_CAN_ACCESS_FIELD] === true
     ) {
       if (claudeTag) tags.push(claudeTag);
     }
     if (
-      aistudioTagField ||
-      proxy.canAccessAistudio === true ||
-      proxy._aistudio === true ||
-      (aistudioTag &&
-        new RegExp(`\\s${escapeRegExp(aistudioTag)}\\s*$`, "i").test(name))
+      googleAiStudioTagField ||
+      aiPayload.googleAiStudio[AI_CACHE_CAN_ACCESS_FIELD] === true
     ) {
-      if (aistudioTag) tags.push(aistudioTag);
+      if (googleAiStudioTag) tags.push(googleAiStudioTag);
     }
     if (
       allTagField ||
-      isAllAiDetectionsSupported(proxy) ||
-      (allTag &&
-        new RegExp(`\\s${escapeRegExp(allTag)}\\s*$`, "i").test(name))
+      aiPayload[AI_ALL_TAG_FIELD] === aiTagByKey.all
     ) {
       if (allTag) tags.push(allTag);
     }
@@ -713,6 +701,7 @@ async function operator(proxies = [], targetPlatform, context) {
     const proxiesToCheck = batch.filter(
       (proxy) => !speedCheckedSet.has(proxy._sorted_index),
     );
+    const speedBatchOrder = proxiesToCheck.map((proxy) => proxy._sorted_index);
 
     if (!proxiesToCheck.length) {
       return { speedPassBatchSet, speedResultBatchMap };
@@ -728,16 +717,91 @@ async function operator(proxies = [], targetPlatform, context) {
       });
       httpMetaPid = batchHttpMeta.pid;
 
+      const latencyResultByIndex = new Map();
+      const latencyDoneByIndex = new Set();
+      let nextLatencyPrintPos = 0;
+      const flushLatencyInOrder = () => {
+        while (
+          nextLatencyPrintPos < speedBatchOrder.length &&
+          latencyDoneByIndex.has(speedBatchOrder[nextLatencyPrintPos])
+        ) {
+          const sortedIndex = speedBatchOrder[nextLatencyPrintPos];
+          const latencyResult = latencyResultByIndex.get(sortedIndex);
+          if (latencyResult?.logText) {
+            logInfo(latencyResult.logText);
+          }
+          nextLatencyPrintPos++;
+        }
+      };
+
       await executeAsyncTasks(
         proxiesToCheck.map((proxy) => async () => {
           const sortedIndex = proxy._sorted_index;
-          const port = batchHttpMeta.portBySortedIndex.get(sortedIndex);
-          if (port === undefined || port === null) {
-            throw new Error(`[${proxy.name}] missing http-meta port mapping`);
-          }
+          try {
+            const port = batchHttpMeta.portBySortedIndex.get(sortedIndex);
+            if (port === undefined || port === null) {
+              latencyResultByIndex.set(sortedIndex, {
+                ok: false,
+                proxy,
+                port: null,
+                logText: `[speed-latency] [${proxy.name}] missing http-meta port mapping`,
+              });
+              return;
+            }
 
-          speedCheckedSet.add(sortedIndex);
-          const speedResult = await checkNormalWithHttpMeta(proxy, port);
+            speedCheckedSet.add(sortedIndex);
+            const latencyResult = await checkSpeedLatencyWithHttpMeta(
+              proxy,
+              port,
+            );
+            latencyResultByIndex.set(sortedIndex, {
+              ...latencyResult,
+              proxy,
+              port,
+            });
+          } finally {
+            latencyDoneByIndex.add(sortedIndex);
+            flushLatencyInOrder();
+          }
+        }),
+        { concurrency: normalConcurrency },
+      );
+
+      flushLatencyInOrder();
+
+      const speedCandidates = speedBatchOrder
+        .map((sortedIndex) => ({
+          sortedIndex,
+          latency: latencyResultByIndex.get(sortedIndex),
+        }))
+        .filter((item) => item.latency?.ok && item.latency?.proxy)
+        .map((item) => ({
+          sortedIndex: item.sortedIndex,
+          proxy: item.latency.proxy,
+          port: item.latency.port,
+          latencyMs: item.latency.latencyMs,
+        }));
+
+      const speedResultBySortedIndex = new Map();
+      const speedDoneByIndex = new Set();
+      let nextSpeedPrintPos = 0;
+      const speedCandidateSet = new Set(
+        speedCandidates.map((item) => item.sortedIndex),
+      );
+      const flushSpeedInOrder = () => {
+        while (nextSpeedPrintPos < speedBatchOrder.length) {
+          const sortedIndex = speedBatchOrder[nextSpeedPrintPos];
+          if (!speedCandidateSet.has(sortedIndex)) {
+            nextSpeedPrintPos++;
+            continue;
+          }
+          if (!speedDoneByIndex.has(sortedIndex)) {
+            break;
+          }
+          const speedResult = speedResultBySortedIndex.get(sortedIndex);
+          if (speedResult?.logText) {
+            logInfo(speedResult.logText);
+          }
           if (speedResult?.ok) {
             speedPassBatchSet.add(sortedIndex);
             speedResultBatchMap.set(sortedIndex, {
@@ -745,9 +809,29 @@ async function operator(proxies = [], targetPlatform, context) {
               measuredSpeedKb: speedResult.measuredSpeedKb,
             });
           }
+          nextSpeedPrintPos++;
+        }
+      };
+
+      await executeAsyncTasks(
+        speedCandidates.map((item) => async () => {
+          const { sortedIndex, proxy, port, latencyMs } = item;
+          try {
+            const speedResult = await checkNormalWithHttpMeta(
+              proxy,
+              port,
+              latencyMs,
+            );
+            speedResultBySortedIndex.set(sortedIndex, speedResult);
+          } finally {
+            speedDoneByIndex.add(sortedIndex);
+            flushSpeedInOrder();
+          }
         }),
         { concurrency: normalConcurrency },
       );
+
+      flushSpeedInOrder();
     } catch (e) {
       logError(e);
     } finally {
@@ -762,6 +846,7 @@ async function operator(proxies = [], targetPlatform, context) {
     const proxiesToCheck = batch.filter(
       (proxy) => !aiCheckedSet.has(proxy._sorted_index),
     );
+    const aiBatchOrder = proxiesToCheck.map((proxy) => proxy._sorted_index);
 
     if (!proxiesToCheck.length || !aiDetections.length) {
       return { aiPassBatchSet };
@@ -783,34 +868,73 @@ async function operator(proxies = [], targetPlatform, context) {
       await executeAsyncTasks(
         proxiesToCheck.map((proxy) => async () => {
           const sortedIndex = proxy._sorted_index;
-          const port = batchHttpMeta.portBySortedIndex.get(sortedIndex);
-          if (port === undefined || port === null) {
-            throw new Error(`[${proxy.name}] missing http-meta port mapping`);
-          }
-
-          aiCheckedSet.add(sortedIndex);
-          let allSuccess = true;
-          for (const detection of aiDetections.filter(Boolean)) {
-            const cacheId = getAiCacheId(proxy, detection);
-            const cached = getAiCache(cacheId);
-            if (cached?.[detection.cacheKey]) {
-              applyAiDetectionSuccess(proxy, detection, cached[detection.cacheLatencyKey]);
-              continue;
-            }
-            if (cached?.unsupported) {
-              allSuccess = false;
-              break;
+          try {
+            const port = batchHttpMeta.portBySortedIndex.get(sortedIndex);
+            if (port === undefined || port === null) {
+              throw new Error(`[${proxy.name}] missing http-meta port mapping`);
             }
 
-            const result = await checkAiWithHttpMeta(proxy, port, detection);
-            if (result.outcome !== "supported") {
-              allSuccess = false;
-              break;
-            }
-          }
+            aiCheckedSet.add(sortedIndex);
+            let allSuccess = true;
+            for (const detection of aiDetections.filter(Boolean)) {
+              const cacheId = getAiCacheId(proxy, detection);
+              if (useCache) {
+                const cached = getAiCache(cacheId);
+                if (cached?.[AI_CACHE_CAN_ACCESS_FIELD]) {
+                  applyDetectionPayloadToProxyAi({
+                    proxy,
+                    detection,
+                    payload: cached,
+                  });
+                  const regionText = getCachedSupportedRegionText({
+                    detection,
+                    cached,
+                  });
+                  enqueueNodeLog(
+                    sortedIndex,
+                    `[${proxy.name}] [${detection.name}] 支持, status=CACHE${regionText}`,
+                  );
+                  continue;
+                }
+                if (cached?.unsupported) {
+                  applyDetectionPayloadToProxyAi({
+                    proxy,
+                    detection,
+                    payload: cached,
+                  });
+                  const regionText =
+                    detection.key === "gemini" && cached.unsupported_region
+                      ? `, country3=${cached.unsupported_region}`
+                      : detection.key === "claude" && cached.unsupported_region
+                        ? `, country2=${cached.unsupported_region}`
+                        : "";
+                  enqueueNodeLog(
+                    sortedIndex,
+                    `[${proxy.name}] [${detection.name}] 不支持(地区限制), status=CACHE${regionText}`,
+                  );
+                  allSuccess = false;
+                  break;
+                }
+              }
 
-          if (allSuccess) {
-            aiPassBatchSet.add(sortedIndex);
+              const result = await checkAiWithHttpMeta(
+                proxy,
+                port,
+                detection,
+                sortedIndex,
+              );
+              if (result.outcome !== "supported") {
+                allSuccess = false;
+                break;
+              }
+            }
+
+            if (allSuccess) {
+              aiPassBatchSet.add(sortedIndex);
+            }
+          } finally {
+            markNodeLogCompleted(sortedIndex);
+            flushReadyNodeLogs(aiBatchOrder);
           }
         }),
         { concurrency: aiConcurrency },
@@ -818,18 +942,19 @@ async function operator(proxies = [], targetPlatform, context) {
     } catch (e) {
       logError(e);
     } finally {
+      flushReadyNodeLogs(aiBatchOrder);
       await stopHttpMetaForBatch(httpMetaPid, "ai");
     }
 
     return { aiPassBatchSet };
   }
 
-  async function checkAiWithHttpMeta(proxy, port, detection) {
+  async function checkAiWithHttpMeta(proxy, port, detection, proxyIndex) {
     const cacheId = getAiCacheId(proxy, detection);
     try {
       const startedAt = Date.now();
       const requestMethod =
-        detection.key === "gemini" || detection.key === "aistudio"
+        detection.key === "gemini" || detection.key === "googleAiStudio"
           ? "get"
           : aiMethod;
       const res = await http({
@@ -883,7 +1008,7 @@ async function operator(proxies = [], targetPlatform, context) {
         bodyText = rawBody;
         claudeCountry2 = getClaudeCountry2(rawBody);
         msg = claudeCountry2 ? `country: ${claudeCountry2}` : "";
-      } else if (detection.key === "aistudio") {
+      } else if (detection.key === "googleAiStudio") {
         const rawBody = String(res.body ?? res.rawBody ?? "");
         body = rawBody;
         try {
@@ -928,7 +1053,22 @@ async function operator(proxies = [], targetPlatform, context) {
       });
 
       if (outcome === "supported") {
-        applyAiDetectionSuccess(proxy, detection, latency);
+        const supportedPayload = {
+          [AI_CACHE_CAN_ACCESS_FIELD]: true,
+          [AI_CACHE_LATENCY_FIELD]: latency,
+          ...(detection.key === "gemini" && geminiCountry3
+            ? { supported_region: geminiCountry3 }
+            : detection.key === "openai" && openaiCountry2
+              ? { supported_region: openaiCountry2 }
+              : detection.key === "claude" && claudeCountry2
+                ? { supported_region: claudeCountry2 }
+                : {}),
+        };
+        applyDetectionPayloadToProxyAi({
+          proxy,
+          detection,
+          payload: supportedPayload,
+        });
         const regionText =
           detection.key === "gemini" && geminiCountry3
             ? `, country3=${geminiCountry3}`
@@ -936,24 +1076,30 @@ async function operator(proxies = [], targetPlatform, context) {
               ? `, country2=${openaiCountry2}`
               : detection.key === "claude" && claudeCountry2
                 ? `, country2=${claudeCountry2}`
-              : "";
-        logInfo(
-          `[${detection.name}] [${proxy.name}] 支持, status=${status}${regionText}`,
+                : "";
+        enqueueNodeLog(
+          proxyIndex,
+          `[${proxy.name}] [${detection.name}] 支持, status=${status}${regionText}`,
         );
         if (shouldWriteAiCache) {
-          setAiCache(cacheId, {
-            [detection.cacheKey]: true,
-            [detection.cacheLatencyKey]: latency,
-            ...(detection.key === "gemini" && geminiCountry3
-              ? { supported_region: geminiCountry3 }
-              : detection.key === "openai" && openaiCountry2
-                ? { supported_region: openaiCountry2 }
-                : detection.key === "claude" && claudeCountry2
-                  ? { supported_region: claudeCountry2 }
-                  : {}),
-          });
+          setAiCache(cacheId, supportedPayload);
         }
       } else if (outcome === "unsupported") {
+        const unsupportedPayload = {
+          unsupported: true,
+          unsupported_message: msg || getUnsupportedMessage(bodyText),
+          unsupported_latency: latency,
+          ...(detection.key === "gemini" && geminiCountry3
+            ? { unsupported_region: geminiCountry3 }
+            : detection.key === "claude" && claudeCountry2
+              ? { unsupported_region: claudeCountry2 }
+              : {}),
+        };
+        applyDetectionPayloadToProxyAi({
+          proxy,
+          detection,
+          payload: unsupportedPayload,
+        });
         const regionText =
           detection.key === "openai" && openaiCountry2
             ? `, country2=${openaiCountry2}`
@@ -966,28 +1112,21 @@ async function operator(proxies = [], targetPlatform, context) {
           detection.key === "gemini" && status === 302 && geminiLocation
             ? `, location=${geminiLocation}`
             : "";
-        logInfo(
-          `[${detection.name}] [${proxy.name}] 不支持(地区限制), status=${status}${regionText}${locationText}`,
+        enqueueNodeLog(
+          proxyIndex,
+          `[${proxy.name}] [${detection.name}] 不支持(地区限制), status=${status}${regionText}${locationText}`,
         );
         if (shouldWriteAiCache) {
-          setAiCache(cacheId, {
-            unsupported: true,
-            unsupported_message: msg || getUnsupportedMessage(bodyText),
-            unsupported_latency: latency,
-            ...(detection.key === "gemini" && geminiCountry3
-              ? { unsupported_region: geminiCountry3 }
-              : detection.key === "claude" && claudeCountry2
-                ? { unsupported_region: claudeCountry2 }
-                : {}),
-          });
+          setAiCache(cacheId, unsupportedPayload);
         }
       } else {
         const detailText = buildErrorText(
           bodyText,
           status === 302 ? locationHeader : "",
         );
-        logInfo(
-          `[${detection.name}] [${proxy.name}] 错误, status=${status}, ${detailText}`,
+        enqueueNodeLog(
+          proxyIndex,
+          `[${proxy.name}] [${detection.name}] 错误, status=${status}, ${detailText}`,
         );
         if (
           isTransientFailure({
@@ -998,9 +1137,6 @@ async function operator(proxies = [], targetPlatform, context) {
           })
         ) {
           return { outcome: "error" };
-        }
-        if (shouldWriteAiCache) {
-          setAiCache(cacheId, {});
         }
       }
 
@@ -1019,8 +1155,9 @@ async function operator(proxies = [], targetPlatform, context) {
         errorBody || errorMessage,
         errorStatus === 302 ? errorLocation : "",
       );
-      logInfo(
-        `[${detection.name}] [${proxy.name}] 错误, status=${errorStatus || "ERR"}, ${detailText}`,
+      enqueueNodeLog(
+        proxyIndex,
+        `[${proxy.name}] [${detection.name}] 错误, status=${errorStatus || "ERR"}, ${detailText}`,
       );
       if (
         isTransientFailure({
@@ -1031,9 +1168,6 @@ async function operator(proxies = [], targetPlatform, context) {
         })
       ) {
         return { outcome: "error" };
-      }
-      if (shouldWriteAiCache) {
-        setAiCache(cacheId, {});
       }
       return { outcome: "error" };
     }
@@ -1053,32 +1187,27 @@ async function operator(proxies = [], targetPlatform, context) {
       });
       const status = parseInt(res.status || res.statusCode || 200, 10);
       const latencyMs = Date.now() - startedAt;
-      logInfo(
-        `[speed-latency] [${proxy.name}] status=${status}, latency=${latencyMs}`,
-      );
+      const logText = `[speed-latency] [${proxy.name}] status=${status}, latency=${latencyMs}`;
 
       if (validStatus.test(`${status}`)) {
         return {
           ok: true,
           latencyMs,
+          logText,
         };
       }
 
-      return { ok: false };
+      return { ok: false, logText };
     } catch (e) {
-      logError(`[speed-latency] [${proxy.name}] ${e.message ?? e}`);
-      return { ok: false };
+      return {
+        ok: false,
+        logText: `[speed-latency] [${proxy.name}] ${e.message ?? e}`,
+      };
     }
   }
 
-  async function checkNormalWithHttpMeta(proxy, port) {
+  async function checkNormalWithHttpMeta(proxy, port, latencyMs = 0) {
     try {
-      const latencyResult = await checkSpeedLatencyWithHttpMeta(proxy, port);
-      if (!latencyResult?.ok) {
-        return { ok: false };
-      }
-
-      const latencyMs = latencyResult.latencyMs;
       const startedAt = Date.now();
       const res = await http({
         proxy: `http://${httpMeta.host}:${port}`,
@@ -1104,9 +1233,7 @@ async function operator(proxies = [], targetPlatform, context) {
           ? Math.min(rawMeasuredSpeedKb, maxMeasuredSpeedKb)
           : 0;
       const withinEffectiveTimeout = effectiveDurationMs <= DEFAULT_TIMEOUT_MS;
-      logInfo(
-        `[speed] [${proxy.name}] status=${status}, duration=${durationMs}, latency=${latencyMs}, effective_duration=${effectiveDurationMs}, effective_timeout=${DEFAULT_TIMEOUT_MS}, bytes=${responseBytes}, max_speed=${formatSpeedText(maxMeasuredSpeedKb)}, speed=${formatSpeedText(measuredSpeedKb)}`,
-      );
+      const logText = `[speed] [${proxy.name}] status=${status}, duration=${durationMs}, latency=${latencyMs}, effective_duration=${effectiveDurationMs}, effective_timeout=${DEFAULT_TIMEOUT_MS}, bytes=${responseBytes}, max_speed=${formatSpeedText(maxMeasuredSpeedKb)}, speed=${formatSpeedText(measuredSpeedKb)}`;
 
       if (
         validStatus.test(`${status}`) &&
@@ -1119,13 +1246,16 @@ async function operator(proxies = [], targetPlatform, context) {
           sortedIndex: proxy._sorted_index,
           durationMs,
           measuredSpeedKb,
+          logText,
         };
       }
 
-      return { ok: false };
+      return { ok: false, logText };
     } catch (e) {
-      logError(`[speed] [${proxy.name}] ${e.message ?? e}`);
-      return { ok: false };
+      return {
+        ok: false,
+        logText: `[speed] [${proxy.name}] ${e.message ?? e}`,
+      };
     }
   }
 
@@ -1173,7 +1303,7 @@ async function operator(proxies = [], targetPlatform, context) {
       if (!country2) return "error";
       return claudeCountry2DenySet.has(country2) ? "unsupported" : "supported";
     }
-    if (detection.key === "aistudio") {
+    if (detection.key === "googleAiStudio") {
       if (
         status === 200 &&
         Array.isArray(body?.models) &&
@@ -1295,75 +1425,38 @@ async function operator(proxies = [], targetPlatform, context) {
     }
   }
 
-  function applyAiDetectionSuccess(proxy, detection, latency) {
-    if (proxy[detection.flagKey] === true) return;
-    proxy[detection.flagKey] = true;
-    proxy[detection.latencyKey] = latency;
-  }
-  function isAllAiDetectionsSupported(proxy = {}) {
-    if (!Array.isArray(aiDetections) || !aiDetections.length) {
-      return false;
-    }
-    return aiDetections.every(
-      (detection) => proxy[detection.flagKey] === true,
-    );
-  }
-
   function toAiProxyOutput(proxy, measuredSpeedKb = 0, durationMs = 0) {
-    let parsed = safeParseProxy(proxy);
+    let parsed = clearOutputAiFields(safeParseProxy(proxy));
+    const sourceAi = proxy.ai;
+    parsed.ai = {
+      openai: { ...sourceAi.openai },
+      gemini: { ...sourceAi.gemini },
+      claude: { ...sourceAi.claude },
+      googleAiStudio: { ...sourceAi.googleAiStudio },
+    };
+    if (sourceAi[AI_ALL_TAG_FIELD] === aiTagByKey.all) {
+      parsed.ai[AI_ALL_TAG_FIELD] = aiTagByKey.all;
+    }
     const baseName = getBaseNameWithSpeed(proxy);
-    const tags = [];
-    for (const detection of aiDetections) {
-      if (proxy[detection.flagKey] === true) {
-        const tag = aiTagByKey[detection.key];
-        const tagField = aiTagFieldByKey[detection.key];
-        if (tag && tagField) tags.push(tag);
-      }
-    }
-    if (isAllAiDetectionsSupported(proxy)) {
-      const allTag = aiTagByKey.all;
-      if (allTag) tags.push(allTag);
-    }
-    const taggedParsed = { ...parsed };
-    for (const key of Object.keys(aiTagFieldByKey)) {
-      const field = aiTagFieldByKey[key];
-      delete taggedParsed[field];
-    }
-    for (const key of Object.keys(aiTagByKey)) {
-      const tag = aiTagByKey[key];
-      const field = aiTagFieldByKey[key];
-      if (!tag || !field) continue;
-      if (tags.includes(tag)) {
-        taggedParsed[field] = tag;
-      }
-    }
-    parsed = cleanupOutputAiStatusFields(taggedParsed).proxy;
     parsed.measuredSpeed = formatLabeledSpeedText(proxy._speed_kb, "A");
     parsed.guaranteedSpeed = formatLabeledSpeedText(measuredSpeedKb, "B");
-    if (durationMs > 0) parsed._duration_ms = `${durationMs}`;
-    parsed.name = formatMeasuredName(
-      baseName,
-      measuredSpeedKb,
-      durationMs,
-    );
+    parsed.name = getOutputProxyName(proxy);
     return parsed;
   }
 
   function toNormalProxyOutput(proxy, measuredSpeedKb, durationMs) {
-    const parsed = cleanupOutputAiStatusFields(safeParseProxy(proxy)).proxy;
-    const baseName = getBaseNameWithSpeed(proxy);
-    parsed.name = formatMeasuredName(baseName, measuredSpeedKb, durationMs);
+    const parsed = clearOutputAiFields(safeParseProxy(proxy));
+    parsed.name = getOutputProxyName(proxy);
     parsed.measuredSpeed = formatLabeledSpeedText(proxy._speed_kb, "A");
     parsed.guaranteedSpeed = formatLabeledSpeedText(measuredSpeedKb, "B");
-    parsed._duration_ms = `${durationMs}`;
     return parsed;
   }
 
-  function formatMeasuredName(
-    name,
-    measuredSpeedKb = 0,
-    durationMs = 0,
-  ) {
+  function getOutputProxyName(proxy = {}) {
+    return `${proxy?._original_name ?? proxy?.name ?? ""}`.trim();
+  }
+
+  function formatMeasuredName(name, measuredSpeedKb = 0, durationMs = 0) {
     const speedSuffix =
       appendMeasuredSpeed && measuredSpeedKb > 0
         ? ` ${formatEstimatedSpeedNameText(measuredSpeedKb)}`
@@ -1381,7 +1474,10 @@ async function operator(proxies = [], targetPlatform, context) {
       const tag = aiTagByKey[key];
       const currentValue = `${nextProxy[field] ?? ""}`;
       const nextValue = tag && uniqueTags.has(tag) ? tag : "";
-      if ((nextValue && currentValue !== nextValue) || (!nextValue && currentValue)) {
+      if (
+        (nextValue && currentValue !== nextValue) ||
+        (!nextValue && currentValue)
+      ) {
         if (!changed) {
           nextProxy = { ...nextProxy };
           changed = true;
@@ -1398,33 +1494,113 @@ async function operator(proxies = [], targetPlatform, context) {
   }
 
   function cleanupOutputAiStatusFields(proxy = {}) {
-    const statusKeys = [
-      "canAccessOpenai",
-      "openaiLatency",
-      "canAccessGemini",
-      "geminiLatency",
-      "canAccessClaude",
-      "claudeLatency",
-      "canAccessAistudio",
-      "aistudioLatency",
-      "_openai",
-      "_openai_latency",
-      "_gemini",
-      "_gemini_latency",
-      "_claude",
-      "_claude_latency",
-      "_aistudio",
-      "_aistudio_latency",
-    ];
-    let changed = false;
-    const nextProxy = { ...proxy };
-    for (const key of statusKeys) {
-      if (nextProxy[key] !== undefined) {
-        delete nextProxy[key];
-        changed = true;
+    const cleaned = clearOutputAiFields(proxy);
+    return { proxy: cleaned, changed: cleaned !== proxy };
+  }
+
+  function applyDetectionPayloadToProxyAi({ proxy, detection, payload = {} }) {
+    ensureProxyAiShape(proxy);
+    const bucket = proxy.ai[detection.key];
+    const nextBucket = {};
+
+    if (payload?.[AI_CACHE_CAN_ACCESS_FIELD]) {
+      nextBucket[AI_CACHE_CAN_ACCESS_FIELD] = true;
+      nextBucket[AI_CACHE_LATENCY_FIELD] = payload[AI_CACHE_LATENCY_FIELD];
+      const tagValue = AI_TAG_VALUE_BY_KEY[detection.key];
+      if (tagValue) {
+        nextBucket[AI_VENDOR_TAG_FIELD] = tagValue;
       }
     }
-    return { proxy: changed ? nextProxy : proxy, changed };
+    if ("supported_region" in payload) {
+      nextBucket.supported_region = payload.supported_region;
+    }
+    if ("unsupported" in payload) {
+      nextBucket.unsupported = payload.unsupported;
+    }
+    if ("unsupported_message" in payload) {
+      nextBucket.unsupported_message = payload.unsupported_message;
+    }
+    if ("unsupported_latency" in payload) {
+      nextBucket.unsupported_latency = payload.unsupported_latency;
+    }
+    if ("unsupported_region" in payload) {
+      nextBucket.unsupported_region = payload.unsupported_region;
+    }
+
+    proxy.ai[detection.key] = { ...bucket, ...nextBucket };
+    applyAggregateAiTag(proxy);
+  }
+
+  function isAllAiDetectionsSupported(proxy = {}) {
+    ensureProxyAiShape(proxy);
+    if (!Array.isArray(aiDetections) || !aiDetections.length) {
+      return false;
+    }
+    const aiPayload = proxy.ai;
+    return aiDetections.every(
+      (detection) =>
+        aiPayload[detection.key][AI_CACHE_CAN_ACCESS_FIELD] === true,
+    );
+  }
+
+  function applyAggregateAiTag(proxy = {}) {
+    if (isAllAiDetectionsSupported(proxy)) {
+      proxy.ai[AI_ALL_TAG_FIELD] = aiTagByKey.all;
+      return;
+    }
+    delete proxy.ai[AI_ALL_TAG_FIELD];
+  }
+
+  function clearOutputAiFields(proxy = {}) {
+    const nextProxy = { ...proxy };
+    ensureProxyAiShape(nextProxy);
+    delete nextProxy.tagOpenai;
+    delete nextProxy.tagGemini;
+    delete nextProxy.tagClaude;
+    delete nextProxy.tagGoogleAiStudio;
+    delete nextProxy.tagAistudio;
+    delete nextProxy.tagAi;
+    delete nextProxy.canAccessOpenai;
+    delete nextProxy.openaiLatency;
+    delete nextProxy.canAccessGemini;
+    delete nextProxy.geminiLatency;
+    delete nextProxy.canAccessClaude;
+    delete nextProxy.claudeLatency;
+    delete nextProxy.canAccessGoogleAiStudio;
+    delete nextProxy.googleAiStudioLatency;
+    delete nextProxy.canAccessAistudio;
+    delete nextProxy.aistudioLatency;
+    delete nextProxy._openai;
+    delete nextProxy._openai_latency;
+    delete nextProxy._gemini;
+    delete nextProxy._gemini_latency;
+    delete nextProxy._claude;
+    delete nextProxy._claude_latency;
+    delete nextProxy._aistudio;
+    delete nextProxy._aistudio_latency;
+    nextProxy.ai = {
+      openai: {},
+      gemini: {},
+      claude: {},
+      googleAiStudio: {},
+    };
+    delete nextProxy.ai[AI_ALL_TAG_FIELD];
+    return nextProxy;
+  }
+
+  function ensureProxyAiShape(proxy = {}) {
+    if (!proxy.ai || typeof proxy.ai !== "object" || Array.isArray(proxy.ai)) {
+      proxy.ai = {};
+    }
+    for (const key of ["openai", "gemini", "claude", "googleAiStudio"]) {
+      if (
+        !proxy.ai[key] ||
+        typeof proxy.ai[key] !== "object" ||
+        Array.isArray(proxy.ai[key])
+      ) {
+        proxy.ai[key] = {};
+      }
+    }
   }
 
   function formatLabeledSpeedText(speedKb = 0, label = "") {
@@ -1550,12 +1726,9 @@ async function operator(proxies = [], targetPlatform, context) {
     return selected;
   }
 
-  function buildAiDetections(
-    options = [],
-    configByKey = AI_DETECTION_CONFIG,
-  ) {
+  function buildAiDetections(options = [], configByKey = AI_DETECTION_CONFIG) {
     return options
-      .map((key) => `${key ?? ""}`.trim().toLowerCase())
+      .map((key) => `${key ?? ""}`.trim())
       .map((key) => configByKey[key])
       .filter(Boolean)
       .map((item) => ({ ...item }));
@@ -1563,13 +1736,71 @@ async function operator(proxies = [], targetPlatform, context) {
 
   function normalizeAiOptions(rawAiDetect) {
     const text = `${rawAiDetect ?? ""}`.trim();
-    if (!text) return [...AI_DEFAULT_OPTIONS];
+    const toCanonicalOption = (option = "") => {
+      const normalized = `${option ?? ""}`.trim().toLowerCase();
+      if (normalized === "google-ai-studio") return "googleAiStudio";
+      return normalized;
+    };
+    if (!text) {
+      return Array.from(new Set(AI_DEFAULT_OPTIONS.map(toCanonicalOption)));
+    }
     const allowed = new Set(AI_ALLOWED_OPTIONS);
     const parsed = text
       .split(",")
       .map((item) => item.trim().toLowerCase())
-      .filter((item) => allowed.has(item));
-    return parsed.length ? Array.from(new Set(parsed)) : [...AI_DEFAULT_OPTIONS];
+      .filter((item) => allowed.has(item))
+      .map((item) => toCanonicalOption(item));
+    return parsed.length
+      ? Array.from(new Set(parsed))
+      : Array.from(new Set(AI_DEFAULT_OPTIONS.map(toCanonicalOption)));
+  }
+
+  function enqueueNodeLog(proxyIndex, text = "") {
+    if (!Number.isInteger(proxyIndex)) return;
+    if (!pendingLogsByIndex.has(proxyIndex)) {
+      pendingLogsByIndex.set(proxyIndex, {
+        logs: [],
+        done: false,
+      });
+    }
+    pendingLogsByIndex.get(proxyIndex).logs.push(`${text ?? ""}`);
+  }
+
+  function markNodeLogCompleted(proxyIndex) {
+    if (!Number.isInteger(proxyIndex)) return;
+    if (!pendingLogsByIndex.has(proxyIndex)) {
+      pendingLogsByIndex.set(proxyIndex, {
+        logs: [],
+        done: true,
+      });
+      return;
+    }
+    pendingLogsByIndex.get(proxyIndex).done = true;
+  }
+
+  function flushReadyNodeLogs(order = []) {
+    if (!Array.isArray(order) || !order.length) return;
+    for (const proxyIndex of order) {
+      const buffered = pendingLogsByIndex.get(proxyIndex);
+      if (!buffered?.done) break;
+      for (const line of buffered.logs) {
+        logAi(line);
+      }
+      pendingLogsByIndex.delete(proxyIndex);
+    }
+  }
+
+  function getCachedSupportedRegionText({ detection, cached = {} }) {
+    if (detection.key === "gemini" && cached.supported_region) {
+      return `, country3=${cached.supported_region}`;
+    }
+    if (
+      (detection.key === "openai" || detection.key === "claude") &&
+      cached.supported_region
+    ) {
+      return `, country2=${cached.supported_region}`;
+    }
+    return "";
   }
 
   function getHeaderValue(headers = {}, key = "") {
@@ -1636,6 +1867,7 @@ async function operator(proxies = [], targetPlatform, context) {
     }
     return bytes;
   }
+
   function buildErrorText(raw = "", location = "", maxLength = 300) {
     const title = truncateText(extractHtmlTitle(raw), maxLength);
     const text = truncateText(toPlainText(raw), maxLength);
@@ -1744,17 +1976,46 @@ async function operator(proxies = [], targetPlatform, context) {
   }
 
   function getAiCache(id) {
-    return cache.get(id, 0, true);
+    const serverWithPort = `${id?.serverWithPort ?? ""}`.trim();
+    const vendorKey = `${id?.vendorKey ?? ""}`.trim();
+    if (!serverWithPort || !vendorKey) return undefined;
+    const nodeStore = store?.[serverWithPort];
+    const aiStore = nodeStore?.ai;
+    if (!aiStore) return undefined;
+    return aiStore[vendorKey];
   }
 
   function setAiCache(id, value) {
-    cache.set(id, value);
+    const serverWithPort = `${id?.serverWithPort ?? ""}`.trim();
+    const vendorKey = `${id?.vendorKey ?? ""}`.trim();
+    if (!serverWithPort || !vendorKey) return;
+    const nodeStore = store?.[serverWithPort] ?? {};
+    const aiStore = nodeStore.ai ?? {};
+    store[serverWithPort] = {
+      ...nodeStore,
+      ai: {
+        ...aiStore,
+        [vendorKey]: value,
+      },
+    };
+    markStoreDirty();
   }
 
   function getAiCacheId(proxy = {}, detection = {}) {
+    const serverWithPort = getServerWithPortFromProxy(proxy);
     const server = proxy._origin_server ?? proxy.server ?? "";
     const port = proxy._origin_port ?? proxy.port ?? "";
-    return `${server}:${port}:${detection.cacheAiName}`;
+    return {
+      serverWithPort: serverWithPort || `${server}:${port}`,
+      vendorKey: detection.cacheAiName,
+    };
+  }
+
+  function getServerWithPortFromProxy(proxy = {}) {
+    const server = `${proxy._origin_server ?? proxy.server ?? ""}`.trim();
+    const port = `${proxy._origin_port ?? proxy.port ?? ""}`.trim();
+    if (!server || !port) return "";
+    return `${server}:${port}`;
   }
 
   function clearLegacyAiFields(proxy = {}) {
@@ -1766,6 +2027,8 @@ async function operator(proxies = [], targetPlatform, context) {
     delete proxy._claude_latency;
     delete proxy._aistudio;
     delete proxy._aistudio_latency;
+    delete proxy._googleAiStudio;
+    delete proxy._googleAiStudio_latency;
   }
 
   function isUnsupportedResult({ message = "", bodyText = "" }) {
@@ -1979,5 +2242,3 @@ function formatSpeedNameText(speedKb = 0) {
   }
   return `${Math.round(kb)}K+/s`;
 }
-
-

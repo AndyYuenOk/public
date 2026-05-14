@@ -1,4 +1,3 @@
 captures/
 *.log
-ednovas/
-private-sub-store/
+private/
