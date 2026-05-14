@@ -163,8 +163,8 @@ function normalizedIsp(isp, country, city) {
       // .replace(/.*Hong Kong Telecommunications.*/i, "HKT")
       .replace(/,|\./g, "")
       // .replace(/Telecommunications/i, "Telecom")
-      .replace(/Television/i, "TV")
-      .replace(/and/i, "&")
+      .replace(/\bTelevision\b/i, "TV")
+      .replace(/\band\b/i, "&")
       .replace(
         /\b(?:networks?|technolog(?:y|ies)|global|telecom|telecommunications|mass|internet|shared|cloud|servers|services|group|company|co|ltd|inc|pte|kk|sa|llc|pty|information|corporation|data|communications|limited|labs|the|link|europe|srl|sas|servers)\b/gi,
         "",
