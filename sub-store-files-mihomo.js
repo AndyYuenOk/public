@@ -3,7 +3,13 @@ let isMainProxyGroupOnly = /true|1/i.test(
   $arguments.proxy_group_only ?? enableFallback,
 );
 
-let enableSmart = /true|1/i.test($options?._req?.query?.smart),
+$options ??= {};
+$options._req ??= {
+  query: { smart: false },
+  headers: { host: "localhost", "user-agent": "" },
+};
+
+let enableSmart = /true|1/i.test($options._req.query.smart),
   autoType = enableSmart ? "smart" : "url-test";
 let regions, allowPatterns, blockPatterns;
 
@@ -147,7 +153,7 @@ let strategyGroups = [
   },
 ];
 
-function main(config = {}) {
+function main(config = { proxies: [], "proxy-providers": {} }) {
   config["geodata-mode"] = true;
   config["geox-url"] = {
     geosite:
@@ -190,15 +196,13 @@ function main(config = {}) {
     proxies: [],
   };
 
-  config["proxy-providers"] ??= {};
-
   let autoSelectGroup,
     autoPrimayGroup,
     autoBackupGroup,
     airportGroups = [],
     healthCheck = {
-      // url: "https://www.gstatic.com/generate_204",
-      url: "https://cp.cloudflare.com/generate_204",
+      url: "https://www.gstatic.com/generate_204",
+      // url: "https://cp.cloudflare.com/generate_204",
       timeout: 1500,
       tolerance: 200,
       "max-failed-times": 1,
@@ -213,12 +217,12 @@ function main(config = {}) {
     };
     autoPrimayGroup = {
       name: "Auto_Primary",
-      type: "url-test",
+      type: autoType,
       proxies: [],
     };
     autoBackupGroup = {
       name: "Auto_Backup",
-      type: "url-test",
+      type: autoType,
       proxies: [],
     };
 
@@ -259,7 +263,7 @@ function main(config = {}) {
 
       config["proxy-providers"][name] = {
         type: "http",
-        url: `http://${$options?._req?.headers?.host}${process.env.SUB_STORE_FRONTEND_BACKEND_PATH}/download/${sub.name}/ClashMeta`,
+        url: `http://${$options._req.headers.host}${process.env.SUB_STORE_FRONTEND_BACKEND_PATH}/download/${sub.name}/ClashMeta`,
         interval: name == "Free" ? 3600 : 86400,
         path: `./proxies/${name}.yaml`,
         "health-check": {
@@ -330,6 +334,18 @@ function main(config = {}) {
   $options._res.headers ??= {};
   $options._res.headers["content-disposition"] =
     'attachment; filename="Fallback' + (enableSmart ? "-Smart" : "") + '"';
+
+  const tailscaleKey = process.env.SUB_STORE_TAILSCALE_KEY;
+  if ($options._req.headers["user-agent"].includes("android") && tailscaleKey) {
+    config.proxies.push({
+      name: "Tailscale",
+      type: "tailscale",
+      hostname: "mihomo",
+      udp: true,
+      "auth-key": tailscaleKey,
+    });
+    config.rules.unshift("IP-CIDR,100.64.0.0/10,Tailscale,no-resolve");
+  }
 
   return config;
 }

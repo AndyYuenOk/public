@@ -5,7 +5,8 @@
 // 并行数量不要太多，避免并发抢带宽。
 const DEFAULT_SPEED_TEST_URL =
   "https://github.com/BitDoctor/speed-test-file/raw/refs/heads/master/1mb.txt";
-const DEFAULT_TIMEOUT_MS = 5000;
+// 握手+协议开销+慢启动大约需要 2-3 秒，测速超时需要适当放宽。
+const DEFAULT_TIMEOUT_MS = 10000;
 const SPEED_REFERENCE_LABEL = "A";
 const BROWSER_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36";
@@ -99,7 +100,7 @@ async function operator(proxies = [], targetPlatform, context) {
 
   // Runtime knobs from script arguments.
   const take = parseInt($arguments.take ?? 10, 10);
-  const appendMeasuredSpeed = /true|1/i.test(`${$arguments.speed ?? 1}`);
+  const enableSpeedTest = /true|1/i.test(`${$arguments.speed ?? 0}`);
   const googleAiStudioKey = `${
     $arguments.googleAiStudio_key ??
     eval("process.env.SUB_STORE_GOOGLE_API_KEY") ??
@@ -180,6 +181,7 @@ async function operator(proxies = [], targetPlatform, context) {
     $arguments.timeout,
     DEFAULT_TIMEOUT_MS,
   );
+  const aiTimeoutMs = parsePositiveInteger($arguments.ai_timeout, 5000);
 
   const aiHttpMetaStartDelay = parseInt(
     $arguments.ai_http_meta_start_delay ??
@@ -275,8 +277,9 @@ async function operator(proxies = [], targetPlatform, context) {
     `[setup] total=${sortedOriginalProxies.length}, core_supported=${internalProxies.length}, take=${take}, ai_target=${aiTarget}, batch_size=${batchSize}`,
   );
   logInfo(`[mode] cache=${useCache ? 1 : 0}`);
+  logInfo(`[ai-timeout] ms=${aiTimeoutMs}`);
   logInfo(
-    `[speed-test] url=${normalUrl}, method=${normalMethod}, size=actual_body, status=${validStatusRaw}`,
+    `[speed-test] enabled=${enableSpeedTest ? 1 : 0}, url=${normalUrl}, method=${normalMethod}, size=actual_body, status=${validStatusRaw}`,
   );
   if (!internalProxies.length) {
     logBoundary("END");
@@ -295,26 +298,45 @@ async function operator(proxies = [], targetPlatform, context) {
     internalProxies.map((proxy) => [proxy._sorted_index, proxy]),
   );
 
-  logInfo(`[speed-stage] start: target=${take}, batch_size=${batchSize}`);
-
   let cursor = 0;
-  while (speedPassSet.size < take && cursor < internalProxies.length) {
-    const batch = internalProxies.slice(cursor, cursor + batchSize);
-    cursor += batchSize;
-    if (!batch.length) continue;
+  if (enableSpeedTest) {
+    logInfo(`[speed-stage] start: target=${take}, batch_size=${batchSize}`);
+    while (speedPassSet.size < take && cursor < internalProxies.length) {
+      const batch = internalProxies.slice(cursor, cursor + batchSize);
+      cursor += batchSize;
+      if (!batch.length) continue;
 
-    const { speedPassBatchSet, speedResultBatchMap } =
-      await processSpeedBatch(batch);
-    addSpeedBatchResults(speedPassBatchSet, speedResultBatchMap);
+      const { speedPassBatchSet, speedResultBatchMap } =
+        await processSpeedBatch(batch);
+      addSpeedBatchResults(speedPassBatchSet, speedResultBatchMap);
+
+      logInfo(
+        `[speed-stage-batch] total=${batch.length}, speed_pass_batch=${speedPassBatchSet.size}, speed_total=${speedPassSet.size}/${take}`,
+      );
+    }
 
     logInfo(
-      `[speed-stage-batch] total=${batch.length}, speed_pass_batch=${speedPassBatchSet.size}, speed_total=${speedPassSet.size}/${take}`,
+      `[speed-stage] done: speed_total=${speedPassSet.size}/${take}, checked=${speedCheckedSet.size}/${internalProxies.length}`,
+    );
+  } else {
+    logInfo(
+      `[speed-stage] skipped: speed=0, use parsed name speed ranking, target=${take}, batch_size=${batchSize}`,
+    );
+    while (speedPassSet.size < take && cursor < internalProxies.length) {
+      const batch = internalProxies.slice(cursor, cursor + batchSize);
+      cursor += batchSize;
+      if (!batch.length) continue;
+
+      addDirectBatchCandidates(batch);
+
+      logInfo(
+        `[speed-stage-batch] total=${batch.length}, speed_pass_batch=${batch.length}, speed_total=${speedPassSet.size}/${take}`,
+      );
+    }
+    logInfo(
+      `[speed-stage] done: speed_total=${speedPassSet.size}/${take}, checked=0/${internalProxies.length}`,
     );
   }
-
-  logInfo(
-    `[speed-stage] done: speed_total=${speedPassSet.size}/${take}, checked=${speedCheckedSet.size}/${internalProxies.length}`,
-  );
 
   if (aiTarget > 0) {
     logInfo(`[ai-stage] start: target=${aiTarget}, batch_size=${batchSize}`);
@@ -342,19 +364,30 @@ async function operator(proxies = [], targetPlatform, context) {
       cursor += batchSize;
       if (!batch.length) continue;
 
-      logInfo(
-        `[speed-refill] start: ai_candidate_total=${countAiCandidates()}/${aiTarget}, speed_total=${speedPassSet.size}`,
-      );
-      const { speedPassBatchSet, speedResultBatchMap } =
-        await processSpeedBatch(batch);
-      addSpeedBatchResults(speedPassBatchSet, speedResultBatchMap);
-      logInfo(
-        `[speed-refill-batch] total=${batch.length}, speed_pass_batch=${speedPassBatchSet.size}, speed_total=${speedPassSet.size}`,
-      );
-      logInfo("========================================");
+      if (enableSpeedTest) {
+        logInfo(
+          `[speed-refill] start: ai_candidate_total=${countAiCandidates()}/${aiTarget}, speed_total=${speedPassSet.size}`,
+        );
+        const { speedPassBatchSet, speedResultBatchMap } =
+          await processSpeedBatch(batch);
+        addSpeedBatchResults(speedPassBatchSet, speedResultBatchMap);
+        logInfo(
+          `[speed-refill-batch] total=${batch.length}, speed_pass_batch=${speedPassBatchSet.size}, speed_total=${speedPassSet.size}`,
+        );
+        logInfo("========================================");
 
-      if (!speedPassBatchSet.size && cursor >= internalProxies.length) {
-        break;
+        if (!speedPassBatchSet.size && cursor >= internalProxies.length) {
+          break;
+        }
+      } else {
+        logInfo(
+          `[speed-refill] skipped-speed-test: ai_candidate_total=${countAiCandidates()}/${aiTarget}, speed_total=${speedPassSet.size}`,
+        );
+        addDirectBatchCandidates(batch);
+        logInfo(
+          `[speed-refill-batch] total=${batch.length}, speed_pass_batch=${batch.length}, speed_total=${speedPassSet.size}`,
+        );
+        logInfo("========================================");
       }
     }
 
@@ -437,6 +470,15 @@ async function operator(proxies = [], targetPlatform, context) {
       speedResultByIndex.set(sortedIndex, speedResult);
     }
     for (const sortedIndex of speedPassBatchSet) {
+      speedPassSet.add(sortedIndex);
+      candidateSet.add(sortedIndex);
+    }
+  }
+
+  function addDirectBatchCandidates(batch = []) {
+    for (const proxy of batch) {
+      const sortedIndex = proxy?._sorted_index;
+      if (sortedIndex === undefined || sortedIndex === null) continue;
       speedPassSet.add(sortedIndex);
       candidateSet.add(sortedIndex);
     }
@@ -857,6 +899,14 @@ async function operator(proxies = [], targetPlatform, context) {
       return { aiPassBatchSet };
     }
 
+    // Pre-create ordered log slots so flush can distinguish "not ready" from "already flushed".
+    for (const sortedIndex of aiBatchOrder) {
+      pendingLogsByIndex.set(sortedIndex, {
+        logs: [],
+        done: false,
+      });
+    }
+
     let httpMetaPid;
     try {
       for (const proxy of proxiesToCheck) {
@@ -865,7 +915,7 @@ async function operator(proxies = [], targetPlatform, context) {
       const batchHttpMeta = await startHttpMetaForBatch(proxiesToCheck, {
         label: "ai",
         startDelay: aiHttpMetaStartDelay,
-        proxyTimeout: timeoutMs,
+        proxyTimeout: aiTimeoutMs,
         timeoutMultiplier: aiDetections.length,
       });
       httpMetaPid = batchHttpMeta.pid;
@@ -978,6 +1028,7 @@ async function operator(proxies = [], targetPlatform, context) {
       const res = await http({
         proxy: `http://${httpMeta.host}:${port}`,
         method: requestMethod,
+        timeout: aiTimeoutMs,
         headers: {
           "User-Agent": detection.userAgent,
         },
@@ -1479,7 +1530,7 @@ async function operator(proxies = [], targetPlatform, context) {
 
   function formatMeasuredName(name, measuredSpeedKb = 0, durationMs = 0) {
     const speedSuffix =
-      appendMeasuredSpeed && measuredSpeedKb > 0
+      enableSpeedTest && measuredSpeedKb > 0
         ? ` ${formatEstimatedSpeedNameText(measuredSpeedKb)}`
         : "";
     return `${name}${speedSuffix}`;
@@ -1856,6 +1907,9 @@ async function operator(proxies = [], targetPlatform, context) {
     if (!Array.isArray(order) || !order.length) return;
     for (const proxyIndex of order) {
       const buffered = pendingLogsByIndex.get(proxyIndex);
+      if (!buffered) {
+        continue;
+      }
       if (!buffered?.done) break;
       for (const line of buffered.logs) {
         logAi(line);

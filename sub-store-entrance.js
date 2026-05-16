@@ -91,6 +91,7 @@ async function operator(proxies = [], targetPlatform, context) {
   const method = $arguments.method || "get";
   const url =
     $arguments.api || `http://ip-api.com/json/{{proxy.server}}?lang=en`;
+  const ipwhoApiUrl = $arguments.ipwho_api || `https://ipwho.is/`;
   const isIpApiUrl = /^https?:\/\/ip-api\.com\/json\//i.test(url);
   const { sourceName, sourceStore } = getSourceCacheContext(context.source);
   const nodeCount = proxies.length;
@@ -210,8 +211,14 @@ async function operator(proxies = [], targetPlatform, context) {
       const { proxy, serverWithPort } = context;
       if (useCache) {
         const cachedEntry = getStructuredEntranceEntry(serverWithPort);
-        const cachedApi = cachedEntry?.entrance?.["ip-api"];
-        if (cachedApi) {
+        const cachedIpApi = sanitizeEntranceIpApiPayload(
+          cachedEntry?.entrance?.["ip-api"] || {},
+        );
+        const cachedIpwho = sanitizeIpwhoPayload(
+          cachedEntry?.entrance?.ipwho || {},
+        );
+        const cachedApi = mergeApiResult(cachedIpApi, cachedIpwho);
+        if (hasUsableApiPayload(cachedApi)) {
           const cacheInfo = internal
             ? formatCountryAsoAsInfo(cachedApi)
             : formatIpApiInfo(cachedApi);
@@ -301,7 +308,11 @@ async function operator(proxies = [], targetPlatform, context) {
             );
           }
           if (shouldWriteCache) {
-            setStructuredEntranceEntry({ serverWithPort, ipApi: api });
+            setStructuredEntranceEntry({
+              serverWithPort,
+              ipApi: ipApiResult.ipApi,
+              ipwho: ipApiResult.ipwho,
+            });
           }
         }
       } else {
@@ -359,28 +370,102 @@ async function operator(proxies = [], targetPlatform, context) {
     const query = String(url).split("?")[1];
     return `http://ip-api.com/json/${encodeURIComponent(ip)}${query ? `?${query}` : ""}`;
   }
+  function getIpwhoApiUrl(proxy = {}, queryServer = "") {
+    const raw = String(ipwhoApiUrl || "").trim();
+    if (!raw) return "";
+    if (raw.includes("{{")) {
+      return formatter({
+        proxy: { ...proxy, server: queryServer },
+        format: raw,
+      });
+    }
+    if (/^https?:\/\/ipwho\.is\/?$/i.test(raw)) {
+      return `https://ipwho.is/${encodeURIComponent(queryServer)}`;
+    }
+    if (/^https?:\/\//i.test(raw)) {
+      if (/[?&]ip=/.test(raw)) {
+        return raw;
+      }
+      if (raw.includes("?")) {
+        return `${raw}&ip=${encodeURIComponent(queryServer)}`;
+      }
+      const normalizedBase = raw.endsWith("/") ? raw : `${raw}/`;
+      return `${normalizedBase}${encodeURIComponent(queryServer)}`;
+    }
+    return raw;
+  }
+  async function requestJson(opt = {}) {
+    const res = await http(opt);
+    let payload = lodash_get(res, "body");
+    if (typeof payload === "string") {
+      try {
+        payload = JSON.parse(payload);
+      } catch (e) {}
+    }
+    return {
+      payload,
+      status: parseInt(res.status || res.statusCode || 200),
+    };
+  }
   async function getIpApiResult(proxy, queryServer, startedAt) {
     ipApiRequestCount += 1;
-    const res = await http({
-      method,
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Mobile/15E148 Safari/604.1",
-      },
-      url: isIpApiUrl
-        ? getIpApiUrl(queryServer)
-        : formatter({
-            proxy: { ...proxy, server: queryServer },
-            format: url,
-          }),
-    });
-    let api = String(lodash_get(res, "body"));
+    const headers = {
+      "User-Agent":
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Mobile/15E148 Safari/604.1",
+    };
+    let ipApi = {};
+    let ipApiStatus = 0;
+    let ipApiError = null;
     try {
-      api = JSON.parse(api);
-    } catch (e) {}
+      const ipApiResponse = await requestJson({
+        method,
+        headers,
+        url: isIpApiUrl
+          ? getIpApiUrl(queryServer)
+          : formatter({
+              proxy: { ...proxy, server: queryServer },
+              format: url,
+            }),
+      });
+      ipApiStatus = ipApiResponse.status;
+      ipApi = sanitizeEntranceIpApiPayload(ipApiResponse.payload);
+    } catch (e) {
+      ipApiError = e;
+    }
+
+    let ipwho = {};
+    let ipwhoStatus = 0;
+    const shouldFallbackToIpwho =
+      !internal &&
+      isIpApiUrl &&
+      (ipApiError || ipApiStatus !== 200 || !hasUsableApiPayload(ipApi));
+    if (shouldFallbackToIpwho) {
+      try {
+        const ipwhoResponse = await requestJson({
+          method,
+          headers,
+          url: getIpwhoApiUrl(proxy, queryServer),
+        });
+        ipwhoStatus = ipwhoResponse.status;
+        ipwho = normalizeIpwhoApi(ipwhoResponse.payload);
+      } catch (e) {}
+    }
+
+    const api = mergeApiResult(ipApi, ipwho);
+    if (!hasUsableApiPayload(api) && ipApiError) {
+      throw ipApiError;
+    }
+    const status =
+      ipApiStatus === 200
+        ? 200
+        : ipwhoStatus === 200 && hasUsableApiPayload(ipwho)
+          ? 200
+          : ipApiStatus || ipwhoStatus || 0;
     return {
       api,
-      status: parseInt(res.status || res.statusCode || 200),
+      ipApi,
+      ipwho,
+      status,
       latency: `${Date.now() - startedAt}`,
     };
   }
@@ -415,18 +500,9 @@ async function operator(proxies = [], targetPlatform, context) {
       city: api.city,
       region: api.regionName,
       isp: api.isp,
+      org: api.org || "",
       asn: extractAsnCode(api.asn || api.as || api.aso || ""),
     };
-    // Clear legacy flat fields to avoid mixed output during transition.
-    delete proxy.entranceIp;
-    delete proxy.entranceCountryCode;
-    delete proxy.entranceCountry;
-    delete proxy.entranceRegionCode;
-    delete proxy.entranceCity;
-    delete proxy.entranceRegion;
-    delete proxy.entranceIsp;
-    delete proxy.entranceAsn;
-    delete proxy.entranceGroup;
   }
   async function getQueryServer(proxy) {
     const server = String(proxy.server || "").trim();
@@ -466,6 +542,59 @@ async function operator(proxies = [], targetPlatform, context) {
   }
   function getReturnedIp(api = {}, fallback = "") {
     return api?.query || api?.ip || fallback || "";
+  }
+  function normalizeIpwhoApi(source = {}) {
+    const sanitized = sanitizeIpwhoPayload(source);
+    if (!hasUsableApiPayload(sanitized)) {
+      return {};
+    }
+    return sanitized;
+  }
+  function mergeApiResult(primary = {}, fallback = {}) {
+    const merged = isPlainObject(primary) ? { ...primary } : {};
+    if (!isPlainObject(fallback)) {
+      return merged;
+    }
+    const fillableFields = [
+      "query",
+      "ip",
+      "country",
+      "countryCode",
+      "region",
+      "regionName",
+      "city",
+      "isp",
+      "org",
+      "asn",
+      "as",
+      "aso",
+    ];
+    for (const field of fillableFields) {
+      if (!hasValue(merged[field]) && hasValue(fallback[field])) {
+        merged[field] = fallback[field];
+      }
+    }
+    return merged;
+  }
+  function hasUsableApiPayload(source = {}) {
+    if (!isPlainObject(source)) return false;
+    return [
+      source.query,
+      source.ip,
+      source.country,
+      source.countryCode,
+      source.region,
+      source.regionName,
+      source.city,
+      source.isp,
+      source.org,
+      source.asn,
+      source.as,
+      source.aso,
+    ].some((value) => hasValue(value));
+  }
+  function hasValue(value) {
+    return value !== undefined && value !== null && String(value).trim() !== "";
   }
   function extractAsnCode(value = "") {
     const text = String(value || "").toUpperCase();
@@ -548,17 +677,25 @@ async function operator(proxies = [], targetPlatform, context) {
   }
   function setStructuredEntranceEntry({
     serverWithPort = "",
-    ipApi = {},
+    ipApi,
+    ipwho,
   } = {}) {
     const safeServerWithPort = String(serverWithPort || "").trim();
     if (!safeServerWithPort) return;
     const existingEntry = isPlainObject(sourceStore[safeServerWithPort])
       ? sourceStore[safeServerWithPort]
       : {};
+    const existingEntrance = isPlainObject(existingEntry.entrance)
+      ? existingEntry.entrance
+      : {};
     sourceStore[safeServerWithPort] = {
       ...existingEntry,
       entrance: {
-        "ip-api": sanitizeEntranceIpApiPayload(ipApi),
+        ...existingEntrance,
+        ...(ipApi !== undefined
+          ? { "ip-api": sanitizeEntranceIpApiPayload(ipApi) }
+          : {}),
+        ...(ipwho !== undefined ? { ipwho: sanitizeIpwhoPayload(ipwho) } : {}),
       },
     };
   }
@@ -571,6 +708,32 @@ async function operator(proxies = [], targetPlatform, context) {
     delete sanitized.lon;
     delete sanitized.timezone;
     return sanitized;
+  }
+  function sanitizeIpwhoPayload(source = {}) {
+    if (!isPlainObject(source)) return {};
+    if (source.success === false) return {};
+    const connection = isPlainObject(source.connection) ? source.connection : {};
+    const asnRaw = connection.asn ?? source.asn ?? "";
+    const asnText = String(asnRaw || "").trim();
+    const normalizedAsn = asnText
+      ? /^AS/i.test(asnText)
+        ? asnText.toUpperCase()
+        : /^\d+$/.test(asnText)
+          ? `AS${asnText}`
+          : asnText
+      : "";
+    return {
+      query: String(source.ip || source.query || "").trim(),
+      ip: String(source.ip || "").trim(),
+      country: String(source.country || "").trim(),
+      countryCode: String(source.country_code || source.countryCode || "").trim(),
+      region: String(source.region_code || source.region || "").trim(),
+      regionName: String(source.region || source.regionName || "").trim(),
+      city: String(source.city || "").trim(),
+      isp: String(connection.isp || source.isp || "").trim(),
+      org: String(connection.org || source.org || "").trim(),
+      asn: normalizedAsn,
+    };
   }
   function isPlainObject(value) {
     return value && typeof value === "object" && !Array.isArray(value);

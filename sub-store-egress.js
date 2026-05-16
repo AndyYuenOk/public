@@ -661,21 +661,11 @@ async function operator(proxies = [], targetPlatform, context) {
       region: api.regionName ?? "",
       city: api.city ?? "",
       isp: api.isp ?? "",
+      org: api.org ?? "",
       asn: api.asn ?? "",
       isResidential:
         typeof api.isResidential === "boolean" ? api.isResidential : "",
     };
-    // Clear legacy flat fields to avoid mixed output during transition.
-    delete proxy.egressIp;
-    delete proxy.egressCountryCode;
-    delete proxy.egressCountry;
-    delete proxy.egressRegionCode;
-    delete proxy.egressRegion;
-    delete proxy.egressCity;
-    delete proxy.egressIsp;
-    delete proxy.egressAsn;
-    delete proxy.egressIsResidential;
-    delete proxy.egressGroup;
   }
 
   function formatIpApiInfo(api = {}) {
@@ -807,6 +797,9 @@ async function operator(proxies = [], targetPlatform, context) {
       if (!merged.isp && ipwho.isp) {
         merged.isp = ipwho.isp;
       }
+      if (!merged.org && ipwho.org) {
+        merged.org = ipwho.org;
+      }
       if (!merged.asn && ipwho.asn) {
         merged.asn = ipwho.asn;
       }
@@ -835,6 +828,7 @@ async function operator(proxies = [], targetPlatform, context) {
       regionName: String(source.region || "").trim(),
       city: String(source.city || "").trim(),
       isp: String(connection.isp || connection.org || "").trim(),
+      org: String(connection.org || "").trim(),
       asn: asnCode,
     };
   }
