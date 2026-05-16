@@ -1,3 +1,5 @@
 captures/
 *.log
 private/
+Sub-Store/
+Sub-Store-Front-End/
