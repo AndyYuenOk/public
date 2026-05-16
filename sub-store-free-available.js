@@ -1,5 +1,4 @@
-﻿const FREE_STORE_FINAL_PROXIES_FIELD = "finalProxies";
-// 测速文件，需要在超时时间内下载完成，目标越小越好。
+﻿// 测速文件，需要在超时时间内下载完成，目标越小越好。
 // 由于下载爬坡等因素，估算速度 != 实际速度，但能保证最低速度。
 // https://github.com/litterinchina/large-file-download-test
 // 并行数量不要太多，避免并发抢带宽。
@@ -77,6 +76,7 @@ async function operator(proxies = [], targetPlatform, context) {
       `==================== [HTTP META ${phase}${label ? ` ${label}` : ""}] ====================`,
     );
   logBoundary("START");
+  cleanupLegacyFinalProxiesField();
   const markStoreDirty = () => {
     storeDirty = true;
   };
@@ -499,16 +499,13 @@ async function operator(proxies = [], targetPlatform, context) {
   }
 
   function tryReturnFinalProxiesCache() {
-    // Return deep-cloned records to avoid mutation leaks.
-    const cached = store[FREE_STORE_FINAL_PROXIES_FIELD];
-    if (!Array.isArray(cached)) return null;
-
-    const cachedProxies = Array.isArray(cached) ? cloneProxyList(cached) : [];
+    const cachedProxies = readTopLevelFinalProxies();
+    if (!cachedProxies.length) return null;
 
     const { proxies: normalizedProxies, changed } =
       normalizeFinalProxyNames(cachedProxies);
     if (changed) {
-      store[FREE_STORE_FINAL_PROXIES_FIELD] = cloneProxyList(normalizedProxies);
+      writeTopLevelFinalProxies(normalizedProxies);
       markStoreDirty();
       logInfo(
         `[cache-final] normalize names proxies=${normalizedProxies.length}`,
@@ -524,13 +521,13 @@ async function operator(proxies = [], targetPlatform, context) {
       ? normalizeFinalProxyNames(records).proxies
       : [];
 
-    store[FREE_STORE_FINAL_PROXIES_FIELD] = proxiesForCache;
+    writeTopLevelFinalProxies(proxiesForCache);
     markStoreDirty();
     logInfo(`[cache-final] save proxies=${proxiesForCache.length}`);
   }
 
   function pruneStoreToFinalProxies(records = []) {
-    const keepKeys = new Set([FREE_STORE_FINAL_PROXIES_FIELD]);
+    const keepKeys = new Set();
     for (const record of records) {
       const serverWithPort = getServerWithPortFromProxy(record?.proxy);
       if (serverWithPort) {
@@ -547,8 +544,68 @@ async function operator(proxies = [], targetPlatform, context) {
     }
     if (changed) {
       markStoreDirty();
-      logInfo(`[cache-store] prune keep=${keepKeys.size - 1}`);
+      logInfo(`[cache-store] prune keep=${keepKeys.size}`);
     }
+  }
+
+  function readTopLevelFinalProxies() {
+    const cachedProxies = [];
+    for (const [serverWithPort, record] of Object.entries(store)) {
+      if (!isServerWithPortKey(serverWithPort)) continue;
+      if (!isPlainObject(record)) continue;
+      cachedProxies.push(fromFinalProxyRecord(serverWithPort, record));
+    }
+    return cachedProxies;
+  }
+
+  function writeTopLevelFinalProxies(proxies = []) {
+    for (const key of Object.keys(store)) {
+      if (isServerWithPortKey(key) || key === "finalProxies") {
+        delete store[key];
+      }
+    }
+
+    for (const proxy of proxies) {
+      const serverWithPort = getServerWithPortFromProxy(proxy);
+      if (!serverWithPort) continue;
+      store[serverWithPort] = toFinalProxyRecord(proxy);
+    }
+  }
+
+  function cleanupLegacyFinalProxiesField() {
+    if (Object.prototype.hasOwnProperty.call(store, "finalProxies")) {
+      delete store.finalProxies;
+      markStoreDirty();
+    }
+  }
+
+  function isServerWithPortKey(value = "") {
+    return /^.+:\d+$/.test(String(value || "").trim());
+  }
+
+  function toFinalProxyRecord(proxy = {}) {
+    return {
+      ai: isPlainObject(proxy.ai) ? proxy.ai : {},
+      egress: isPlainObject(proxy.egress) ? proxy.egress : {},
+      entrance: isPlainObject(proxy.entrance) ? proxy.entrance : {},
+    };
+  }
+
+  function fromFinalProxyRecord(serverWithPort = "", record = {}) {
+    const [server, portText] = String(serverWithPort || "").split(":");
+    const port = parseInt(portText, 10);
+    return {
+      name: "",
+      server: String(server || ""),
+      port: Number.isFinite(port) ? port : portText,
+      ai: isPlainObject(record.ai) ? record.ai : {},
+      egress: isPlainObject(record.egress) ? record.egress : {},
+      entrance: isPlainObject(record.entrance) ? record.entrance : {},
+    };
+  }
+
+  function isPlainObject(value) {
+    return value && typeof value === "object" && !Array.isArray(value);
   }
 
   function normalizeFinalProxyNames(records = []) {
@@ -2370,3 +2427,5 @@ function formatSpeedNameText(speedKb = 0) {
   }
   return `${Math.round(kb)}K+/s`;
 }
+
+

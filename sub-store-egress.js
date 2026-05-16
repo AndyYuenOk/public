@@ -749,7 +749,7 @@ async function operator(proxies = [], targetPlatform, context) {
     sourceStore[safeServerWithPort] = {
       ...existingEntry,
       egress: {
-        "ip-api": isPlainObject(ipApi) ? ipApi : {},
+        "ip-api": sanitizeEgressIpApiPayload(ipApi),
         ippure: sanitizeIppurePayload(ippure),
         ipwho: sanitizeIpwhoPayload(ipwho),
       },
@@ -848,6 +848,15 @@ async function operator(proxies = [], targetPlatform, context) {
     if (!isPlainObject(source)) return {};
     if (typeof source.isResidential !== "boolean") return {};
     return { isResidential: source.isResidential };
+  }
+  function sanitizeEgressIpApiPayload(source = {}) {
+    if (!isPlainObject(source)) return {};
+    const sanitized = { ...source };
+    delete sanitized.status;
+    delete sanitized.lat;
+    delete sanitized.lon;
+    delete sanitized.timezone;
+    return sanitized;
   }
   function sanitizeIpwhoPayload(source = {}) {
     if (!isPlainObject(source)) return {};
