@@ -356,7 +356,7 @@ async function operator(proxies = [], targetPlatform, context) {
           detection,
           proxyIndex,
         });
-        if (shouldWriteCache && cachedDetection !== undefined) {
+        if (shouldWriteCache && shouldPersistDetectionPayload(cachedDetection)) {
           aiPayload[detection.key] = cachedDetection;
         }
         if (cachedDetection !== undefined) {
@@ -368,7 +368,7 @@ async function operator(proxies = [], targetPlatform, context) {
         }
       }
       applyAggregateAiTag(proxy._proxies_index);
-      if (shouldWriteCache) {
+      if (shouldWriteCache && Object.keys(aiPayload).length > 0) {
         setStructuredAiEntry({
           cacheKey: getProxyCacheKey(proxy),
           aiPayload,
@@ -990,10 +990,20 @@ async function operator(proxies = [], targetPlatform, context) {
     const existingEntry = isPlainObject(sourceStore[safeCacheKey])
       ? sourceStore[safeCacheKey]
       : {};
+    const existingAi = isPlainObject(existingEntry.ai) ? existingEntry.ai : {};
     sourceStore[safeCacheKey] = {
       ...existingEntry,
-      ai: isPlainObject(aiPayload) ? aiPayload : {},
+      ai: {
+        ...existingAi,
+        ...(isPlainObject(aiPayload) ? aiPayload : {}),
+      },
     };
+  }
+  function shouldPersistDetectionPayload(payload = {}) {
+    if (!isPlainObject(payload)) return false;
+    if (payload?.[AI_CACHE_CAN_ACCESS_FIELD] === true) return true;
+    if (payload?.unsupported === true) return true;
+    return false;
   }
   function enqueueNodeLog(proxyIndex, message = "") {
     const index = Number.isInteger(proxyIndex)

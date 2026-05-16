@@ -4,13 +4,16 @@ async function operator(proxies, targetPlatform, context) {
     context.entranceCache = 0;
     context.egressCache = 0;
     context.aiCache = 0;
-    if (
-      context.entranceCache == 0 &&
-      context.egressCache == 0 &&
-      context.aiCache == 0
-    ) {
-      const firstSource = Object.values(context.source)[0];
-      $substore.delete(`${firstSource.name}-${firstSource.displayName}`);
+
+    const source = Object.values(context.source)[0];
+    const key = `#${source.name}-${source.displayName}`;
+    const proxyMap = $substore.read(key) ?? {};
+    const names = proxies.map((proxy) => proxy.name);
+    for (const name in proxyMap) {
+      if (!names.includes(name)) {
+        delete proxyMap[name];
+      }
     }
+    $substore.write(proxyMap, key);
   }
 }

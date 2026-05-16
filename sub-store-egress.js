@@ -402,17 +402,17 @@ async function operator(proxies = [], targetPlatform, context) {
         );
         api = ipApiResult.api;
         const status = ipApiResult.status;
-        if (shouldWriteCache) {
-          setStructuredEgressEntry({
-            cacheKey: proxyKey,
-            ipApi: ipApiResult?.sourceApi?.["ip-api"] ?? {},
-            ippure: ipApiResult?.sourceApi?.ippure ?? {},
-            ipwho: ipApiResult?.sourceApi?.ipwho ?? {},
-          });
-        }
 
         const validApi = eval(formatter({ api, format: valid, regex }));
         if (status === 200 && validApi) {
+          if (shouldWriteCache) {
+            setStructuredEgressEntry({
+              cacheKey: proxyKey,
+              ipApi: ipApiResult?.sourceApi?.["ip-api"] ?? {},
+              ippure: ipApiResult?.sourceApi?.ippure ?? {},
+              ipwho: ipApiResult?.sourceApi?.ipwho ?? {},
+            });
+          }
           applyEgressInfo(targetProxy, api);
           if (shouldRename) {
             targetProxy.name = formatter({
