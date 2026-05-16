@@ -80,12 +80,13 @@ async function operator(proxies = [], targetPlatform, context) {
 
   if (useCache) {
     for (const proxy of Array.isArray(proxies) ? proxies : []) {
+      const proxyKey = getProxyCacheKey(proxy);
       const serverWithPort = getServerWithPort(proxy);
 
       // Keep output fields deterministic in cache-only mode.
       applyEgressInfo(proxy, {});
 
-      const cachedEntry = getStructuredEgressEntry(serverWithPort);
+      const cachedEntry = getStructuredEgressEntry(proxyKey);
       const cachedApi = mergeApiResult(
         cachedEntry?.egress?.["ip-api"],
         cachedEntry?.egress?.ippure,
@@ -295,6 +296,7 @@ async function operator(proxies = [], targetPlatform, context) {
     const index = internalProxies.indexOf(proxy);
     if (index < 0) return;
 
+    const proxyKey = getProxyCacheKey(proxy);
     const serverWithPort = getServerWithPort(proxy);
     const queryServer = String(proxy.server || "").trim();
     const targetProxy = proxies[proxy._proxies_index];
@@ -305,7 +307,7 @@ async function operator(proxies = [], targetPlatform, context) {
 
     try {
       if (useCache) {
-        const cachedEntry = getStructuredEgressEntry(serverWithPort);
+        const cachedEntry = getStructuredEgressEntry(proxyKey);
         const cachedApi = mergeApiResult(
           cachedEntry?.egress?.["ip-api"],
           cachedEntry?.egress?.ippure,
@@ -365,7 +367,7 @@ async function operator(proxies = [], targetPlatform, context) {
         };
         if (shouldWriteCache) {
           setStructuredEgressEntry({
-            serverWithPort,
+            cacheKey: proxyKey,
             ipApi: api,
             ippure: {},
             ipwho: {},
@@ -393,7 +395,7 @@ async function operator(proxies = [], targetPlatform, context) {
       } else {
         const ipApiResult = await getIpApiResult(
           proxy,
-          serverWithPort,
+          proxyKey,
           queryServer,
           startedAt,
           index,
@@ -402,7 +404,7 @@ async function operator(proxies = [], targetPlatform, context) {
         const status = ipApiResult.status;
         if (shouldWriteCache) {
           setStructuredEgressEntry({
-            serverWithPort,
+            cacheKey: proxyKey,
             ipApi: ipApiResult?.sourceApi?.["ip-api"] ?? {},
             ippure: ipApiResult?.sourceApi?.ippure ?? {},
             ipwho: ipApiResult?.sourceApi?.ipwho ?? {},
@@ -461,12 +463,12 @@ async function operator(proxies = [], targetPlatform, context) {
 
   async function getIpApiResult(
     proxy,
-    serverWithPort,
+    proxyKey,
     queryServer,
     startedAt,
     index,
   ) {
-    const requestKey = String(serverWithPort || queryServer || "").trim();
+    const requestKey = String(proxyKey || "").trim();
     if (useCache) {
       if (ipApiRequestCache.has(requestKey)) {
         return { ...ipApiRequestCache.get(requestKey), source: "shared-cache" };
@@ -495,69 +497,60 @@ async function operator(proxies = [], targetPlatform, context) {
       };
 
       if (isIpApiUrl) {
-        const [ipApiSettled, ippureSettled] = await Promise.allSettled([
-          requestJson({
-            proxy: proxyUrl,
-            method,
-            headers,
-            url: getIpApiUrl(queryServer),
-          }),
-          requestJson({
-            proxy: proxyUrl,
-            method,
-            headers,
-            url: ippureUrl,
-          }),
-        ]);
+        const [ipApiSettled, ippureSettled, ipwhoSettled] =
+          await Promise.allSettled([
+            requestJson({
+              proxy: proxyUrl,
+              method,
+              headers,
+              url: getIpApiUrl(queryServer),
+            }),
+            requestJson({
+              proxy: proxyUrl,
+              method,
+              headers,
+              url: ippureUrl,
+            }),
+            requestJson({
+              proxy: proxyUrl,
+              method,
+              headers,
+              url: getIpwhoUrl(),
+            }),
+          ]);
 
         const ipApiPayload = getSettledPayload(ipApiSettled);
         const ippurePayload = getSettledPayload(ippureSettled);
-        let ipwhoPayload = {
-          ok: false,
-          status: 0,
-          api: {},
-          error: "",
-          rawBody: "",
-          titlePreview: "",
-          bodyPreview: "",
-        };
+        let ipwhoPayload = getSettledPayload(ipwhoSettled);
+        if (ipwhoPayload.ok) {
+          const normalizedIpwho = normalizeIpwhoApi(ipwhoPayload.api);
+          const normalizedOk = hasMergedApiData(normalizedIpwho);
+          ipwhoPayload = {
+            ...ipwhoPayload,
+            ok: normalizedOk,
+            api: normalizedOk ? normalizedIpwho : {},
+            error: normalizedOk ? ipwhoPayload.error : "empty ipwho payload",
+          };
+        }
 
         if (!ipApiPayload.ok) {
           if (isRequestTimeoutError(ipApiPayload)) {
             enqueueRequestStatusLog(
               index,
-              `[${proxy.name}] dual-api error [ip-api]: ${formatApiErrorDetail(ipApiPayload)}, timeout, skip ipwho fallback`,
+              `[${proxy.name}] dual-api error [ip-api]: ${formatApiErrorDetail(ipApiPayload)}, timeout, ipwho already requested in parallel`,
             );
           } else {
             enqueueRequestStatusLog(
               index,
-              `[${proxy.name}] dual-api error [ip-api]: ${formatApiErrorDetail(ipApiPayload)}, trigger ipwho fallback`,
+              `[${proxy.name}] dual-api error [ip-api]: ${formatApiErrorDetail(ipApiPayload)}, ipwho already requested in parallel`,
             );
-            ipwhoPayload = await requestJson({
-              proxy: proxyUrl,
-              method,
-              headers,
-              url: getIpwhoUrl(),
-            });
-            if (ipwhoPayload.ok) {
-              const normalizedIpwho = normalizeIpwhoApi(ipwhoPayload.api);
-              const normalizedOk = hasMergedApiData(normalizedIpwho);
-              ipwhoPayload = {
-                ...ipwhoPayload,
-                ok: normalizedOk,
-                api: normalizedOk ? normalizedIpwho : {},
-                error: normalizedOk
-                  ? ipwhoPayload.error
-                  : "empty ipwho payload",
-              };
-            }
-            if (!ipwhoPayload.ok) {
-              enqueueRequestStatusLog(
-                index,
-                `[${proxy.name}] dual-api error [ipwho]: ${formatApiErrorDetail(ipwhoPayload)}`,
-              );
-            }
           }
+        }
+        if (!ipwhoPayload.ok) {
+          enqueueRequestStatusLog(
+            index,
+            `[${proxy.name}] dual-api error [ipwho]: ${formatApiErrorDetail(ipwhoPayload)}`,
+          );
         }
         if (!ippurePayload.ok) {
           enqueueRequestStatusLog(
@@ -706,6 +699,10 @@ async function operator(proxies = [], targetPlatform, context) {
     return hasPort ? `${server}:${port}` : server;
   }
 
+  function getProxyCacheKey(proxy = {}) {
+    return String(proxy?.name || "").trim();
+  }
+
   function formatServerWithIp(serverWithPort = "", api = {}) {
     const ip = getReturnedIp(api);
     return ip ? `${serverWithPort}, ${ip}` : serverWithPort;
@@ -727,26 +724,26 @@ async function operator(proxies = [], targetPlatform, context) {
     return result;
   }
 
-  function getStructuredEgressEntry(serverWithPort = "") {
-    const safeServerWithPort = String(serverWithPort || "").trim();
-    if (!safeServerWithPort) return null;
-    const entry = sourceStore[safeServerWithPort];
+  function getStructuredEgressEntry(cacheKey = "") {
+    const safeCacheKey = String(cacheKey || "").trim();
+    if (!safeCacheKey) return null;
+    const entry = sourceStore[safeCacheKey];
     return isPlainObject(entry) ? entry : null;
   }
 
   function setStructuredEgressEntry({
-    serverWithPort = "",
+    cacheKey = "",
     ipApi = {},
     ippure = {},
     ipwho = {},
   } = {}) {
-    const safeServerWithPort = String(serverWithPort || "").trim();
-    if (!safeServerWithPort) return;
-    const existingEntry = isPlainObject(sourceStore[safeServerWithPort])
-      ? sourceStore[safeServerWithPort]
+    const safeCacheKey = String(cacheKey || "").trim();
+    if (!safeCacheKey) return;
+    const existingEntry = isPlainObject(sourceStore[safeCacheKey])
+      ? sourceStore[safeCacheKey]
       : {};
 
-    sourceStore[safeServerWithPort] = {
+    sourceStore[safeCacheKey] = {
       ...existingEntry,
       egress: {
         "ip-api": sanitizeEgressIpApiPayload(ipApi),

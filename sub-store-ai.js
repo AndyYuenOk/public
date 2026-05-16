@@ -195,8 +195,8 @@ async function operator(proxies = [], targetPlatform, context) {
   if (useCache) {
     for (let proxyIndex = 0; proxyIndex < proxies.length; proxyIndex++) {
       const proxy = proxies[proxyIndex];
-      const serverWithPort = getServerWithPort(proxy);
-      const cachedEntry = getStructuredAiEntry(serverWithPort);
+      const proxyKey = getProxyCacheKey(proxy);
+      const cachedEntry = getStructuredAiEntry(proxyKey);
       const cachedAiPayload = isPlainObject(cachedEntry?.ai)
         ? cachedEntry.ai
         : {};
@@ -255,7 +255,7 @@ async function operator(proxies = [], targetPlatform, context) {
             node[key] = proxy[key];
           }
         }
-        // Keep original endpoint for stable cache key.
+        // Preserve original endpoint metadata.
         node._origin_server = proxy.server;
         node._origin_port = proxy.port;
         // log(JSON.stringify(node, null, 2))
@@ -370,7 +370,7 @@ async function operator(proxies = [], targetPlatform, context) {
       applyAggregateAiTag(proxy._proxies_index);
       if (shouldWriteCache) {
         setStructuredAiEntry({
-          serverWithPort: getServerWithPort(proxy),
+          cacheKey: getProxyCacheKey(proxy),
           aiPayload,
         });
       }
@@ -975,19 +975,22 @@ async function operator(proxies = [], targetPlatform, context) {
     const hasPort = port !== undefined && port !== null && port !== "";
     return hasPort ? `${server}:${port}` : server;
   }
-  function getStructuredAiEntry(serverWithPort = "") {
-    const safeServerWithPort = serverWithPort || "";
-    if (!safeServerWithPort) return null;
-    const entry = sourceStore[safeServerWithPort];
+  function getProxyCacheKey(proxy = {}) {
+    return String(proxy?.name || "").trim();
+  }
+  function getStructuredAiEntry(cacheKey = "") {
+    const safeCacheKey = String(cacheKey || "").trim();
+    if (!safeCacheKey) return null;
+    const entry = sourceStore[safeCacheKey];
     return isPlainObject(entry) ? entry : null;
   }
-  function setStructuredAiEntry({ serverWithPort = "", aiPayload = {} } = {}) {
-    const safeServerWithPort = serverWithPort || "";
-    if (!safeServerWithPort) return;
-    const existingEntry = isPlainObject(sourceStore[safeServerWithPort])
-      ? sourceStore[safeServerWithPort]
+  function setStructuredAiEntry({ cacheKey = "", aiPayload = {} } = {}) {
+    const safeCacheKey = String(cacheKey || "").trim();
+    if (!safeCacheKey) return;
+    const existingEntry = isPlainObject(sourceStore[safeCacheKey])
+      ? sourceStore[safeCacheKey]
       : {};
-    sourceStore[safeServerWithPort] = {
+    sourceStore[safeCacheKey] = {
       ...existingEntry,
       ai: isPlainObject(aiPayload) ? aiPayload : {},
     };

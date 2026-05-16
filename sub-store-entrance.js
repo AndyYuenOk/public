@@ -209,8 +209,9 @@ async function operator(proxies = [], targetPlatform, context) {
 
     for (const context of groupContexts) {
       const { proxy, serverWithPort } = context;
+      const proxyKey = getProxyCacheKey(proxy);
       if (useCache) {
-        const cachedEntry = getStructuredEntranceEntry(serverWithPort);
+        const cachedEntry = getStructuredEntranceEntry(proxyKey);
         const cachedIpApi = sanitizeEntranceIpApiPayload(
           cachedEntry?.entrance?.["ip-api"] || {},
         );
@@ -258,6 +259,7 @@ async function operator(proxies = [], targetPlatform, context) {
         eval(formatter({ api, format: valid, regex }));
       for (const context of pendingContexts) {
         const { proxy, originalServer, serverWithPort } = context;
+        const proxyKey = getProxyCacheKey(proxy);
         if (validApi) {
           const queryText =
             originalServer && originalServer !== queryServer
@@ -272,7 +274,7 @@ async function operator(proxies = [], targetPlatform, context) {
             `[${proxy.name}] ${formatServerWithIp(serverWithPort, api, queryText)}, ${formatCountryAsoAsInfo(api)}`,
           );
           if (shouldWriteCache) {
-            setStructuredEntranceEntry({ serverWithPort, ipApi: api });
+            setStructuredEntranceEntry({ cacheKey: proxyKey, ipApi: api });
           }
         }
       }
@@ -293,6 +295,7 @@ async function operator(proxies = [], targetPlatform, context) {
         const deduplicatedByGroup = pendingContexts.length > 1;
         for (const context of pendingContexts) {
           const { proxy, serverWithPort } = context;
+          const proxyKey = getProxyCacheKey(proxy);
           applyEntranceInfo(proxy, api);
           if (shouldRename) {
             proxy.name = formatter({ proxy, api, format, regex });
@@ -309,7 +312,7 @@ async function operator(proxies = [], targetPlatform, context) {
           }
           if (shouldWriteCache) {
             setStructuredEntranceEntry({
-              serverWithPort,
+              cacheKey: proxyKey,
               ipApi: ipApiResult.ipApi,
               ipwho: ipApiResult.ipwho,
             });
@@ -607,6 +610,9 @@ async function operator(proxies = [], targetPlatform, context) {
     const hasPort = port !== undefined && port !== null && String(port) !== "";
     return hasPort ? `${server}:${port}` : server;
   }
+  function getProxyCacheKey(proxy = {}) {
+    return String(proxy?.name || "").trim();
+  }
   function formatServerWithIp(serverWithPort = "", api = {}, fallbackIp = "") {
     const ip = getReturnedIp(api, fallbackIp);
     return ip ? `${serverWithPort}, ${ip}` : serverWithPort;
@@ -669,26 +675,26 @@ async function operator(proxies = [], targetPlatform, context) {
     $.write(sourceStore, `#${sourceName}`);
     return result;
   }
-  function getStructuredEntranceEntry(serverWithPort = "") {
-    const safeServerWithPort = String(serverWithPort || "").trim();
-    if (!safeServerWithPort) return null;
-    const entry = sourceStore[safeServerWithPort];
+  function getStructuredEntranceEntry(cacheKey = "") {
+    const safeCacheKey = String(cacheKey || "").trim();
+    if (!safeCacheKey) return null;
+    const entry = sourceStore[safeCacheKey];
     return isPlainObject(entry) ? entry : null;
   }
   function setStructuredEntranceEntry({
-    serverWithPort = "",
+    cacheKey = "",
     ipApi,
     ipwho,
   } = {}) {
-    const safeServerWithPort = String(serverWithPort || "").trim();
-    if (!safeServerWithPort) return;
-    const existingEntry = isPlainObject(sourceStore[safeServerWithPort])
-      ? sourceStore[safeServerWithPort]
+    const safeCacheKey = String(cacheKey || "").trim();
+    if (!safeCacheKey) return;
+    const existingEntry = isPlainObject(sourceStore[safeCacheKey])
+      ? sourceStore[safeCacheKey]
       : {};
     const existingEntrance = isPlainObject(existingEntry.entrance)
       ? existingEntry.entrance
       : {};
-    sourceStore[safeServerWithPort] = {
+    sourceStore[safeCacheKey] = {
       ...existingEntry,
       entrance: {
         ...existingEntrance,
