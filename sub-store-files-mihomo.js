@@ -201,8 +201,9 @@ function main(config = { proxies: [], "proxy-providers": {} }) {
     autoBackupGroup,
     airportGroups = [],
     healthCheck = {
-      url: "https://www.gstatic.com/generate_204",
-      // url: "https://cp.cloudflare.com/generate_204",
+      // url: "http://www.gstatic.com/generate_204",
+      url: "http://www.google.com/generate_204",
+      // url: "http://cp.cloudflare.com/generate_204",
       timeout: 1500,
       tolerance: 200,
       "max-failed-times": 1,
