@@ -153,7 +153,7 @@ async function operator(proxies = [], targetPlatform, context) {
         .filter(Boolean),
     ).size;
     info(
-      `[stats] nodes: ${nodeCount}, dual-api requests: ${ipApiRequestCount}, unique egress ip: ${uniqueEgressIpCount}`,
+      `[stats] nodes: ${nodeCount}, egress-api requests: ${ipApiRequestCount}, unique egress ip: ${uniqueEgressIpCount}`,
     );
     logBoundary("END");
     return finalize(proxies);
@@ -287,7 +287,7 @@ async function operator(proxies = [], targetPlatform, context) {
       .filter(Boolean),
   ).size;
   info(
-    `[stats] nodes: ${nodeCount}, dual-api requests: ${ipApiRequestCount}, unique egress ip: ${uniqueEgressIpCount}`,
+    `[stats] nodes: ${nodeCount}, egress-api requests: ${ipApiRequestCount}, unique egress ip: ${uniqueEgressIpCount}`,
   );
   logBoundary("END");
   return finalize(proxies);
@@ -431,10 +431,7 @@ async function operator(proxies = [], targetPlatform, context) {
           }
         } else {
           if (isIpApiUrl) {
-            enqueueRequestStatusLog(
-              index,
-              `[${proxy.name}] dual-api invalid response, log only`,
-            );
+            // Skip noisy invalid-response log for multi-api mode.
           } else {
             enqueueRequestStatusLog(
               index,
@@ -448,7 +445,7 @@ async function operator(proxies = [], targetPlatform, context) {
       if (isIpApiUrl && !internal) {
         enqueueRequestStatusLog(
           index,
-          `[${proxy.name}] dual-api error/timeout, log only`,
+          `[${proxy.name}] [egress-api] error: timeout or request failed, log only`,
         );
         return;
       }
@@ -537,25 +534,25 @@ async function operator(proxies = [], targetPlatform, context) {
           if (isRequestTimeoutError(ipApiPayload)) {
             enqueueRequestStatusLog(
               index,
-              `[${proxy.name}] dual-api error [ip-api]: ${formatApiErrorDetail(ipApiPayload)}, timeout, ipwho already requested in parallel`,
+              `[${proxy.name}] [ip-api] error: ${formatApiErrorDetail(ipApiPayload)}, timeout`,
             );
           } else {
             enqueueRequestStatusLog(
               index,
-              `[${proxy.name}] dual-api error [ip-api]: ${formatApiErrorDetail(ipApiPayload)}, ipwho already requested in parallel`,
+              `[${proxy.name}] [ip-api] error: ${formatApiErrorDetail(ipApiPayload)}`,
             );
           }
         }
         if (!ipwhoPayload.ok) {
           enqueueRequestStatusLog(
             index,
-            `[${proxy.name}] dual-api error [ipwho]: ${formatApiErrorDetail(ipwhoPayload)}`,
+            `[${proxy.name}] [ipwho] error: ${formatApiErrorDetail(ipwhoPayload)}`,
           );
         }
         if (!ippurePayload.ok) {
           enqueueRequestStatusLog(
             index,
-            `[${proxy.name}] dual-api error [ippure]: ${formatApiErrorDetail(ippurePayload)}`,
+            `[${proxy.name}] [ippure] error: ${formatApiErrorDetail(ippurePayload)}`,
           );
         }
 
