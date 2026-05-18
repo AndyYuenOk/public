@@ -13,7 +13,7 @@ function operator(proxies, targetPlatform, context) {
       proxy.egress.region +
       proxy.egress.city +
       proxy.egress.asn;
-    if (/true|1/.test($arguments.geo ?? 0) && egressKey) {
+    if (/true|1/.test($arguments.geo ?? 1) && egressKey) {
       key = egressKey;
     }
 
