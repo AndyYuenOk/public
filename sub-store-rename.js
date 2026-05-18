@@ -8,36 +8,6 @@ function operator(proxies = [], targetPlatform, context) {
     $arguments.sort = 0;
   }
 
-  if (/true|1/.test($arguments.sort ?? 1)) {
-    const preferredCountryCodeOrder = ["HK", "SG", "TW", "JP", "US"];
-    const countryCodeToSortIndex = Object.fromEntries(
-      preferredCountryCodeOrder.map((countryCode, sortIndex) => [
-        countryCode,
-        sortIndex,
-      ]),
-    );
-
-    proxies = proxies
-      .map((proxy, originalIndex) => ({ proxy, originalIndex }))
-      .sort((leftItem, rightItem) => {
-        const leftCountryCode = leftItem.proxy?.egress?.countryCode;
-        const rightCountryCode = rightItem.proxy?.egress?.countryCode;
-
-        const leftSortIndex =
-          countryCodeToSortIndex[leftCountryCode] ??
-          preferredCountryCodeOrder.length;
-        const rightSortIndex =
-          countryCodeToSortIndex[rightCountryCode] ??
-          preferredCountryCodeOrder.length;
-
-        return (
-          leftSortIndex - rightSortIndex ||
-          leftItem.originalIndex - rightItem.originalIndex
-        );
-      })
-      .map(({ proxy }) => proxy);
-  }
-
   proxies.forEach((proxy) => {
     proxy.entrance ??= {};
     proxy.egress ??= {};
@@ -118,15 +88,16 @@ function operator(proxies = [], targetPlatform, context) {
       .trim();
   });
 
-  proxies.forEach((proxy) => {
-    counter = counters[proxy.baseName];
-    if (counter.count > 1) {
-      index = (++counter.index).toString().padStart(2, "0");
-      proxy.name += " - " + index;
-    }
-  });
-
-  return proxies;
+  return proxies
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((proxy) => {
+      counter = counters[proxy.baseName];
+      if (counter.count > 1) {
+        index = (++counter.index).toString().padStart(2, "0");
+        proxy.name += " - " + index;
+      }
+      return proxy;
+    });
 }
 
 function normalizedIsp(isp, country, city) {
