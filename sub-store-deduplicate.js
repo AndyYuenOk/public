@@ -3,14 +3,17 @@ function operator(proxies, targetPlatform, context) {
   proxies.forEach((proxy) => {
     let key = proxy.name;
 
-    if (proxy.entrance.ip && proxy.egress.ip) {
+    if (
+      proxy.entrance.ip &&
+      proxy.egress.ip &&
+      proxy.entrance.asn &&
+      proxy.egress.asn
+    ) {
       let octets = $arguments.octets ?? 4;
       key =
         proxy.entrance.ip.split(".").slice(0, octets).join(".") +
         proxy.egress.ip.split(".").slice(0, octets).join(".");
-    }
 
-    if (proxy.entrance.asn && proxy.egress.asn) {
       if ($arguments.geo == 1) {
         key =
           proxy.entrance.asn +
