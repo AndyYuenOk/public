@@ -3,24 +3,28 @@ function operator(proxies, targetPlatform, context) {
   proxies.forEach((proxy) => {
     let key = proxy.name;
 
-    let entranceIp = proxy.entrance.ip;
-    if (proxy.entrance.ip == proxy.egress.ip) {
-      entranceIp = "";
-    }
-
-    if (proxy.egress.ip) {
+    if (proxy.entrance.ip && proxy.egress.ip) {
       let octets = $arguments.octets ?? 4;
-      key = entranceIp + proxy.egress.ip.split(".").slice(0, octets).join(".");
+      key =
+        proxy.entrance.ip.split(".").slice(0, octets).join(".") +
+        proxy.egress.ip.split(".").slice(0, octets).join(".");
     }
 
-    if (proxy.egress.asn) {
+    if (proxy.entrance.asn && proxy.egress.asn) {
       if ($arguments.geo == 1) {
-        key = entranceIp + proxy.egress.asn + proxy.egress.country;
+        key =
+          proxy.entrance.asn +
+          proxy.entrance.country +
+          proxy.egress.asn +
+          proxy.egress.country;
       }
 
       if ($arguments.geo == 2) {
         key =
-          entranceIp +
+          proxy.entrance.asn +
+          proxy.entrance.country +
+          proxy.entrance.region +
+          proxy.entrance.city +
           proxy.egress.asn +
           proxy.egress.country +
           proxy.egress.region +
