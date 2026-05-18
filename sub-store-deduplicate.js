@@ -8,13 +8,18 @@ function operator(proxies, targetPlatform, context) {
       key = proxy.egress.ip.split(".").slice(0, octets).join(".");
     }
 
-    let egressKey =
-      proxy.egress.countryCode +
-      proxy.egress.region +
-      proxy.egress.city +
-      proxy.egress.asn;
-    if (/true|1/.test($arguments.geo ?? 0) && egressKey) {
-      key = egressKey;
+    if (proxy.egress.asn) {
+      if ($arguments.geo == 1) {
+        key = proxy.egress.asn + proxy.egress.country;
+      }
+
+      if ($arguments.geo == 2) {
+        key =
+          proxy.egress.asn +
+          proxy.egress.country +
+          proxy.egress.region +
+          proxy.egress.city;
+      }
     }
 
     proxyMap.set(key, proxy);
