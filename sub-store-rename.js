@@ -107,16 +107,15 @@ function operator(proxies = [], targetPlatform, context) {
     counters[proxy.baseName] ??= { count: 0, index: 0 };
     counters[proxy.baseName].count++;
 
-    proxy.name =
-      proxy.baseName +
-      [
-        proxy?.measuredSpeed ?? "",
-        proxy?.guaranteedSpeed ?? "",
-        proxy?.ai?.tag ?? "",
-      ]
-        .join(" ")
-        .replace(/\s{2,}/g, " ")
-        .trim();
+    proxy.name = [
+      proxy.baseName,
+      proxy?.measuredSpeed ?? "",
+      proxy?.guaranteedSpeed ?? "",
+      proxy?.ai?.tag ?? "",
+    ]
+      .join(" ")
+      .replace(/\s{2,}/g, " ")
+      .trim();
   });
 
   proxies.forEach((proxy) => {
