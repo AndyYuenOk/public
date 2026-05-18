@@ -1,3 +1,6 @@
+// prettier-ignore
+const flagMap = {"HK":"🇭🇰","MO":"🇲🇴","TW":"🇹🇼","JP":"🇯🇵","KR":"🇰🇷","SG":"🇸🇬","US":"🇺🇸","GB":"🇬🇧","FR":"🇫🇷","DE":"🇩🇪","AU":"🇦🇺","AE":"🇦🇪","AF":"🇦🇫","AL":"🇦🇱","DZ":"🇩🇿","AO":"🇦🇴","AR":"🇦🇷","AM":"🇦🇲","AT":"🇦🇹","AZ":"🇦🇿","BH":"🇧🇭","BD":"🇧🇩","BY":"🇧🇾","BE":"🇧🇪","BZ":"🇧🇿","BJ":"🇧🇯","BT":"🇧🇹","BO":"🇧🇴","BA":"🇧🇦","BW":"🇧🇼","BR":"🇧🇷","VG":"🇻🇬","BN":"🇧🇳","BG":"🇧🇬","BF":"🇧🇫","BI":"🇧🇮","KH":"🇰🇭","CM":"🇨🇲","CA":"🇨🇦","CV":"🇨🇻","KY":"🇰🇾","CF":"🇨🇫","TD":"🇹🇩","CL":"🇨🇱","CO":"🇨🇴","KM":"🇰🇲","CG":"🇨🇬","CD":"🇨🇩","CR":"🇨🇷","HR":"🇭🇷","CY":"🇨🇾","CZ":"🇨🇿","DK":"🇩🇰","DJ":"🇩🇯","DO":"🇩🇴","EC":"🇪🇨","EG":"🇪🇬","SV":"🇸🇻","GQ":"🇬🇶","ER":"🇪🇷","EE":"🇪🇪","ET":"🇪🇹","FJ":"🇫🇯","FI":"🇫🇮","GA":"🇬🇦","GM":"🇬🇲","GE":"🇬🇪","GH":"🇬🇭","GR":"🇬🇷","GL":"🇬🇱","GT":"🇬🇹","GN":"🇬🇳","GY":"🇬🇾","HT":"🇭🇹","HN":"🇭🇳","HU":"🇭🇺","IS":"🇮🇸","IN":"🇮🇳","ID":"🇮🇩","IR":"🇮🇷","IQ":"🇮🇶","IE":"🇮🇪","IM":"🇮🇲","IL":"🇮🇱","IT":"🇮🇹","CI":"🇨🇮","JM":"🇯🇲","JO":"🇯🇴","KZ":"🇰🇿","KE":"🇰🇪","KW":"🇰🇼","KG":"🇰🇬","LA":"🇱🇦","LV":"🇱🇻","LB":"🇱🇧","LS":"🇱🇸","LR":"🇱🇷","LY":"🇱🇾","LT":"🇱🇹","LU":"🇱🇺","MK":"🇲🇰","MG":"🇲🇬","MW":"🇲🇼","MY":"🇲🇾","MV":"🇲🇻","ML":"🇲🇱","MT":"🇲🇹","MR":"🇲🇷","MU":"🇲🇺","MX":"🇲🇽","MD":"🇲🇩","MC":"🇲🇨","MN":"🇲🇳","ME":"🇲🇪","MA":"🇲🇦","MZ":"🇲🇿","MM":"🇲🇲","NA":"🇳🇦","NP":"🇳🇵","NL":"🇳🇱","NZ":"🇳🇿","NI":"🇳🇮","NE":"🇳🇪","NG":"🇳🇬","KP":"🇰🇵","NO":"🇳🇴","OM":"🇴🇲","PK":"🇵🇰","PA":"🇵🇦","PY":"🇵🇾","PE":"🇵🇪","PH":"🇵🇭","PT":"🇵🇹","PR":"🇵🇷","QA":"🇶🇦","RO":"🇷🇴","RU":"🇷🇺","RW":"🇷🇼","SM":"🇸🇲","SA":"🇸🇦","SN":"🇸🇳","RS":"🇷🇸","SL":"🇸🇱","SK":"🇸🇰","SI":"🇸🇮","SO":"🇸🇴","ZA":"🇿🇦","ES":"🇪🇸","LK":"🇱🇰","SD":"🇸🇩","SR":"🇸🇷","SZ":"🇸🇿","SE":"🇸🇪","CH":"🇨🇭","SY":"🇸🇾","TJ":"🇹🇯","TZ":"🇹🇿","TH":"🇹🇭","TG":"🇹🇬","TO":"🇹🇴","TT":"🇹🇹","TN":"🇹🇳","TR":"🇹🇷","TM":"🇹🇲","VI":"🇻🇮","UG":"🇺🇬","UA":"🇺🇦","UY":"🇺🇾","UZ":"🇺🇿","VE":"🇻🇪","VN":"🇻🇳","YE":"🇾🇪","ZM":"🇿🇲","ZW":"🇿🇼","AD":"🇦🇩","RE":"🇷🇪","PL":"🇵🇱","GU":"🇬🇺","VA":"🇻🇦","LI":"🇱🇮","CW":"🇨🇼","SC":"🇸🇨","AQ":"🇦🇶","GI":"🇬🇮","CU":"🇨🇺","FO":"🇫🇴","AX":"🇦🇽","BM":"🇧🇲","TL":"🇹🇱"};
+
 let enableFallback = $arguments.fallback || $file.sourceType == "collection";
 let isMainProxyGroupOnly = /true|1/i.test(
   $arguments.proxy_group_only ?? enableFallback,
@@ -108,13 +111,18 @@ let routingRules = [
   "MATCH,Final",
 ];
 
+let filterAI = $options?._req?.query.filter_ai ?? "HK";
+Object.entries(flagMap).forEach(([code, flag]) => {
+  filterAI = filterAI.replace(code, flag);
+});
+
 let strategyGroups = [
   {
     name: "AI",
     icon: "OpenAI.png",
     type: autoType,
     "include-all": true,
-    filter: "AI",
+    filter: `(${filterAI}).+AI`,
   },
   {
     name: "Netflix",
@@ -279,12 +287,24 @@ function main(config = { proxies: [], "proxy-providers": {} }) {
         use: [name],
       });
 
+      let filter = $options?._req?.query.filter ?? "";
+
       if (sub.tag.includes("Primary")) {
         autoPrimayGroup.proxies.push("Auto_" + name);
       }
       if (sub.tag.includes("Backup")) {
         autoBackupGroup.proxies.push("Auto_" + name);
+
+        let filter_backup = $options?._req?.query.filter_backup ?? "";
+        if (filter_backup) {
+          filter = filter_backup;
+        }
       }
+
+      Object.entries(flagMap).forEach(([code, flag]) => {
+        filter = filter.replace(code, flag);
+      });
+      config["proxy-providers"][name].filter = filter;
     });
   } else {
     autoSelectGroup = {
@@ -316,7 +336,7 @@ function main(config = { proxies: [], "proxy-providers": {} }) {
 
     if (group.type === "fallback") {
       group.url = healthCheck.url;
-      group.interval = healthCheck.interval;
+      // group.interval = healthCheck.interval;
     }
 
     if (group.type === "url-test") {
@@ -353,6 +373,7 @@ function main(config = { proxies: [], "proxy-providers": {} }) {
 
 function getSubUserinfo() {
   const subscriptions = $substore.read("subs") || [];
+  const settings = $substore.read("settings") || {};
   const headers = JSON.parse(
     $substore.read("#sub-store-cached-headers-resource"),
   );
@@ -366,7 +387,7 @@ function getSubUserinfo() {
         );
       } else {
         const id = ProxyUtils.hex_md5(
-          `clash.meta/v1.19.24${subscription.url.split("#")[0]}`,
+          `${settings.defaultFlowUserAgent}${subscription.url.split("#")[0]}`,
         );
         if (headers[id]) {
           userInfoMap[subscription.name] = flowUtils.parseFlowHeaders(

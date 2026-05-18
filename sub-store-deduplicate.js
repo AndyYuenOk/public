@@ -5,13 +5,13 @@ function operator(proxies, targetPlatform, context) {
 
     if (
       proxy.entrance.ip &&
-      proxy.egress.ip &&
       proxy.entrance.asn &&
+      proxy.egress.ip &&
       proxy.egress.asn
     ) {
       let octets = $arguments.octets ?? 4;
       key =
-        proxy.entrance.ip.split(".").slice(0, octets).join(".") +
+        proxy.entrance.ip +
         proxy.egress.ip.split(".").slice(0, octets).join(".");
 
       if ($arguments.geo == 1) {
