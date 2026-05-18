@@ -60,17 +60,6 @@ function operator(proxies = [], targetPlatform, context) {
     const egressCountryCode = proxy.egress.countryCode;
 
     proxy.subscriptionName = proxy._subName;
-
-    if (entranceIp) {
-      counters[entranceCountryCode + entranceIp] ??= {
-        count: 0,
-        index: 0,
-      };
-    }
-    counters[egressCountryCode + egressIp] ??= {
-      count: 0,
-      index: 0,
-    };
   });
 
   let counter, index;
@@ -90,15 +79,9 @@ function operator(proxies = [], targetPlatform, context) {
 
     let entranceParts = [];
     if (entranceIp && entranceIp != egressIp) {
-      index = "";
-      counter = counters[entranceCountryCode + entranceIp];
-      if (counter.count > 1) {
-        index = (++counter.index).toString().padStart(2, "0");
-      }
       entranceParts = [
         entranceCountryCode,
         entranceCountryCode == "CN" ? entranceRegionCode : "",
-        index,
         // $server.ipCity,
         normalizedIsp(entranceIsp, entranceCountry, entranceCity),
         "-",
@@ -108,35 +91,36 @@ function operator(proxies = [], targetPlatform, context) {
     let multiplier = proxy.name.match(/(\d(?:\.\d)?)[x倍]/i)?.[1] || "";
     if (multiplier) multiplier = parseFloat(multiplier) + "\u00D7";
 
-    index = "";
-    counter = counters[egressCountryCode + egressIp];
-    if (counter.count > 1) {
-      index = (++counter.index).toString().padStart(2, "0");
-    }
-
-    proxy.name = [
+    proxy.baseName = [
       flagMap[egressCountryCode],
       proxy._subName,
       ...entranceParts,
       egressCountryCode || "ERR",
-      index,
       normalizedIsp(egressIsp, egressCountry, egressCity),
       egressIsResidential ? "Resi" : "",
       multiplier,
-      proxy?.measuredSpeed ?? "",
-      proxy?.guaranteedSpeed ?? "",
-      proxy?.ai?.tag ?? "",
     ]
       .join(" ")
       .replace(/\s{2,}/g, " ")
       .trim();
 
-    counters[proxy.name] ??= { count: 0, index: 0 };
-    counters[proxy.name].count++;
+    counters[proxy.baseName] ??= { count: 0, index: 0 };
+    counters[proxy.baseName].count++;
+
+    proxy.name =
+      proxy.baseName +
+      [
+        proxy?.measuredSpeed ?? "",
+        proxy?.guaranteedSpeed ?? "",
+        proxy?.ai?.tag ?? "",
+      ]
+        .join(" ")
+        .replace(/\s{2,}/g, " ")
+        .trim();
   });
 
   proxies.forEach((proxy) => {
-    counter = counters[proxy.name];
+    counter = counters[proxy.baseName];
     if (counter.count > 1) {
       index = (++counter.index).toString().padStart(2, "0");
       proxy.name += " - " + index;
