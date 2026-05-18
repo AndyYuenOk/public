@@ -5,16 +5,19 @@ function operator(proxies, targetPlatform, context) {
 
     let octets = $arguments.octets ?? 4;
     if (proxy.egress.ip) {
-      key = proxy.egress.ip.split(".").slice(0, octets).join(".");
+      key =
+        proxy.entrance.ip +
+        proxy.egress.ip.split(".").slice(0, octets).join(".");
     }
 
     if (proxy.egress.asn) {
       if ($arguments.geo == 1) {
-        key = proxy.egress.asn + proxy.egress.country;
+        key = proxy.entrance.ip + proxy.egress.asn + proxy.egress.country;
       }
 
       if ($arguments.geo == 2) {
         key =
+          proxy.entrance.ip +
           proxy.egress.asn +
           proxy.egress.country +
           proxy.egress.region +
