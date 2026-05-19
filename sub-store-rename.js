@@ -61,24 +61,18 @@ function operator(proxies = [], targetPlatform, context) {
     let multiplier = proxy.name.match(/(\d(?:\.\d)?)[x倍]/i)?.[1] || "";
     if (multiplier) multiplier = parseFloat(multiplier) + "\u00D7";
 
-    proxy.baseName = [
+    proxy.egressName =
+      (egressCountryCode || "ERR") +
+      " " +
+      normalizedIsp(egressIsp, egressCountry, egressCity);
+
+    proxy.name = [
       flagMap[egressCountryCode],
       proxy._subName,
-      ...entranceParts,
-      egressCountryCode || "ERR",
+      proxy.egressName,
       normalizedIsp(egressIsp, egressCountry, egressCity),
       egressIsResidential ? "Resi" : "",
       multiplier,
-    ]
-      .join(" ")
-      .replace(/\s{2,}/g, " ")
-      .trim();
-
-    counters[proxy.baseName] ??= { count: 0, index: 0 };
-    counters[proxy.baseName].count++;
-
-    proxy.name = [
-      proxy.baseName,
       proxy?.measuredSpeed ?? "",
       proxy?.guaranteedSpeed ?? "",
       proxy?.ai?.tag ?? "",
@@ -86,12 +80,15 @@ function operator(proxies = [], targetPlatform, context) {
       .join(" ")
       .replace(/\s{2,}/g, " ")
       .trim();
+
+    counters[proxy.egressName] ??= { count: 0, index: 0 };
+    counters[proxy.egressName].count++;
   });
 
   return proxies
-    .sort((a, b) => a.name.localeCompare(b.name))
+    .sort((a, b) => a.egressName.localeCompare(b.egressName))
     .map((proxy) => {
-      counter = counters[proxy.baseName];
+      counter = counters[proxy.egressName];
       if (counter.count > 1) {
         index = (++counter.index).toString().padStart(2, "0");
         proxy.name += " - " + index;
