@@ -69,9 +69,8 @@ function operator(proxies = [], targetPlatform, context) {
     proxy.name = [
       flagMap[egressCountryCode],
       proxy._subName,
+      ...entranceParts,
       proxy.egressName,
-      normalizedIsp(egressIsp, egressCountry, egressCity),
-      egressIsResidential ? "Resi" : "",
       multiplier,
       proxy?.measuredSpeed ?? "",
       proxy?.guaranteedSpeed ?? "",
