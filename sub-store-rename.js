@@ -83,8 +83,8 @@ function operator(proxies = [], targetPlatform, context) {
       .replace(/\s{2,}/g, " ")
       .trim();
 
-    counters[proxy.egressName] ??= { count: 0, index: 0 };
-    counters[proxy.egressName].count++;
+    counters[proxy.name] ??= { count: 0, index: 0 };
+    counters[proxy.name].count++;
   });
 
   return proxies
@@ -94,7 +94,7 @@ function operator(proxies = [], targetPlatform, context) {
         a.entranceName.localeCompare(b.entranceName),
     )
     .map((proxy) => {
-      counter = counters[proxy.egressName];
+      counter = counters[proxy.name];
       if (counter.count > 1) {
         index = (++counter.index).toString().padStart(2, "0");
         proxy.name += " - " + index;
