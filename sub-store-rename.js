@@ -49,13 +49,16 @@ function operator(proxies = [], targetPlatform, context) {
 
     let entranceParts = [];
     if (entranceIp && entranceIp != egressIp) {
-      entranceParts = [
+      proxy.entranceName = [
         entranceCountryCode,
         entranceCountryCode == "CN" ? entranceRegionCode : "",
         // $server.ipCity,
         normalizedIsp(entranceIsp, entranceCountry, entranceCity),
         "-",
-      ];
+      ]
+        .join(" ")
+        .replace(/\s{2,}/g, " ")
+        .trim();
     }
 
     let multiplier = proxy.name.match(/(\d(?:\.\d)?)[x倍]/i)?.[1] || "";
@@ -69,7 +72,7 @@ function operator(proxies = [], targetPlatform, context) {
     proxy.name = [
       flagMap[egressCountryCode],
       proxy._subName,
-      ...entranceParts,
+      proxy.entranceName,
       proxy.egressName,
       multiplier,
       proxy?.measuredSpeed ?? "",
@@ -85,7 +88,11 @@ function operator(proxies = [], targetPlatform, context) {
   });
 
   return proxies
-    .sort((a, b) => a.egressName.localeCompare(b.egressName))
+    .sort(
+      (a, b) =>
+        a.egressName.localeCompare(b.egressName) ||
+        a.entranceName.localeCompare(b.entranceName),
+    )
     .map((proxy) => {
       counter = counters[proxy.egressName];
       if (counter.count > 1) {
