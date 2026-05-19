@@ -47,7 +47,7 @@ function operator(proxies = [], targetPlatform, context) {
     const egressIsp = proxy.egress.isp;
     const egressIsResidential = proxy.egress.isResidential;
 
-    let entranceParts = [];
+    proxy.entranceName = "";
     if (entranceIp && entranceIp != egressIp) {
       proxy.entranceName = [
         entranceCountryCode,
