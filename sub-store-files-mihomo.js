@@ -11,6 +11,7 @@ $options._req ??= {
   query: { smart: false },
   headers: { host: "localhost", "user-agent": "" },
 };
+let = $options._req.headers["user-agent"].includes("android");
 
 let enableSmart = /true|1/i.test($options._req.query.smart),
   autoType = enableSmart ? "smart" : "url-test";
@@ -111,7 +112,7 @@ let routingRules = [
   "MATCH,Final",
 ];
 
-let filterAI = $options?._req?.query.filter_ai ?? "HK";
+let filterAI = $options?._req?.query.filter_ai ?? "";
 Object.entries(flagMap).forEach(([code, flag]) => {
   filterAI = filterAI.replace(code, flag);
 });
@@ -129,6 +130,7 @@ let strategyGroups = [
     icon: "Netflix.png",
     type: "select",
     "include-all": true,
+    "exclude-filter": "Tailscale",
     proxies: ["Proxy"],
   },
   {
@@ -136,6 +138,7 @@ let strategyGroups = [
     icon: "Microsoft.png",
     type: "select",
     "include-all": true,
+    "exclude-filter": "Tailscale",
     proxies: ["Proxy", "DIRECT"],
   },
 
@@ -356,14 +359,12 @@ function main(config = { proxies: [], "proxy-providers": {} }) {
   $options._res.headers["content-disposition"] =
     'attachment; filename="Fallback' + (enableSmart ? "-Smart" : "") + '"';
 
-  const tailscaleKey = process.env.SUB_STORE_TAILSCALE_KEY;
-  if ($options._req.headers["user-agent"].includes("android") && tailscaleKey) {
+  if ($options._req.headers["user-agent"].includes("android")) {
     config.proxies.push({
       name: "Tailscale",
       type: "tailscale",
       hostname: "mihomo",
       udp: true,
-      "auth-key": tailscaleKey,
     });
     config.rules.unshift("IP-CIDR,100.64.0.0/10,Tailscale,no-resolve");
   }
