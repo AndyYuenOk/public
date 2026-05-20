@@ -11,7 +11,8 @@ $options._req ??= {
   query: { smart: false },
   headers: { host: "localhost", "user-agent": "" },
 };
-let = $options._req.headers["user-agent"].includes("android");
+
+let isMobile = $options._req.headers["user-agent"].includes("android");
 
 let enableSmart = /true|1/i.test($options._req.query.smart),
   autoType = enableSmart ? "smart" : "url-test";
@@ -93,8 +94,9 @@ let routingRules = [
   "DOMAIN-SUFFIX,ghfast.top,DIRECT",
   "DOMAIN-SUFFIX,host.docker.internal,DIRECT",
 
-  "GEOSITE,category-ai-!cn,AI",
-  "GEOSITE,anthropic,AI",
+  "GEOSITE,anthropic,Claude",
+  "GEOSITE,openai,OpenAI",
+  "GEOSITE,google-gemini,Gemini",
   "GEOSITE,microsoft,Microsoft",
   "GEOSITE,netflix,Netflix",
 
@@ -112,36 +114,52 @@ let routingRules = [
   "MATCH,Final",
 ];
 
-let filterAI = $options?._req?.query.filter_ai ?? "";
-Object.entries(flagMap).forEach(([code, flag]) => {
-  filterAI = filterAI.replace(code, flag);
-});
+// let filterAI = $options?._req?.query.filter_ai ?? "";
+// Object.entries(flagMap).forEach(([code, flag]) => {
+//   filterAI = filterAI.replace(code, flag);
+// });
 
+// https://github.com/lobehub/lobe-icons/tree/master/packages/static-png/light
 let strategyGroups = [
   {
-    name: "AI",
-    icon: "OpenAI.png",
+    name: "Claude",
+    icon: "https://cdn.jsdelivr.net/gh/lobehub/lobe-icons@master/packages/static-png/light/claude-color.png",
     type: autoType,
     "include-all": true,
-    filter: `(${filterAI}).+AI`,
+    url: "https://claude.ai/api/auth/session",
+    "expected-status": 200,
   },
   {
+    name: "OpenAI",
+    icon: "https://cdn.jsdelivr.net/gh/lobehub/lobe-icons@master/packages/static-png/light/openai.png",
+    type: autoType,
+    "include-all": true,
+    url: "https://chatgpt.com/api/auth/session",
+    "expected-status": 200,
+  },
+  {
+    name: "Gemini",
+    icon: "https://cdn.jsdelivr.net/gh/lobehub/lobe-icons@master/packages/static-png/light/gemini-color.png",
+    type: autoType,
+    "include-all": true,
+    url: `https://generativelanguage.googleapis.com/v1/models?key=${$arguments.google_ai_key}`,
+    "expected-status": 200,
+  },
+
+  {
     name: "Netflix",
-    icon: "Netflix.png",
+    icon: "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/netflix.svg",
     type: "select",
     "include-all": true,
-    "exclude-filter": "Tailscale",
     proxies: ["Proxy"],
   },
   {
     name: "Microsoft",
-    icon: "Microsoft.png",
+    icon: "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/microsoft.svg",
     type: "select",
     "include-all": true,
-    "exclude-filter": "Tailscale",
     proxies: ["Proxy", "DIRECT"],
   },
-
   {
     name: "Reject",
     icon: "Adblock.png",
@@ -204,7 +222,7 @@ function main(config = { proxies: [], "proxy-providers": {} }) {
     name: "Proxy",
     icon: "Static.png",
     type: "select",
-    proxies: [],
+    proxies: ["Auto_Primary", "Auto_Backup"],
   };
 
   let autoSelectGroup,
@@ -212,8 +230,8 @@ function main(config = { proxies: [], "proxy-providers": {} }) {
     autoBackupGroup,
     airportGroups = [],
     healthCheck = {
-      // url: "http://www.gstatic.com/generate_204",
-      url: "http://www.google.com/generate_204",
+      url: "http://www.gstatic.com/generate_204",
+      // url: "http://www.google.com/generate_204",
       // url: "http://cp.cloudflare.com/generate_204",
       timeout: 1500,
       tolerance: 200,
@@ -223,7 +241,7 @@ function main(config = { proxies: [], "proxy-providers": {} }) {
   if (enableFallback) {
     autoSelectGroup = {
       name: "Fallback",
-      icon: "Auto.png",
+      icon: "Roundrobin.png",
       type: "fallback",
       proxies: ["Auto_Primary", "Auto_Backup"],
     };
@@ -253,7 +271,6 @@ function main(config = { proxies: [], "proxy-providers": {} }) {
         );
 
       if (first) {
-        $options ??= {};
         $options._res = {
           headers: {
             "subscription-userinfo": `upload=${first.usage.upload}; download=${first.usage.download}; total=${first.total}; expire=${first.expires}`,
@@ -279,7 +296,7 @@ function main(config = { proxies: [], "proxy-providers": {} }) {
         interval: name == "Free" ? 3600 : 86400,
         path: `./proxies/${name}.yaml`,
         "health-check": {
-          enable: true,
+          enable: !(enableSmart && isMobile),
           url: healthCheck.url,
         },
       };
@@ -331,15 +348,17 @@ function main(config = { proxies: [], "proxy-providers": {} }) {
 
   for (const group of strategyGroups) {
     if (group.name.includes("Auto")) {
-      group.icon = "Auto.png";
+      group.icon = "Available.png";
     }
 
-    group.icon =
-      "https://raw.githubusercontent.com/Orz-3/mini/master/Color/" + group.icon;
+    if (!group.icon.startsWith("http")) {
+      group.icon =
+        "https://raw.githubusercontent.com/Orz-3/mini/master/Color/" +
+        group.icon;
+    }
 
     if (group.type === "fallback") {
       group.url = healthCheck.url;
-      // group.interval = healthCheck.interval;
     }
 
     if (group.type === "url-test") {
@@ -349,17 +368,20 @@ function main(config = { proxies: [], "proxy-providers": {} }) {
     if (group.type === "smart") {
       group.uselightgbm = true;
     }
+
+    if (group["include-all"]) {
+      group["exclude-filter"] = "Tailscale";
+    }
   }
 
   config["proxy-groups"] = strategyGroups;
 
-  $options ??= {};
   $options._res ??= {};
   $options._res.headers ??= {};
   $options._res.headers["content-disposition"] =
     'attachment; filename="Fallback' + (enableSmart ? "-Smart" : "") + '"';
 
-  if ($options._req.headers["user-agent"].includes("android")) {
+  if (isMobile) {
     config.proxies.push({
       name: "Tailscale",
       type: "tailscale",

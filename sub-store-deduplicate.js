@@ -35,7 +35,7 @@ function operator(proxies, targetPlatform, context) {
       }
     }
 
-    proxyMap.set(key, proxy);
+    proxyMap.set(key + proxy.type, proxy);
   });
   return Array.from(proxyMap.values());
 }
