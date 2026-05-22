@@ -11,10 +11,14 @@ $options._req ??= {
   query: { smart: false },
   headers: { host: "localhost", "user-agent": "" },
 };
+let query = $options._req.query;
 
-let isMobile = $options._req.headers["user-agent"].includes("android");
+let isMobile = /android/i.test($options._req.headers["user-agent"]);
+if (query.mobile) {
+  isMobile = /true|1/i.test(query.mobile);
+}
 
-let enableSmart = /true|1/i.test($options._req.query.smart),
+let enableSmart = /true|1/i.test(query.smart),
   autoType = enableSmart ? "smart" : "url-test";
 let regions, allowPatterns, blockPatterns;
 
@@ -94,9 +98,7 @@ let routingRules = [
   "DOMAIN-SUFFIX,ghfast.top,DIRECT",
   "DOMAIN-SUFFIX,host.docker.internal,DIRECT",
 
-  "GEOSITE,anthropic,Claude",
-  "GEOSITE,openai,OpenAI",
-  "GEOSITE,google-gemini,Gemini",
+  "GEOSITE,category-ai-!cn,AI",
   "GEOSITE,microsoft,Microsoft",
   "GEOSITE,netflix,Netflix",
 
@@ -114,38 +116,44 @@ let routingRules = [
   "MATCH,Final",
 ];
 
-// let filterAI = $options?._req?.query.filter_ai ?? "";
-// Object.entries(flagMap).forEach(([code, flag]) => {
-//   filterAI = filterAI.replace(code, flag);
-// });
+let filterAI = query.filter_ai ?? "";
+Object.entries(flagMap).forEach(([code, flag]) => {
+  filterAI = filterAI.replace(code, flag);
+});
 
 // https://github.com/lobehub/lobe-icons/tree/master/packages/static-png/light
 let strategyGroups = [
+  // {
+  //   name: "Claude",
+  //   icon: "https://cdn.jsdelivr.net/gh/lobehub/lobe-icons@master/packages/static-png/light/claude-color.png",
+  //   type: autoType,
+  //   "include-all": true,
+  //   url: "https://claude.ai/api/auth/session",
+  //   "expected-status": 200,
+  // },
+  // {
+  //   name: "OpenAI",
+  //   icon: "https://cdn.jsdelivr.net/gh/lobehub/lobe-icons@master/packages/static-png/light/openai.png",
+  //   type: autoType,
+  //   "include-all": true,
+  //   url: "https://chatgpt.com/api/auth/session",
+  //   "expected-status": 200,
+  // },
+  // {
+  //   name: "Gemini",
+  //   icon: "https://cdn.jsdelivr.net/gh/lobehub/lobe-icons@master/packages/static-png/light/gemini-color.png",
+  //   type: autoType,
+  //   "include-all": true,
+  //   url: `https://generativelanguage.googleapis.com/v1/models?key=${$arguments.google_ai_key}`,
+  //   "expected-status": 200,
+  // },
   {
-    name: "Claude",
-    icon: "https://cdn.jsdelivr.net/gh/lobehub/lobe-icons@master/packages/static-png/light/claude-color.png",
+    name: "AI",
+    icon: "https://img.icons8.com/fluency/256/bot.png",
     type: autoType,
     "include-all": true,
-    url: "https://claude.ai/api/auth/session",
-    "expected-status": 200,
+    filter: "AI",
   },
-  {
-    name: "OpenAI",
-    icon: "https://cdn.jsdelivr.net/gh/lobehub/lobe-icons@master/packages/static-png/light/openai.png",
-    type: autoType,
-    "include-all": true,
-    url: "https://chatgpt.com/api/auth/session",
-    "expected-status": 200,
-  },
-  {
-    name: "Gemini",
-    icon: "https://cdn.jsdelivr.net/gh/lobehub/lobe-icons@master/packages/static-png/light/gemini-color.png",
-    type: autoType,
-    "include-all": true,
-    url: `https://generativelanguage.googleapis.com/v1/models?key=${$arguments.google_ai_key}`,
-    "expected-status": 200,
-  },
-
   {
     name: "Netflix",
     icon: "https://cdn.jsdelivr.net/gh/selfhst/icons/svg/netflix.svg",
@@ -183,11 +191,8 @@ let strategyGroups = [
 ];
 
 function main(config = { proxies: [], "proxy-providers": {} }) {
-  config["geodata-mode"] = true;
-  config["geox-url"] = {
-    geosite:
-      "https://cdn.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geosite.dat",
-  };
+  config["find-process-mode"] = "always";
+  config["external-controller"] = "0.0.0.0:9090";
 
   // Inject rules and provider definitions.
   config.rules = routingRules;
@@ -222,7 +227,7 @@ function main(config = { proxies: [], "proxy-providers": {} }) {
     name: "Proxy",
     icon: "Static.png",
     type: "select",
-    proxies: ["Auto_Primary", "Auto_Backup"],
+    proxies: [],
   };
 
   let autoSelectGroup,
@@ -307,7 +312,7 @@ function main(config = { proxies: [], "proxy-providers": {} }) {
         use: [name],
       });
 
-      let filter = $options?._req?.query.filter ?? "";
+      let filter = query.filter ?? "";
 
       if (sub.tag.includes("Primary")) {
         autoPrimayGroup.proxies.push("Auto_" + name);
@@ -315,7 +320,7 @@ function main(config = { proxies: [], "proxy-providers": {} }) {
       if (sub.tag.includes("Backup")) {
         autoBackupGroup.proxies.push("Auto_" + name);
 
-        let filter_backup = $options?._req?.query.filter_backup ?? "";
+        let filter_backup = query.filter_backup ?? "";
         if (filter_backup) {
           filter = filter_backup;
         }
@@ -336,6 +341,8 @@ function main(config = { proxies: [], "proxy-providers": {} }) {
 
   mainProxyGroup.proxies.push(
     autoSelectGroup.name,
+    "Auto_Primary",
+    "Auto_Backup",
     ...(enableFallback ? airportGroups.map((group) => group.name) : []),
   );
 
