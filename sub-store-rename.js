@@ -106,9 +106,9 @@ function operator(proxies = [], targetPlatform, context) {
 function normalizedIsp(isp, country, city) {
   return (
     isp
-      .replace(/.*China Mobile.*/i, "[Mobile]")
-      .replace(/.*China Unicom.*/i, "[Unicom]")
-      .replace(/.*Chinanet.*/i, "[Telecom]")
+      .replace(/.*China Mobile.*/i, "_Mobile_")
+      .replace(/.*China Unicom.*/i, "_Unicom_")
+      .replace(/.*(Chinanet|ChinaTelecom).*/i, "_Telecom_")
       .replace(/.*Alibaba.*/i, "Alibaba")
       .replace(/.*Tencent.*/i, "Tencent")
       .replace(/.*Amazon.*/i, "Amazon")
@@ -118,7 +118,7 @@ function normalizedIsp(isp, country, city) {
       // .replace(/.*HostPapa.*/i, "HPAPA")
       // .replace(/.*NetLab.*/i, "NetLab")
       // .replace(/.*Hong Kong Telecommunications.*/i, "HKT")
-      .replace(/,|\./g, "")
+      .replace(/[,.]/g, "")
       // .replace(/Telecommunications/i, "Telecom")
       .replace(/\bTelevision\b/i, "TV")
       .replace(/\band\b/i, "&")
@@ -127,7 +127,7 @@ function normalizedIsp(isp, country, city) {
         "",
       )
       .replace(RegExp(country + "|" + city, "i"), "")
-      .replace(/[\[\]\(\)]/g, "")
+      .replace(/[()_]/g, "")
       .trim()
   );
   // .split(" ")
