@@ -41,7 +41,7 @@ async function operator(proxies = [], targetPlatform, context) {
   let valid = $arguments.valid || `ProxyUtils.isIP('{{api.ip || api.query}}')`;
   let format = $arguments.format || "";
   let utils;
-  let dns;
+  let dnsResolver;
   if (resolveDomain) {
     if (!isNode) {
       logBoundary("END");
@@ -49,7 +49,9 @@ async function operator(proxies = [], targetPlatform, context) {
         "resolve_domain is only supported in Node.js environment",
       );
     }
-    dns = require("dns").promises;
+    const { Resolver } = require("dns").promises;
+    dnsResolver = new Resolver();
+    dnsResolver.setServers(["223.5.5.5"]);
   }
   if (internal) {
     if (isNode) {
@@ -517,10 +519,12 @@ async function operator(proxies = [], targetPlatform, context) {
   }
   async function resolveServer(server) {
     try {
-      const records = await dns.lookup(server, { all: true, verbatim: true });
-      const addresses = Array.isArray(records) ? records : [records];
-      const ipv4 = addresses.find((item) => item?.family === 4)?.address;
-      const fallback = addresses.find((item) => item?.address)?.address;
+      const [ipv4Records, ipv6Records] = await Promise.all([
+        dnsResolver.resolve4(server).catch(() => []),
+        dnsResolver.resolve6(server).catch(() => []),
+      ]);
+      const ipv4 = ipv4Records.find((ip) => typeof ip === "string" && ip);
+      const fallback = ipv6Records.find((ip) => typeof ip === "string" && ip);
       const resolved = ipv4 || fallback;
       if (!resolved) {
         throw new Error("No usable IP returned");
