@@ -45,6 +45,7 @@ Object.entries(flagMap).forEach(([code, flag]) => {
 });
 
 function main(config = { proxies: [], 'proxy-providers': {} }) {
+  config['unified-delay'] = true;
   config['external-controller'] = '0.0.0.0:9090';
   config['find-process-mode'] = 'always';
   config['geo-auto-update'] = true;
@@ -54,21 +55,19 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     'respect-rules': true,
     'proxy-server-nameserver': ['223.5.5.5', '119.29.29.29'],
     'nameserver-policy': {
-      'geosite:cn': ['223.5.5.5', '119.29.29.29'],
-      // 'geosite:googlefcm': ['tcp://1.1.1.1#Auto_Reliable', 'tcp://8.8.8.8#Auto_Reliable'],
+      'GEOSITE:googlefcm': ['tcp://1.1.1.1#FCM', 'tcp://8.8.8.8#FCM'],
+      'GEOSITE:gfw': ['tcp://1.1.1.1', 'tcp://8.8.8.8'],
     },
-    nameserver: ['tcp://1.1.1.1', 'tcp://8.8.8.8'],
+    nameserver: ['223.5.5.5', '119.29.29.29'],
+    fallback: ['tcp://1.1.1.1', 'tcp://8.8.8.8'],
+    'fallback-filter': { geoip: true, 'geoip-code': 'CN' },
     'fake-ip-filter-mode': 'rule',
-    // prettier-ignore
-    'fake-ip-filter': [
-      'GEOSITE,cn,real-ip',
-      // 'GEOSITE,googlefcm,real-ip',
-      'MATCH,fake-ip'
-    ],
+    'fake-ip-filter': ['GEOSITE,googlefcm,real-ip', 'GEOSITE,gfw,fake-ip', 'MATCH,real-ip'],
   };
 
   // https://github.com/Loyalsoldier/clash-rules
   config['rule-providers'] = [
+    'applications',
     'lancidr',
     'private',
     'reject',
@@ -99,7 +98,11 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
 
     providers[providerName].type = 'http';
     providers[providerName].interval = 86400;
-    providers[providerName].behavior = providerName.includes('idr') ? 'ipcidr' : 'domain';
+    if (providerName.includes('applications')) {
+      providers[providerName].behavior = 'classical';
+    } else {
+      providers[providerName].behavior = providerName.includes('idr') ? 'ipcidr' : 'domain';
+    }
     providers[providerName].path = `./rules/${providerName}.yaml`;
 
     return providers;
@@ -109,18 +112,17 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
   // https://github.com/v2fly/domain-list-community/tree/master/data
   // Rule order is top-down; earlier entries have higher priority.
   config.rules = [
+    'RULE-SET,applications,DIRECT',
     'RULE-SET,lancidr,DIRECT',
     'RULE-SET,private,DIRECT',
     'RULE-SET,reject,Reject',
     // "RULE-SET,adblockfilters,Reject",
 
-    'DOMAIN-SUFFIX,pairdrop.net,DIRECT',
-    'DOMAIN-SUFFIX,gh-proxy.com,DIRECT',
-    'DOMAIN-SUFFIX,ghfast.top,DIRECT',
-    'DOMAIN-SUFFIX,host.docker.internal,DIRECT',
-
-    // 'GEOSITE,googlefcm,Auto_Reliable',
+    'GEOSITE,googlefcm,FCM',
     'GEOSITE,category-ai-!cn,AI',
+    // 'GEOSITE,anthropic,Claude',
+    // 'GEOSITE,openai,OpenAI',
+    // 'GEOSITE,google-gemini,Gemini',
     'GEOSITE,microsoft@cn,DIRECT',
     'GEOSITE,microsoft,Microsoft',
     'GEOSITE,netflix,Netflix',
@@ -139,32 +141,9 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     'MATCH,Final',
   ];
 
+  // https://github.com/Orz-3/mini/tree/master/Color
   // https://github.com/lobehub/lobe-icons/tree/master/packages/static-png/light
   config['proxy-groups'] = [
-    // {
-    //   name: "Claude",
-    //   icon: "https://cdn.jsdelivr.net/gh/lobehub/lobe-icons@master/packages/static-png/light/claude-color.png",
-    //   type: autoType,
-    //   "include-all": true,
-    //   url: "https://claude.ai/api/auth/session",
-    //   "expected-status": 200,
-    // },
-    // {
-    //   name: "OpenAI",
-    //   icon: "https://cdn.jsdelivr.net/gh/lobehub/lobe-icons@master/packages/static-png/light/openai.png",
-    //   type: autoType,
-    //   "include-all": true,
-    //   url: "https://chatgpt.com/api/auth/session",
-    //   "expected-status": 200,
-    // },
-    // {
-    //   name: "Gemini",
-    //   icon: "https://cdn.jsdelivr.net/gh/lobehub/lobe-icons@master/packages/static-png/light/gemini-color.png",
-    //   type: autoType,
-    //   "include-all": true,
-    //   url: `https://generativelanguage.googleapis.com/v1/models?key=${$arguments.google_ai_key}`,
-    //   "expected-status": 200,
-    // },
     {
       name: 'AI',
       icon: 'https://img.icons8.com/fluency/256/bot.png',
@@ -173,11 +152,35 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
       filter: 'AI',
     },
     // {
-    //   name: 'Auto_Reliable',
-    //   type: autoType,
+    //   name: 'Claude',
+    //   icon: 'https://cdn.jsdelivr.net/gh/lobehub/lobe-icons@master/packages/static-png/light/claude-color.png',
+    //   type: 'url-test',
     //   'include-all': true,
-    //   filter: 'AI',
+    //   url: 'https://claude.ai/api/auth/session',
+    //   'expected-status': 404,
     // },
+    // {
+    //   name: 'OpenAI',
+    //   icon: 'https://cdn.jsdelivr.net/gh/lobehub/lobe-icons@master/packages/static-png/light/openai.png',
+    //   type: 'url-test',
+    //   'include-all': true,
+    //   url: 'https://chatgpt.com/api/auth/session',
+    //   'expected-status': 200,
+    // },
+    // {
+    //   name: 'Gemini',
+    //   icon: 'https://cdn.jsdelivr.net/gh/lobehub/lobe-icons@master/packages/static-png/light/gemini-color.png',
+    //   type: 'url-test',
+    //   'include-all': true,
+    //   url: `https://generativelanguage.googleapis.com/v1/models?key=${$arguments.google_ai_key}`,
+    //   'expected-status': 200,
+    // },
+    {
+      name: 'FCM',
+      icon: 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/firebase.svg',
+      type: 'url-test',
+      proxies: ['Auto_HK', 'Auto_TW', 'Auto_SG', 'Auto_US'],
+    },
     {
       name: 'Netflix',
       icon: 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/netflix.svg',
@@ -218,6 +221,34 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
       icon: 'Final.png',
       type: 'select',
       proxies: ['Proxy', 'DIRECT'],
+    },
+    {
+      name: 'Auto_HK',
+      icon: 'HK.png',
+      type: autoType,
+      'include-all': true,
+      filter: '🇭🇰',
+    },
+    {
+      name: 'Auto_TW',
+      icon: 'TW.png',
+      type: autoType,
+      'include-all': true,
+      filter: '🇹🇼',
+    },
+    {
+      name: 'Auto_SG',
+      icon: 'SG.png',
+      type: autoType,
+      'include-all': true,
+      filter: '🇸🇬',
+    },
+    {
+      name: 'Auto_US',
+      icon: 'US.png',
+      type: autoType,
+      'include-all': true,
+      filter: '🇺🇸',
     },
   ];
 
@@ -370,7 +401,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
 
   config['proxy-groups'].forEach((group) => {
     if (group.name.includes('Auto')) {
-      group.icon = 'Available.png';
+      group.icon ??= 'Available.png';
     }
 
     if (!group.icon.startsWith('http')) {
