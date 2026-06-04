@@ -47,19 +47,44 @@ Object.entries(flagMap).forEach(([code, flag]) => {
 function main(config = { proxies: [], 'proxy-providers': {} }) {
   config['unified-delay'] = true;
   config['external-controller'] = '0.0.0.0:9090';
-  config['find-process-mode'] = 'always';
+  // config['find-process-mode'] = 'always';
   config['geo-auto-update'] = true;
   config['dns'] = {
     enable: true,
     'enhanced-mode': 'fake-ip',
     'respect-rules': true,
-    'proxy-server-nameserver': ['223.5.5.5', '119.29.29.29'],
+    'proxy-server-nameserver': [
+      '223.5.5.5',
+      // '119.29.29.29'
+    ],
+
+    'direct-nameserver': [
+      '223.5.5.5',
+      // '119.29.29.29'
+    ],
     'nameserver-policy': {
-      'GEOSITE:googlefcm': ['tcp://1.1.1.1#FCM', 'tcp://8.8.8.8#FCM'],
-      'GEOSITE:gfw': ['tcp://1.1.1.1', 'tcp://8.8.8.8'],
+      'GEOSITE:googlefcm': [
+        'tcp://8.8.8.8#FCM',
+        // 'tcp://1.1.1.1#FCM'
+      ],
+      'GEOSITE:category-ai-!cn': [
+        'tcp://8.8.8.8#AI',
+        // 'tcp://1.1.1.1#AI'
+      ],
+      'GEOSITE:gfw': [
+        'tcp://8.8.8.8',
+        // 'tcp://1.1.1.1'
+      ],
     },
-    nameserver: ['223.5.5.5', '119.29.29.29'],
-    fallback: ['tcp://1.1.1.1', 'tcp://8.8.8.8'],
+    nameserver: [
+      '223.5.5.5',
+      // '119.29.29.29'
+    ],
+
+    fallback: [
+      'tcp://8.8.8.8',
+      // 'tcp://1.1.1.1'
+    ],
     'fallback-filter': { geoip: true, 'geoip-code': 'CN' },
     'fake-ip-filter-mode': 'rule',
     'fake-ip-filter': ['GEOSITE,googlefcm,real-ip', 'GEOSITE,gfw,fake-ip', 'MATCH,real-ip'],
@@ -67,7 +92,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
 
   // https://github.com/Loyalsoldier/clash-rules
   config['rule-providers'] = [
-    'applications',
+    // 'applications',
     'lancidr',
     'private',
     'reject',
@@ -112,7 +137,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
   // https://github.com/v2fly/domain-list-community/tree/master/data
   // Rule order is top-down; earlier entries have higher priority.
   config.rules = [
-    'RULE-SET,applications,DIRECT',
+    // 'RULE-SET,applications,DIRECT',
     'RULE-SET,lancidr,DIRECT',
     'RULE-SET,private,DIRECT',
     'RULE-SET,reject,Reject',
@@ -178,8 +203,9 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     {
       name: 'FCM',
       icon: 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/firebase.svg',
-      type: 'url-test',
-      proxies: ['Auto_HK', 'Auto_TW', 'Auto_SG', 'Auto_US'],
+      type: 'select',
+      // 'include-all': true,
+      proxies: ['DIRECT'],
     },
     {
       name: 'Netflix',
@@ -192,7 +218,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
       name: 'Microsoft',
       icon: 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/microsoft.svg',
       type: 'select',
-      'include-all': true,
+      // 'include-all': true,
       proxies: ['Proxy', 'DIRECT'],
     },
     // {
@@ -222,34 +248,34 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
       type: 'select',
       proxies: ['Proxy', 'DIRECT'],
     },
-    {
-      name: 'Auto_HK',
-      icon: 'HK.png',
-      type: autoType,
-      'include-all': true,
-      filter: '🇭🇰',
-    },
-    {
-      name: 'Auto_TW',
-      icon: 'TW.png',
-      type: autoType,
-      'include-all': true,
-      filter: '🇹🇼',
-    },
-    {
-      name: 'Auto_SG',
-      icon: 'SG.png',
-      type: autoType,
-      'include-all': true,
-      filter: '🇸🇬',
-    },
-    {
-      name: 'Auto_US',
-      icon: 'US.png',
-      type: autoType,
-      'include-all': true,
-      filter: '🇺🇸',
-    },
+    // {
+    //   name: 'Auto_HK',
+    //   icon: 'HK.png',
+    //   type: autoType,
+    //   'include-all': true,
+    //   filter: '🇭🇰',
+    // },
+    // {
+    //   name: 'Auto_TW',
+    //   icon: 'TW.png',
+    //   type: autoType,
+    //   'include-all': true,
+    //   filter: '🇹🇼',
+    // },
+    // {
+    //   name: 'Auto_SG',
+    //   icon: 'SG.png',
+    //   type: autoType,
+    //   'include-all': true,
+    //   filter: '🇸🇬',
+    // },
+    // {
+    //   name: 'Auto_US',
+    //   icon: 'US.png',
+    //   type: autoType,
+    //   'include-all': true,
+    //   filter: '🇺🇸',
+    // },
   ];
 
   if (regions.length) {
@@ -277,11 +303,12 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
   enableFallback = subs.length > 1;
 
   let mainProxyGroup = {
-    name: 'Proxy',
-    icon: 'Static.png',
-    type: 'select',
-    proxies: [],
-  };
+      name: 'Proxy',
+      icon: 'Static.png',
+      type: 'select',
+      proxies: [],
+    },
+    fcmGroup = config['proxy-groups'].find((group) => group.name === 'FCM');
 
   let autoSelectGroup,
     autoPrimaryGroup,
@@ -347,7 +374,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
         interval: name === 'Free' ? 3600 : 86400,
         path: `./proxies/${name}.yaml`,
         'health-check': {
-          enable: !(enableSmart && isMobile),
+          enable: !isMobile,
           url: healthCheck.url,
         },
       };
@@ -371,6 +398,9 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
           filter = filter_backup;
         }
       }
+      // if (sub.tag.includes('FCM')) {
+      fcmGroup.proxies.push('Auto_' + name);
+      // }
 
       Object.entries(flagMap).forEach(([code, flag]) => {
         filter = filter.replace(code, flag);
@@ -385,11 +415,13 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     };
   }
 
+  let airportGroupNames = airportGroups.map((group) => group.name);
+
   mainProxyGroup.proxies.push(
     autoSelectGroup.name,
     'Auto_Primary',
     'Auto_Backup',
-    ...(enableFallback ? airportGroups.map((group) => group.name) : [])
+    ...(enableFallback ? airportGroupNames : [])
   );
 
   config['proxy-groups'].unshift(
