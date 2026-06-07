@@ -47,10 +47,10 @@ Object.entries(flagMap).forEach(([code, flag]) => {
 function main(config = { proxies: [], 'proxy-providers': {} }) {
   config['unified-delay'] = true;
   config['external-controller'] = '0.0.0.0:9090';
-  // config['find-process-mode'] = 'always';
   config['geo-auto-update'] = true;
   config['dns'] = {
     enable: true,
+    ipv6: false,
     'enhanced-mode': 'fake-ip',
     'respect-rules': true,
     'proxy-server-nameserver': [
@@ -137,12 +137,16 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
   // https://github.com/v2fly/domain-list-community/tree/master/data
   // Rule order is top-down; earlier entries have higher priority.
   config.rules = [
+    // 'AND,((NETWORK,UDP),(GEOSITE,youtube)),Auto_UDP',
+    // 'AND,((NETWORK,UDP),(DST-PORT,443),(GEOSITE,youtube)),REJECT',
+
     // 'RULE-SET,applications,DIRECT',
-    'RULE-SET,lancidr,DIRECT',
+    'RULE-SET,lancidr,DIRECT,no-resolve',
     'RULE-SET,private,DIRECT',
     'RULE-SET,reject,Reject',
     // "RULE-SET,adblockfilters,Reject",
 
+    'GEOSITE,youtube,Youtube',
     'GEOSITE,googlefcm,FCM',
     'GEOSITE,category-ai-!cn,AI',
     // 'GEOSITE,anthropic,Claude',
@@ -153,16 +157,16 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     'GEOSITE,netflix,Netflix',
 
     'RULE-SET,google,Proxy',
-    'RULE-SET,telegramcidr,Proxy',
+    'RULE-SET,telegramcidr,Proxy,no-resolve',
     // 'RULE-SET,apple,Apple',
     // 'RULE-SET,icloud,DIRECT',
 
+    'RULE-SET,cncidr,DIRECT,no-resolve',
     'RULE-SET,direct,DIRECT',
-    'RULE-SET,cncidr,DIRECT',
     'RULE-SET,proxy,Proxy',
 
-    'GEOIP,LAN,DIRECT',
-    'GEOIP,CN,DIRECT',
+    'GEOIP,LAN,DIRECT,no-resolve',
+    'GEOIP,CN,DIRECT,no-resolve',
     'MATCH,Final',
   ];
 
@@ -205,7 +209,13 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
       icon: 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/firebase.svg',
       type: 'select',
       // 'include-all': true,
-      proxies: ['DIRECT'],
+      proxies: ['DIRECT', 'Proxy'],
+    },
+    {
+      name: 'Youtube',
+      icon: 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/youtube.svg',
+      type: 'select',
+      proxies: ['Proxy'],
     },
     {
       name: 'Netflix',
@@ -296,19 +306,19 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     );
   }
 
-  let subs = $substore
-    .read('subs')
-    .filter((sub) => sub.tag.includes('Primary') || sub.tag.includes('Backup'));
+  let subs = $substore.read('subs').filter(
+    (sub) => sub.tag.includes('Primary') || sub.tag.includes('Backup')
+    // || sub.tag.includes('UDP')
+  );
 
   enableFallback = subs.length > 1;
 
   let mainProxyGroup = {
-      name: 'Proxy',
-      icon: 'Static.png',
-      type: 'select',
-      proxies: [],
-    },
-    fcmGroup = config['proxy-groups'].find((group) => group.name === 'FCM');
+    name: 'Proxy',
+    icon: 'Static.png',
+    type: 'select',
+    proxies: [],
+  };
 
   let autoSelectGroup,
     autoPrimaryGroup,
@@ -398,9 +408,6 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
           filter = filter_backup;
         }
       }
-      // if (sub.tag.includes('FCM')) {
-      fcmGroup.proxies.push('Auto_' + name);
-      // }
 
       Object.entries(flagMap).forEach(([code, flag]) => {
         filter = filter.replace(code, flag);
@@ -454,6 +461,10 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
 
     if (group['include-all']) {
       group['exclude-filter'] = 'Tailscale';
+    }
+
+    if (['FCM', 'Youtube'].includes(group.name)) {
+      group.proxies.push(...airportGroupNames);
     }
   });
 

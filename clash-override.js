@@ -1,7 +1,6 @@
 const main = (config) => {
-  config['sub-rules'] = {
-    docker: ['DOMAIN-KEYWORD,docker,Proxy', 'MATCH,DIRECT'],
-  };
+  config['sub-rules'] ??= {};
+  config['sub-rules'].docker = ['DOMAIN-KEYWORD,docker,Proxy', 'MATCH,DIRECT'];
 
   config.rules.unshift('DOMAIN-SUFFIX,ikuncode.cc,DIRECT');
   config.rules.unshift('DOMAIN-SUFFIX,cctq.ai,DIRECT');
