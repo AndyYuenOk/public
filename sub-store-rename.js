@@ -61,7 +61,10 @@ function operator(proxies = [], targetPlatform, context) {
         .trim();
     }
 
-    let multiplier = proxy.name.match(/(\d(?:\.\d)?)[x倍]/i)?.[1] || '';
+    let multiplier =
+      proxy.name.match(/(\d(?:\.\d)?)[x倍]/i)?.[1] ||
+      proxy.name.match(/x(\d(?:\.\d)?)/i)?.[1] ||
+      '';
     if (multiplier) multiplier = parseFloat(multiplier) + '\u00D7';
 
     proxy.egressName =
