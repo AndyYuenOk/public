@@ -4,24 +4,24 @@ const flagMap = {"HK":"🇭🇰","MO":"🇲🇴","TW":"🇹🇼","JP":"🇯🇵"
 function operator(proxies = [], targetPlatform, context) {
   let counters = {};
 
-  if (Object.values(context.source)[0].displayName.includes("Free")) {
+  if (Object.values(context.source)[0].displayName.includes('Free')) {
     $arguments.sort = 0;
   }
 
   proxies.forEach((proxy) => {
     proxy.entrance ??= {};
     proxy.egress ??= {};
-    proxy.entrance.ip ??= "";
-    proxy.entrance.countryCode ??= "";
-    proxy.entrance.regionCode ??= "";
-    proxy.entrance.country ??= "";
-    proxy.entrance.city ??= "";
-    proxy.entrance.isp ??= "";
-    proxy.egress.ip ??= "";
-    proxy.egress.countryCode ??= "";
-    proxy.egress.country ??= "";
-    proxy.egress.city ??= "";
-    proxy.egress.isp ??= "";
+    proxy.entrance.ip ??= '';
+    proxy.entrance.countryCode ??= '';
+    proxy.entrance.regionCode ??= '';
+    proxy.entrance.country ??= '';
+    proxy.entrance.city ??= '';
+    proxy.entrance.isp ??= '';
+    proxy.egress.ip ??= '';
+    proxy.egress.countryCode ??= '';
+    proxy.egress.country ??= '';
+    proxy.egress.city ??= '';
+    proxy.egress.isp ??= '';
     proxy.egress.isResidential ??= false;
 
     const entranceIp = proxy.entrance.ip;
@@ -47,27 +47,25 @@ function operator(proxies = [], targetPlatform, context) {
     const egressIsp = proxy.egress.isp;
     const egressIsResidential = proxy.egress.isResidential;
 
-    proxy.entranceName = "";
+    proxy.entranceName = '';
     if (entranceIp && entranceIp != egressIp) {
       proxy.entranceName = [
         entranceCountryCode,
-        entranceCountryCode == "CN" ? entranceRegionCode : "",
+        entranceCountryCode == 'CN' ? entranceRegionCode : '',
         // $server.ipCity,
         normalizedIsp(entranceIsp, entranceCountry, entranceCity),
-        "-",
+        '-',
       ]
-        .join(" ")
-        .replace(/\s{2,}/g, " ")
+        .join(' ')
+        .replace(/\s{2,}/g, ' ')
         .trim();
     }
 
-    let multiplier = proxy.name.match(/(\d(?:\.\d)?)[x倍]/i)?.[1] || "";
-    if (multiplier) multiplier = parseFloat(multiplier) + "\u00D7";
+    let multiplier = proxy.name.match(/(\d(?:\.\d)?)[x倍]/i)?.[1] || '';
+    if (multiplier) multiplier = parseFloat(multiplier) + '\u00D7';
 
     proxy.egressName =
-      (egressCountryCode || "ERR") +
-      " " +
-      normalizedIsp(egressIsp, egressCountry, egressCity);
+      (egressCountryCode || 'ERR') + ' ' + normalizedIsp(egressIsp, egressCountry, egressCity);
 
     proxy.name = [
       flagMap[egressCountryCode],
@@ -75,12 +73,12 @@ function operator(proxies = [], targetPlatform, context) {
       proxy.entranceName,
       proxy.egressName,
       multiplier,
-      proxy?.measuredSpeed ?? "",
-      proxy?.guaranteedSpeed ?? "",
-      proxy?.ai?.tag ?? "",
+      proxy?.measuredSpeed ?? '',
+      proxy?.guaranteedSpeed ?? '',
+      proxy?.ai?.tag ?? '',
     ]
-      .join(" ")
-      .replace(/\s{2,}/g, " ")
+      .join(' ')
+      .replace(/\s{2,}/g, ' ')
       .trim();
 
     counters[proxy.name] ??= { count: 0, index: 0 };
@@ -90,14 +88,13 @@ function operator(proxies = [], targetPlatform, context) {
   return proxies
     .sort(
       (a, b) =>
-        a.egressName.localeCompare(b.egressName) ||
-        a.entranceName.localeCompare(b.entranceName),
+        a.egressName.localeCompare(b.egressName) || a.entranceName.localeCompare(b.entranceName)
     )
     .map((proxy) => {
       counter = counters[proxy.name];
       if (counter.count > 1) {
-        index = (++counter.index).toString().padStart(2, "0");
-        proxy.name += " - " + index;
+        index = (++counter.index).toString().padStart(2, '0');
+        proxy.name += ' - ' + index;
       }
       return proxy;
     });
@@ -106,28 +103,29 @@ function operator(proxies = [], targetPlatform, context) {
 function normalizedIsp(isp, country, city) {
   return (
     isp
-      .replace(/.*China Mobile.*/i, "_Mobile_")
-      .replace(/.*China Unicom.*/i, "_Unicom_")
-      .replace(/.*(Chinanet|ChinaTelecom).*/i, "_Telecom_")
-      .replace(/.*Alibaba.*/i, "Alibaba")
-      .replace(/.*Tencent.*/i, "Tencent")
-      .replace(/.*Amazon.*/i, "Amazon")
-      .replace(/.*Microsoft.*/i, "Microsoft")
-      .replace(/.*Cloudflare.*/i, "Cloudflare")
+      .replace(/.*China Mobile.*/i, '_Mobile_')
+      .replace(/.*China Unicom.*/i, '_Unicom_')
+      .replace(/.*(Chinanet|ChinaTelecom).*/i, '_Telecom_')
+      .replace(/.*Alibaba.*/i, 'Alibaba')
+      .replace(/.*Tencent.*/i, 'Tencent')
+      .replace(/.*Amazon.*/i, 'Amazon')
+      .replace(/.*Microsoft.*/i, 'Microsoft')
+      .replace(/.*Cloudflare.*/i, 'Cloudflare')
+      .replace(/.*LocLix.*/i, 'LocLix')
       // .replace(/.*Chunghwa Telecom.*/i, "HiNet")
       // .replace(/.*HostPapa.*/i, "HPAPA")
       // .replace(/.*NetLab.*/i, "NetLab")
       // .replace(/.*Hong Kong Telecommunications.*/i, "HKT")
-      .replace(/[,.]/g, "")
+      .replace(/[,.]/g, '')
       // .replace(/Telecommunications/i, "Telecom")
-      .replace(/\bTelevision\b/i, "TV")
-      .replace(/\band\b/i, "&")
+      .replace(/\bTelevision\b/i, 'TV')
+      .replace(/\band\b/i, '&')
       .replace(
         /\b(?:networks?|technolog(?:y|ies)|centers?|hosting|data|global|telecom|telecommunications|mass|internet|shared|cloud|servers|services|group|company|co|ltd|inc|pte|kk|sa|llc|pty|information|corporation|data|communications|limited|labs|the|link|europe|srl|sas|servers)\b/gi,
-        "",
+        ''
       )
-      .replace(RegExp(country + "|" + city, "i"), "")
-      .replace(/[()_]/g, "")
+      .replace(RegExp(country + '|' + city, 'i'), '')
+      .replace(/[()_]/g, '')
       .trim()
   );
   // .split(" ")

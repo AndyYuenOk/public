@@ -98,7 +98,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     'reject',
     // 'icloud',
     // 'apple',
-    'google',
+    // 'google',
     'telegramcidr',
     'direct',
     'cncidr',
@@ -146,6 +146,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     'RULE-SET,reject,Reject',
     // "RULE-SET,adblockfilters,Reject",
 
+    'GEOSITE,google-play@cn,DIRECT',
     'GEOSITE,youtube,Youtube',
     'GEOSITE,googlefcm,FCM',
     'GEOSITE,category-ai-!cn,AI',
@@ -156,7 +157,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     'GEOSITE,microsoft,Microsoft',
     'GEOSITE,netflix,Netflix',
 
-    'RULE-SET,google,Proxy',
+    // 'RULE-SET,google,DIRECT',
     'RULE-SET,telegramcidr,Proxy,no-resolve',
     // 'RULE-SET,apple,Apple',
     // 'RULE-SET,icloud,DIRECT',
@@ -511,5 +512,6 @@ function getSubUserinfo() {
 }
 
 if (typeof $content === 'string') {
-  $content = ProxyUtils.yaml.dump(main(ProxyUtils.yaml.load($content)));
+  // $content = ProxyUtils.yaml.dump(main(ProxyUtils.yaml.load($content)));
+  $content = ProxyUtils.yaml.dump(main());
 }
