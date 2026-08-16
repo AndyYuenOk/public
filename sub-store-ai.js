@@ -369,13 +369,13 @@ async function operator(proxies = [], targetPlatform, context) {
         },
         url: detection.url,
 
-        ...(detection.key === 'gemini'
-          ? {
-              followRedirect: false,
-              maxRedirects: 0,
-              redirection: false,
-            }
-          : {}),
+        // ...(detection.key === 'gemini'
+        //   ? {
+        //       followRedirect: false,
+        //       maxRedirects: 0,
+        //       redirection: false,
+        //     }
+        //   : {}),
       });
       const status = parseInt(res.status || res.statusCode || 200);
       let msg = '';

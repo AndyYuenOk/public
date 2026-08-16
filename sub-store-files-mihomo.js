@@ -343,8 +343,8 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     autoSelectGroup = {
       name: 'Fallback',
       icon: 'Roundrobin.png',
-      // type: 'fallback',
-      type: 'select',
+      type: 'fallback',
+      interval: 0,
       proxies: ['Auto_Primary', 'Auto_Backup'],
     };
     autoPrimaryGroup = {
@@ -377,7 +377,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
       }
     }
 
-    subs.forEach((sub) => {
+    subs.forEach((sub, index) => {
       const userInfo = userInfoMap[sub.name];
       if (userInfo && userInfo.usage.upload + userInfo.usage.download >= userInfo.total) {
         return;
@@ -391,8 +391,8 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
         interval: name === 'Free' ? 3600 : 86400,
         path: `./proxies/${name}.yaml`,
         'health-check': {
-          // enable: !isMobile,
-          enable: false,
+          enable: !isMobile,
+          interval: 0,
           url: healthCheck.url,
         },
       };
