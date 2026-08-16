@@ -175,11 +175,16 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
   // https://github.com/lobehub/lobe-icons/tree/master/packages/static-png/light
   config['proxy-groups'] = [
     {
-      name: 'AI',
-      icon: 'https://img.icons8.com/fluency/256/bot.png',
+      name: 'Auto_AI',
       type: autoType,
       'include-all': true,
       filter: 'AI',
+    },
+    {
+      name: 'AI',
+      icon: 'https://img.icons8.com/fluency/256/bot.png',
+      type: 'select',
+      proxies: ['Auto_AI', 'Proxy'],
     },
     // {
     //   name: 'Claude',
@@ -338,7 +343,8 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     autoSelectGroup = {
       name: 'Fallback',
       icon: 'Roundrobin.png',
-      type: 'fallback',
+      // type: 'fallback',
+      type: 'select',
       proxies: ['Auto_Primary', 'Auto_Backup'],
     };
     autoPrimaryGroup = {
@@ -385,7 +391,8 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
         interval: name === 'Free' ? 3600 : 86400,
         path: `./proxies/${name}.yaml`,
         'health-check': {
-          enable: !isMobile,
+          // enable: !isMobile,
+          enable: false,
           url: healthCheck.url,
         },
       };

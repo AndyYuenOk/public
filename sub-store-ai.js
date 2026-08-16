@@ -27,6 +27,9 @@
  * - [gemini_country3_allow] Gemini 三位国家码允许列表, 逗号分隔. 默认空表示任意非拒绝国家
  * - [gemini_country3_deny] Gemini 三位国家码拒绝列表, 逗号分隔. 默认 CHN
  * - [claude_country2_deny] Claude 两位国家码黑名单, 逗号分隔. 默认 CN,HK
+ * - Claude 当前检测为两段式(均不触发 Cloudflare 人机质询):
+ *   1. https://claude.ai/cdn-cgi/trace 取 loc 两位国家码, 命中黑名单即判不支持
+ *   2. 通过后再请求 https://claude.ai/api/hello, 校验该地区未被 Anthropic 实际封锁
  * 注:
  * - 节点上会按需添加 canAccessOpenai/openaiLatency, 指 OpenAI 检测结果与响应延迟
  * - 节点上会按需添加 canAccessGemini/geminiLatency, 指 Gemini 检测结果与响应延迟
@@ -114,6 +117,8 @@ async function operator(proxies = [], targetPlatform, context) {
     /exceeds the timeout|timed out|timeout|client network socket disconnected before secure tls connection was established|socket hang up|econnreset/i;
   const policyTransientFailureRegex =
     /request is not allowed[\s\S]*try again later|try again later|temporarily unavailable|too many requests|rate limit|unusual traffic|recaptcha|captcha/i;
+  const cloudflareChallengeRegex =
+    /just a moment|cf[-_]chl|challenge-platform|enable javascript and cookies|attention required/i;
   const unsupportedTextRegex =
     /unsupported_country|unsupported_country_region_territory|not available in your country|not available in your region|isn't available in your country|location is not supported|unavailable in (?:your )?region|unavailable in (?:your )?country/i;
   const allDetectionConfigs = [
@@ -143,7 +148,10 @@ async function operator(proxies = [], targetPlatform, context) {
       key: "claude",
       cacheAiName: "claude",
       name: "Claude",
-      url: "https://claude.ai/",
+      // 边缘 trace 端点在 WAF/Bot 规则之前返回, 不会触发 Cloudflare 人机质询
+      url: "https://claude.ai/cdn-cgi/trace",
+      // 通过国家码后的二次校验: API 路由不走浏览器质询, 但仍受地区封锁影响
+      verifyUrl: "https://claude.ai/api/hello",
       flagKey: "canAccessClaude",
       latencyKey: "claudeLatency",
       userAgent: BROWSER_UA,
@@ -384,7 +392,9 @@ async function operator(proxies = [], targetPlatform, context) {
       const index = proxyIndex;
 
       const requestMethod =
-        detection.key === "gemini" || detection.key === "googleAiStudio"
+        detection.key === "gemini" ||
+        detection.key === "googleAiStudio" ||
+        detection.key === "claude"
           ? "get"
           : method;
 
@@ -413,6 +423,7 @@ async function operator(proxies = [], targetPlatform, context) {
       let geminiLocation = "";
 
       let claudeCountry2 = "";
+      let claudeVerify;
       if (detection.key === "gemini") {
         const locationHeader = getHeaderValue(res.headers, "location");
         geminiLocation = locationHeader || "";
@@ -434,8 +445,25 @@ async function operator(proxies = [], targetPlatform, context) {
         msg = details.join(", ");
       } else if (detection.key === "claude") {
         bodyText = res.body;
-        claudeCountry2 = getClaudeCountry2(res.body);
-        msg = claudeCountry2 ? `country: ${claudeCountry2}` : "";
+        const trace = parseTraceFields(res.body);
+        claudeCountry2 = (trace.loc || "").toUpperCase();
+        const details = [];
+        if (claudeCountry2) details.push(`country2: ${claudeCountry2}`);
+        if (trace.colo) details.push(`colo: ${trace.colo}`);
+        // 仅在国家码可用且未命中黑名单时才做二次校验, 避免无谓请求
+        if (
+          status === 200 &&
+          claudeCountry2 &&
+          !claudeCountryDenySet.has(claudeCountry2)
+        ) {
+          claudeVerify = await verifyClaudeAccess({
+            detection,
+            proxyIndex,
+            requestMethod,
+          });
+          details.push(`verify: ${claudeVerify.status || "ERR"}`);
+        }
+        msg = details.join(", ");
       } else if (detection.key === "googleAiStudio") {
         body = res.body;
         try {
@@ -472,6 +500,8 @@ async function operator(proxies = [], targetPlatform, context) {
         headers: res.headers,
         geminiCountry3,
         openaiCountry2,
+        claudeCountry2,
+        claudeVerify,
       });
 
       if (outcome === "supported") {
@@ -692,6 +722,8 @@ async function operator(proxies = [], targetPlatform, context) {
     headers = {},
     geminiCountry3 = "",
     openaiCountry2 = "",
+    claudeCountry2 = "",
+    claudeVerify,
   }) {
     if (detection.key === "openai") {
       if (status !== 200) return "error";
@@ -704,7 +736,11 @@ async function operator(proxies = [], targetPlatform, context) {
     }
 
     if (detection.key === "claude") {
-      return classifyClaudeCountry2Result({ status, bodyText });
+      return classifyClaudeCountry2Result({
+        status,
+        claudeCountry2,
+        claudeVerify,
+      });
     }
     if (detection.key === "googleAiStudio") {
       return classifyGoogleAiStudioResult({ status, body });
@@ -762,15 +798,70 @@ async function operator(proxies = [], targetPlatform, context) {
     return "error";
   }
 
-  function classifyClaudeCountry2Result({ status, bodyText = "" }) {
+  function classifyClaudeCountry2Result({
+    status,
+    claudeCountry2 = "",
+    claudeVerify,
+  }) {
     if (status !== 200) return "error";
-    const title = extractHtmlTitle(bodyText);
-    if (/unavailable/i.test(title)) {
-      return "unsupported";
-    }
-    const country2 = getClaudeCountry2(bodyText);
+    const country2 = `${claudeCountry2 ?? ""}`.toUpperCase();
     if (!country2) return "error";
-    return claudeCountryDenySet.has(country2) ? "unsupported" : "supported";
+    if (claudeCountryDenySet.has(country2)) return "unsupported";
+    // 国家码通过后, 以 API 二次校验结果为准; 未取到校验结果视为错误而非支持
+    if (!claudeVerify) return "error";
+    return claudeVerify.outcome;
+  }
+  async function verifyClaudeAccess({
+    detection,
+    proxyIndex,
+    requestMethod = "get",
+  }) {
+    try {
+      const res = await http({
+        proxy: `http://${http_meta_host}:${http_meta_ports[proxyIndex]}`,
+        method: requestMethod,
+        headers: {
+          "User-Agent": detection.userAgent,
+          Accept: "application/json",
+        },
+        url: detection.verifyUrl,
+      });
+      const status = parseInt(res.status || res.statusCode || 200);
+      const bodyText = typeof res.body === "string" ? res.body : "";
+      if (isUnsupportedResult({ bodyText })) {
+        return { outcome: "unsupported", status, bodyText };
+      }
+      // 被 Cloudflare 拦截属临时失败而非地区限制. 响应头可能被链路丢弃, 故同时看正文特征
+      if (
+        getHeaderValue(res.headers, "cf-mitigated") ||
+        cloudflareChallengeRegex.test(bodyText) ||
+        isTransientFailure({
+          status,
+          bodyText,
+          detectionKey: detection.key,
+        })
+      ) {
+        return { outcome: "error", status, bodyText };
+      }
+      return {
+        outcome: status === 200 ? "supported" : "unsupported",
+        status,
+        bodyText,
+      };
+    } catch (e) {
+      const status = parseInt(
+        e?.response?.status || e?.response?.statusCode || 0,
+        10,
+      );
+      const bodyText = e?.response?.body ?? e?.message ?? "";
+      if (
+        isUnsupportedResult({ bodyText }) &&
+        !cloudflareChallengeRegex.test(`${bodyText}`)
+      ) {
+        return { outcome: "unsupported", status, bodyText };
+      }
+      return { outcome: "error", status, bodyText };
+    }
   }
   function classifyGoogleAiStudioResult({ status, body }) {
     if (
@@ -887,14 +978,6 @@ async function operator(proxies = [], targetPlatform, context) {
     }
 
     return "";
-  }
-  function getClaudeCountry2(bodyText = "") {
-    const text = bodyText ?? "";
-    if (!text) return "";
-    const matched =
-      text.match(/data-ion-ip-country="([A-Z]{2})"/i) ||
-      text.match(/data-ion-ip-country='([A-Z]{2})'/i);
-    return matched?.[1] ? matched[1].toUpperCase() : "";
   }
   function parseAiDetectKeys(raw = "") {
     const text = `${raw ?? ""}`;
