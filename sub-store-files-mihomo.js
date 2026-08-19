@@ -62,20 +62,20 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
       '223.5.5.5',
       // '119.29.29.29'
     ],
-    'nameserver-policy': {
-      'GEOSITE:googlefcm': [
-        'tcp://8.8.8.8#FCM',
-        // 'tcp://1.1.1.1#FCM'
-      ],
-      'GEOSITE:category-ai-!cn': [
-        'tcp://8.8.8.8#AI',
-        // 'tcp://1.1.1.1#AI'
-      ],
-      'GEOSITE:gfw': [
-        'tcp://8.8.8.8',
-        // 'tcp://1.1.1.1'
-      ],
-    },
+    // 'nameserver-policy': {
+    //   'GEOSITE:googlefcm': [
+    //     'tcp://8.8.8.8#FCM',
+    //     // 'tcp://1.1.1.1#FCM'
+    //   ],
+    //   'GEOSITE:category-ai-!cn': [
+    //     'tcp://8.8.8.8#AI',
+    //     // 'tcp://1.1.1.1#AI'
+    //   ],
+    //   'GEOSITE:gfw': [
+    //     'tcp://8.8.8.8',
+    //     // 'tcp://1.1.1.1'
+    //   ],
+    // },
     nameserver: [
       '223.5.5.5',
       // '119.29.29.29'
@@ -87,7 +87,12 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     ],
     'fallback-filter': { geoip: true, 'geoip-code': 'CN' },
     'fake-ip-filter-mode': 'rule',
-    'fake-ip-filter': ['GEOSITE,googlefcm,real-ip', 'GEOSITE,gfw,fake-ip', 'MATCH,real-ip'],
+    'fake-ip-filter': [
+      'GEOSITE,googlefcm,real-ip',
+      'GEOSITE,cn,real-ip',
+      // 'GEOSITE,gfw,fake-ip',
+      'MATCH,fake-ip',
+    ],
   };
 
   // https://github.com/Loyalsoldier/clash-rules
@@ -134,12 +139,19 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     return providers;
   }, {});
 
+  config['geodata-mode'] = true;
+
+  config['geox-url'] = {
+    geoip: 'https://cdn.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geoip.dat',
+    geosite: 'https://cdn.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geosite.dat',
+  };
+
   // https://github.com/Loyalsoldier/v2ray-rules-dat
   // https://github.com/v2fly/domain-list-community/tree/master/data
   // Rule order is top-down; earlier entries have higher priority.
   config.rules = [
     // 'AND,((NETWORK,UDP),(GEOSITE,youtube)),Auto_UDP',
-    // 'AND,((NETWORK,UDP),(DST-PORT,443),(GEOSITE,youtube)),REJECT',
+    'AND,((NETWORK,UDP),(PROCESS-NAME-WILDCARD,*youtube*)),REJECT',
 
     // 'RULE-SET,applications,DIRECT',
     // 'RULE-SET,lancidr,DIRECT,no-resolve',
@@ -147,7 +159,9 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     // 'RULE-SET,reject,Reject',
     'RULE-SET,adblockfilters,Reject',
 
-    'GEOSITE,google-play@cn,DIRECT',
+    'GEOSITE,private,DIRECT',
+    'GEOSITE,cn,DIRECT',
+    // 'GEOSITE,google-play@cn,DIRECT',
     'GEOSITE,googlefcm,FCM',
     'GEOSITE,youtube,Youtube',
     'GEOSITE,category-ai-!cn,AI',
@@ -157,8 +171,6 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     // 'GEOSITE,microsoft@cn,DIRECT',
     // 'GEOSITE,microsoft,Microsoft',
     'GEOSITE,netflix,Netflix',
-    'GEOSITE,private,DIRECT',
-    'GEOSITE,gfw,Proxy',
 
     // 'RULE-SET,google,DIRECT',
     // 'RULE-SET,telegramcidr,Proxy,no-resolve',

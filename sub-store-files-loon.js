@@ -11,7 +11,19 @@ const remoteProxyLines = remoteProxyItems.map(({ subName, remoteName }) => {
 
 let nextContent = replaceSection($content, "Remote Proxy", remoteProxyLines);
 nextContent = replaceAutoProxyGroups(nextContent, remoteProxyItems);
+nextContent = randomizeIntervals(nextContent);
 $content = nextContent;
+
+function randomizeIntervals(text) {
+  return text.replace(
+    /\binterval\s*=\s*\d+/gi,
+    () => `interval=${randomInterval()}`,
+  );
+}
+
+function randomInterval(min = 300, max = 360) {
+  return min + Math.floor(Math.random() * (max - min + 1));
+}
 
 function buildRemoteProxyItems(subscriptions) {
   const usedRemoteNames = new Set();
