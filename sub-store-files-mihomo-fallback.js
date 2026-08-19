@@ -337,28 +337,30 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
       url: 'http://www.gstatic.com/generate_204',
       // url: "http://www.google.com/generate_204",
       // url: "http://cp.cloudflare.com/generate_204",
-      timeout: 1500,
-      tolerance: 200,
-      'max-failed-times': 1,
+      interval: 0,
+      // timeout: 1500,
+      // tolerance: 200,
+      // 'max-failed-times': 1,
     };
 
   if (enableFallback) {
     autoSelectGroup = {
       name: 'Fallback',
       icon: 'Roundrobin.png',
-      type: 'fallback',
+      // type: 'fallback',
+      type: 'select',
       proxies: ['Auto_Primary', 'Auto_Backup'],
     };
     autoPrimaryGroup = {
       name: 'Auto_Primary',
-      type: autoType,
-      interval: getInterval(),
+      // type: autoType,
+      type: 'select',
       proxies: [],
     };
     autoBackupGroup = {
       name: 'Auto_Backup',
-      type: autoType,
-      interval: getInterval(),
+      // type: autoType,
+      type: 'select',
       proxies: [],
     };
 
@@ -395,8 +397,8 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
         interval: name === 'Free' ? 3600 : 86400,
         path: `./proxies/${name}.yaml`,
         'health-check': {
-          enable: !isMobile,
-          interval: getInterval(),
+          // enable: !isMobile,
+          enable: false,
           url: healthCheck.url,
         },
       };
@@ -520,10 +522,6 @@ function getSubUserinfo() {
   }
 
   return userInfoMap;
-}
-
-function getInterval() {
-  return Math.floor(Math.random() * (360 - 300 + 1)) + 300;
 }
 
 if (typeof $content === 'string') {
