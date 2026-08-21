@@ -45,6 +45,8 @@ Object.entries(flagMap).forEach(([code, flag]) => {
 });
 
 function main(config = { proxies: [], 'proxy-providers': {} }) {
+  config['lgbm-auto-update'] = true;
+
   config['unified-delay'] = true;
   config['external-controller'] = '0.0.0.0:9090';
   config['geo-auto-update'] = true;
@@ -57,20 +59,16 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
       '223.5.5.5',
       // '119.29.29.29'
     ],
-
-    'direct-nameserver': [
-      '223.5.5.5',
-      // '119.29.29.29'
-    ],
+    'direct-nameserver': ['system'],
     // 'nameserver-policy': {
-    //   'GEOSITE:googlefcm': [
-    //     'tcp://8.8.8.8#FCM',
-    //     // 'tcp://1.1.1.1#FCM'
-    //   ],
-    //   'GEOSITE:category-ai-!cn': [
-    //     'tcp://8.8.8.8#AI',
-    //     // 'tcp://1.1.1.1#AI'
-    //   ],
+    //   // 'GEOSITE:Youtube': [
+    //   //   'tcp://8.8.8.8#Youtube',
+    //   //   // 'tcp://1.1.1.1#FCM'
+    //   // ],
+    //   // 'GEOSITE:category-ai-!cn': [
+    //   //   'tcp://8.8.8.8#AI',
+    //   //   // 'tcp://1.1.1.1#AI'
+    //   // ],
     //   'GEOSITE:gfw': [
     //     'tcp://8.8.8.8',
     //     // 'tcp://1.1.1.1'
@@ -80,19 +78,19 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
       '223.5.5.5',
       // '119.29.29.29'
     ],
-
+    'fake-ip-filter-mode': 'rule',
+    'fake-ip-filter': [
+      'GEOSITE,private,real-ip',
+      'GEOSITE,cn,real-ip',
+      'GEOSITE,googlefcm,real-ip',
+      // 'GEOSITE,gfw,fake-ip',
+      'MATCH,fake-ip',
+    ],
     fallback: [
       'tcp://8.8.8.8',
       // 'tcp://1.1.1.1'
     ],
-    'fallback-filter': { geoip: true, 'geoip-code': 'CN' },
-    'fake-ip-filter-mode': 'rule',
-    'fake-ip-filter': [
-      'GEOSITE,googlefcm,real-ip',
-      'GEOSITE,cn,real-ip',
-      // 'GEOSITE,gfw,fake-ip',
-      'MATCH,fake-ip',
-    ],
+    // 'fallback-filter': { geoip: true, 'geoip-code': 'CN' },
   };
 
   // https://github.com/Loyalsoldier/clash-rules
@@ -151,7 +149,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
   // Rule order is top-down; earlier entries have higher priority.
   config.rules = [
     // 'AND,((NETWORK,UDP),(GEOSITE,youtube)),Auto_UDP',
-    'AND,((NETWORK,UDP),(PROCESS-NAME-WILDCARD,*youtube*)),REJECT',
+    // 'AND,((NETWORK,UDP),(PROCESS-NAME-WILDCARD,*youtube*)),REJECT',
 
     // 'RULE-SET,applications,DIRECT',
     // 'RULE-SET,lancidr,DIRECT,no-resolve',
@@ -159,18 +157,18 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     // 'RULE-SET,reject,Reject',
     'RULE-SET,adblockfilters,Reject',
 
-    'GEOSITE,private,DIRECT',
-    'GEOSITE,cn,DIRECT',
     // 'GEOSITE,google-play@cn,DIRECT',
     'GEOSITE,googlefcm,FCM',
-    'GEOSITE,youtube,Youtube',
-    'GEOSITE,category-ai-!cn,AI',
     // 'GEOSITE,anthropic,Claude',
     // 'GEOSITE,openai,OpenAI',
-    // 'GEOSITE,google-gemini,Gemini',
+    // 'GEOSITE,google-gemini,Gemini'
+    'GEOSITE,category-ai-!cn,AI',
     // 'GEOSITE,microsoft@cn,DIRECT',
     // 'GEOSITE,microsoft,Microsoft',
+    'GEOSITE,youtube,Youtube',
     'GEOSITE,netflix,Netflix',
+    'GEOSITE,private,DIRECT',
+    'GEOSITE,cn,DIRECT',
 
     // 'RULE-SET,google,DIRECT',
     // 'RULE-SET,telegramcidr,Proxy,no-resolve',
@@ -189,17 +187,18 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
   // https://github.com/Orz-3/mini/tree/master/Color
   // https://github.com/lobehub/lobe-icons/tree/master/packages/static-png/light
   config['proxy-groups'] = [
-    {
-      name: 'Auto_AI',
-      type: autoType,
-      'include-all': true,
-      filter: 'AI',
-    },
+    // {
+    //   name: 'Auto_AI',
+    //   type: autoType,
+    //   'include-all': true,
+    //   filter: 'AI',
+    // },
     {
       name: 'AI',
       icon: 'https://img.icons8.com/fluency/256/bot.png',
-      type: 'select',
-      proxies: ['Auto_AI', 'Proxy'],
+      type: autoType,
+      'include-all': true,
+      filter: 'AI',
     },
     // {
     //   name: 'Claude',
@@ -236,6 +235,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
       name: 'Youtube',
       icon: 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/youtube.svg',
       type: 'select',
+      'include-all': true,
       proxies: ['Proxy'],
     },
     {
@@ -371,6 +371,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
       name: 'Auto_Backup',
       type: autoType,
       interval: getInterval(),
+      use: [],
       proxies: [],
     };
 
@@ -407,7 +408,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
         interval: name === 'Free' ? 3600 : 86400,
         path: `./proxies/${name}.yaml`,
         'health-check': {
-          enable: !isMobile,
+          enable: true,
           interval: getInterval(),
           url: healthCheck.url,
         },
@@ -425,7 +426,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
         autoPrimaryGroup.proxies.push('Auto_' + name);
       }
       if (sub.tag.includes('Backup')) {
-        autoBackupGroup.proxies.push('Auto_' + name);
+        autoBackupGroup.use.push(name);
 
         let filter_backup = query.filter_backup ?? '';
         if (filter_backup) {
@@ -438,6 +439,10 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
       });
       config['proxy-providers'][name].filter = filter;
     });
+
+    if (!autoPrimaryGroup.proxies.length) {
+      autoPrimaryGroup.proxies = ['REJECT'];
+    }
   } else {
     autoSelectGroup = {
       name: 'Auto',
@@ -487,7 +492,12 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
       group['exclude-filter'] = 'Tailscale';
     }
 
-    if (['FCM', 'Youtube'].includes(group.name)) {
+    if (
+      [
+        'FCM',
+        //  'Youtube'
+      ].includes(group.name)
+    ) {
       group.proxies.push(...airportGroupNames);
     }
   });

@@ -41,18 +41,11 @@ async function operator(proxies = [], targetPlatform, context) {
   let valid = $arguments.valid || `ProxyUtils.isIP('{{api.ip || api.query}}')`;
   let format = $arguments.format || "";
   let utils;
-  let dnsResolver;
-  if (resolveDomain) {
-    if (!isNode) {
-      logBoundary("END");
-      throw new Error(
-        "resolve_domain is only supported in Node.js environment",
-      );
-    }
-    const { Resolver } = require("dns").promises;
-    dnsResolver = new Resolver();
-    dnsResolver.setServers(["223.5.5.5"]);
-  }
+  // DoH endpoint used to resolve proxy server hostnames. Plain UDP DNS gets
+  // hijacked by TUN dns-hijack and returns fake-ip, which poisons the GeoIP
+  // and ASN lookups below. DoH travels over HTTPS to a literal IP, so there is
+  // no hostname for the hijacker to intercept.
+  const dohUrl = $arguments.doh || "https://223.5.5.5/resolve";
   if (internal) {
     if (isNode) {
       utils = new ProxyUtils.MMDB({
@@ -517,11 +510,34 @@ async function operator(proxies = [], targetPlatform, context) {
     const resolved = await resolveServer(server);
     return resolved;
   }
+  // Query the DoH endpoint for a single record type, returning matching answers.
+  async function dohQuery(server, type) {
+    const url = `${dohUrl}?name=${encodeURIComponent(server)}&type=${type}`;
+    const { payload, status } = await requestJson({
+      url,
+      headers: { accept: "application/dns-json" },
+    });
+    if (status !== 200) {
+      throw new Error(`HTTP ${status}`);
+    }
+    if (!payload || typeof payload !== "object") {
+      throw new Error("Malformed DoH response");
+    }
+    // Status is the DNS RCODE: 0 means success, 3 means NXDOMAIN.
+    if (payload.Status !== 0) {
+      throw new Error(`DNS status ${payload.Status}`);
+    }
+    const wanted = type === "AAAA" ? 28 : 1;
+    return (Array.isArray(payload.Answer) ? payload.Answer : [])
+      .filter((rec) => rec && rec.type === wanted)
+      .map((rec) => String(rec.data || "").trim())
+      .filter((ip) => ip && ProxyUtils.isIP(ip));
+  }
   async function resolveServer(server) {
     try {
       const [ipv4Records, ipv6Records] = await Promise.all([
-        dnsResolver.resolve4(server).catch(() => []),
-        dnsResolver.resolve6(server).catch(() => []),
+        dohQuery(server, "A").catch(() => []),
+        dohQuery(server, "AAAA").catch(() => []),
       ]);
       const ipv4 = ipv4Records.find((ip) => typeof ip === "string" && ip);
       const fallback = ipv6Records.find((ip) => typeof ip === "string" && ip);
@@ -531,9 +547,7 @@ async function operator(proxies = [], targetPlatform, context) {
       }
       return resolved;
     } catch (e) {
-      throw new Error(
-        `Local DNS resolve failed: ${server} (${e.message ?? e})`,
-      );
+      throw new Error(`DoH resolve failed: ${server} (${e.message ?? e})`);
     }
   }
   function lodash_get(source, path, defaultValue = undefined) {
