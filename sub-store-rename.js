@@ -124,7 +124,7 @@ function normalizedIsp(isp, country, city) {
       .replace(/\bTelevision\b/i, 'TV')
       .replace(/\band\b/i, '&')
       .replace(
-        /\b(?:networks?|technolog(?:y|ies)|centers?|hosting|data|global|telecom|tele?communications|mass|internet|shared|cloud|servers|services|group|company|co|ltd|inc|pte|kk|sa|llc|pty|information|corporation|data|communications|limited|labs|the|link|europe|srl|sas|servers)\b/gi,
+        /\b(?:networks?|technolog(?:y|ies)|tech|centers?|hosting|data|global|telecom|tele?communications|mass|internet|shared|cloud|servers|services|group|company|co|ltd|inc|pte|kk|sa|llc|pty|information|corporation|data|communications|limited|labs|the|link|europe|srl|sas|servers|enterprises)\b/gi,
         ''
       )
       .replace(RegExp(country + '|' + city, 'i'), '')
