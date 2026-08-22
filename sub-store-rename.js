@@ -106,9 +106,9 @@ function operator(proxies = [], targetPlatform, context) {
 function normalizedIsp(isp, country, city) {
   return (
     isp
-      .replace(/.*China Mobile.*/i, '_Mobile_')
-      .replace(/.*(China Unicom|CHINA169).*/i, '_Unicom_')
-      .replace(/.*(Chinanet|ChinaTelecom).*/i, '_Telecom_')
+      .replace(/.*China Mobile.*/i, '_CM_')
+      .replace(/.*(China Unicom|CHINA169).*/i, '_CU_')
+      .replace(/.*(Chinanet|ChinaTelecom).*/i, '_CT_')
       .replace(/.*Alibaba.*/i, 'Alibaba')
       .replace(/.*Tencent.*/i, 'Tencent')
       .replace(/.*Amazon.*/i, 'Amazon')

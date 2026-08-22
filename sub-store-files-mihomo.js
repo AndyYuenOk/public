@@ -224,13 +224,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     //   url: `https://generativelanguage.googleapis.com/v1/models?key=${$arguments.google_ai_key}`,
     //   'expected-status': 200,
     // },
-    {
-      name: 'FCM',
-      icon: 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/firebase.svg',
-      type: 'select',
-      // 'include-all': true,
-      proxies: ['DIRECT', 'Proxy'],
-    },
+
     {
       name: 'Youtube',
       icon: 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/youtube.svg',
@@ -251,6 +245,13 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
       type: 'select',
       // 'include-all': true,
       proxies: ['Proxy', 'DIRECT'],
+    },
+    {
+      name: 'FCM',
+      icon: 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/firebase.svg',
+      type: 'select',
+      // 'include-all': true,
+      proxies: ['DIRECT', 'Proxy'],
     },
     // {
     //   name: 'Apple',
@@ -409,7 +410,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
         interval: name === 'Free' ? 3600 : 86400,
         path: `./proxies/${name}.yaml`,
         'health-check': {
-          enable: true,
+          enable: !isMobile || sub.tag.includes('Primary'),
           interval: getInterval(),
           url: healthCheck.url,
         },
