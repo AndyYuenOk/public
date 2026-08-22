@@ -169,6 +169,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     'GEOSITE,netflix,Netflix',
     'GEOSITE,private,DIRECT',
     'GEOSITE,cn,DIRECT',
+    'GEOSITE,geolocation-!cn,Proxy',
 
     // 'RULE-SET,google,DIRECT',
     // 'RULE-SET,telegramcidr,Proxy,no-resolve',
@@ -239,13 +240,13 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
       'include-all': true,
       proxies: ['Proxy'],
     },
-    {
-      name: 'Microsoft',
-      icon: 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/microsoft.svg',
-      type: 'select',
-      // 'include-all': true,
-      proxies: ['Proxy', 'DIRECT'],
-    },
+    // {
+    //   name: 'Microsoft',
+    //   icon: 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/microsoft.svg',
+    //   type: 'select',
+    //   // 'include-all': true,
+    //   proxies: ['Proxy', 'DIRECT'],
+    // },
     {
       name: 'FCM',
       icon: 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/firebase.svg',
@@ -284,28 +285,35 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     //   name: 'Auto_HK',
     //   icon: 'HK.png',
     //   type: autoType,
-    //   'include-all': true,
+    //   // 'include-all': true,
     //   filter: '🇭🇰',
     // },
     // {
-    //   name: 'Auto_TW',
-    //   icon: 'TW.png',
+    //   name: 'Auto_JP',
+    //   icon: 'JP.png',
     //   type: autoType,
-    //   'include-all': true,
-    //   filter: '🇹🇼',
+    //   // 'include-all': true,
+    //   filter: '🇯🇵',
     // },
     // {
     //   name: 'Auto_SG',
     //   icon: 'SG.png',
     //   type: autoType,
-    //   'include-all': true,
+    //   // 'include-all': true,
     //   filter: '🇸🇬',
+    // },
+    // {
+    //   name: 'Auto_TW',
+    //   icon: 'TW.png',
+    //   type: autoType,
+    //   // 'include-all': true,
+    //   filter: '🇹🇼',
     // },
     // {
     //   name: 'Auto_US',
     //   icon: 'US.png',
     //   type: autoType,
-    //   'include-all': true,
+    //   // 'include-all': true,
     //   filter: '🇺🇸',
     // },
   ];
@@ -329,7 +337,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
   }
 
   let subs = $substore.read('subs').filter(
-    (sub) => sub.tag.includes('Primary') || sub.tag.includes('Backup')
+    (sub) => sub.tag.includes(isMobile ? 'Mobile' : 'Primary') || sub.tag.includes('Backup')
     // || sub.tag.includes('UDP')
   );
 
@@ -402,7 +410,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
         return;
       }
 
-      let name = sub.displayName;
+      let name = sub.displayName || sub.name;
 
       config['proxy-providers'][name] = {
         type: 'http',
@@ -456,16 +464,22 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
   let airportGroupNames = airportGroups.map((group) => group.name);
 
   mainProxyGroup.proxies.push(
-    autoSelectGroup.name,
-    'Auto_Primary',
-    'Auto_Backup',
+    ...config['proxy-groups']
+      .filter((group) => group.name.includes('Auto'))
+      .map((group) => {
+        group.use = autoPrimaryGroup.use;
+        return group.name;
+      }),
+    // autoSelectGroup.name,
+    // 'Auto_Primary',
+    // 'Auto_Backup',
     ...(enableFallback ? airportGroupNames : [])
   );
 
   config['proxy-groups'].unshift(
     mainProxyGroup,
-    autoSelectGroup,
-    ...(enableFallback ? [autoPrimaryGroup, autoBackupGroup] : []),
+    // autoSelectGroup,
+    // ...(enableFallback ? [autoPrimaryGroup, autoBackupGroup] : []),
     ...airportGroups
   );
 
@@ -547,7 +561,9 @@ function getSubUserinfo() {
 }
 
 function getInterval() {
-  return Math.floor(Math.random() * (360 - 300 + 1)) + 300;
+  let min = isMobile ? 5 * 60 : 300;
+  let max = isMobile ? 10 * 60 : 600;
+  return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
 if (typeof $content === 'string') {
