@@ -88,7 +88,9 @@ async function operator(proxies = [], targetPlatform, context) {
   }`;
   const encodedGoogleAiStudioKey = encodeURIComponent(googleAiStudioKey);
   const hasGoogleAiStudioKey = Boolean(googleAiStudioKey);
-  const enabledDetectionKeys = parseAiDetectKeys($arguments.ai_detect ?? 'openai,gemini,claude');
+  const enabledDetectionKeys = parseAiDetectKeys(
+    $arguments.ai_detect ?? 'openai,claude,google-ai-studio'
+  );
   const geminiCountry3AllowSet = toCountryCodeSet($arguments.gemini_country3_allow ?? '');
   const geminiCountry3DenySet = toCountryCodeSet($arguments.gemini_country3_deny ?? 'CHN');
   const openaiCountry2DenySet = toCountryCode2Set($arguments.openai_country2_deny ?? 'CN,HK');

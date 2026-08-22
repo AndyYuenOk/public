@@ -95,7 +95,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
 
   // https://github.com/Loyalsoldier/clash-rules
   config['rule-providers'] = [
-    // 'applications',
+    'applications',
     // 'lancidr',
     // 'private',
     // 'reject',
@@ -151,7 +151,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     // 'AND,((NETWORK,UDP),(GEOSITE,youtube)),Auto_UDP',
     // 'AND,((NETWORK,UDP),(PROCESS-NAME-WILDCARD,*youtube*)),REJECT',
 
-    // 'RULE-SET,applications,DIRECT',
+    'RULE-SET,applications,DIRECT',
     // 'RULE-SET,lancidr,DIRECT,no-resolve',
     // 'RULE-SET,private,DIRECT',
     // 'RULE-SET,reject,Reject',
