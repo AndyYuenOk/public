@@ -107,7 +107,7 @@ function normalizedIsp(isp, country, city) {
   return (
     isp
       .replace(/.*China Mobile.*/i, '_Mobile_')
-      .replace(/.*China Unicom.*/i, '_Unicom_')
+      .replace(/.*(China Unicom|CHINA169).*/i, '_Unicom_')
       .replace(/.*(Chinanet|ChinaTelecom).*/i, '_Telecom_')
       .replace(/.*Alibaba.*/i, 'Alibaba')
       .replace(/.*Tencent.*/i, 'Tencent')

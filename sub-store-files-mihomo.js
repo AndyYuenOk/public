@@ -196,9 +196,9 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     {
       name: 'AI',
       icon: 'https://img.icons8.com/fluency/256/bot.png',
-      type: autoType,
+      type: 'select',
       'include-all': true,
-      filter: 'AI',
+      proxies: ['Proxy'],
     },
     // {
     //   name: 'Claude',
@@ -365,6 +365,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
       name: 'Auto_Primary',
       type: autoType,
       interval: getInterval(),
+      use: [],
       proxies: [],
     };
     autoBackupGroup = {
@@ -423,7 +424,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
       let filter = query.filter ?? '';
 
       if (sub.tag.includes('Primary')) {
-        autoPrimaryGroup.proxies.push('Auto_' + name);
+        autoPrimaryGroup.use.push(name);
       }
       if (sub.tag.includes('Backup')) {
         autoBackupGroup.use.push(name);
@@ -440,7 +441,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
       config['proxy-providers'][name].filter = filter;
     });
 
-    if (!autoPrimaryGroup.proxies.length) {
+    if (!autoPrimaryGroup.use.length) {
       autoPrimaryGroup.proxies = ['REJECT'];
     }
   } else {
