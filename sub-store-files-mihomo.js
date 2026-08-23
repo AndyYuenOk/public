@@ -289,7 +289,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
       ([code, flag]) => ({
         name: 'Auto_' + code,
         icon: code + '.png',
-        type: code == 'HK' ? autoType : 'url-test',
+        type: autoType,
         'include-all': true,
         filter: flag,
       })
