@@ -290,6 +290,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
         name: 'Auto_' + code,
         icon: code + '.png',
         type: autoType,
+        interval: getInterval(),
         'include-all': true,
         filter: flag,
       })
@@ -542,8 +543,8 @@ function getSubUserinfo() {
 }
 
 function getInterval() {
-  let min = isMobile ? 5 * 60 : 300;
-  let max = isMobile ? 10 * 60 : 600;
+  let min = isMobile ? 30 * 60 : 300;
+  let max = isMobile ? 60 * 60 : 600;
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
