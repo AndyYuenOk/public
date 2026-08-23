@@ -199,6 +199,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
       icon: 'https://img.icons8.com/fluency/256/bot.png',
       type: 'select',
       'include-all': true,
+      filter: 'AI',
       proxies: ['Proxy'],
     },
     // {
