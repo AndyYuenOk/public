@@ -1,8 +1,8 @@
 // prettier-ignore
 const flagMap = {"HK":"🇭🇰","MO":"🇲🇴","TW":"🇹🇼","JP":"🇯🇵","KR":"🇰🇷","SG":"🇸🇬","US":"🇺🇸","GB":"🇬🇧","FR":"🇫🇷","DE":"🇩🇪","AU":"🇦🇺","AE":"🇦🇪","AF":"🇦🇫","AL":"🇦🇱","DZ":"🇩🇿","AO":"🇦🇴","AR":"🇦🇷","AM":"🇦🇲","AT":"🇦🇹","AZ":"🇦🇿","BH":"🇧🇭","BD":"🇧🇩","BY":"🇧🇾","BE":"🇧🇪","BZ":"🇧🇿","BJ":"🇧🇯","BT":"🇧🇹","BO":"🇧🇴","BA":"🇧🇦","BW":"🇧🇼","BR":"🇧🇷","VG":"🇻🇬","BN":"🇧🇳","BG":"🇧🇬","BF":"🇧🇫","BI":"🇧🇮","KH":"🇰🇭","CM":"🇨🇲","CA":"🇨🇦","CV":"🇨🇻","KY":"🇰🇾","CF":"🇨🇫","TD":"🇹🇩","CL":"🇨🇱","CO":"🇨🇴","KM":"🇰🇲","CG":"🇨🇬","CD":"🇨🇩","CR":"🇨🇷","HR":"🇭🇷","CY":"🇨🇾","CZ":"🇨🇿","DK":"🇩🇰","DJ":"🇩🇯","DO":"🇩🇴","EC":"🇪🇨","EG":"🇪🇬","SV":"🇸🇻","GQ":"🇬🇶","ER":"🇪🇷","EE":"🇪🇪","ET":"🇪🇹","FJ":"🇫🇯","FI":"🇫🇮","GA":"🇬🇦","GM":"🇬🇲","GE":"🇬🇪","GH":"🇬🇭","GR":"🇬🇷","GL":"🇬🇱","GT":"🇬🇹","GN":"🇬🇳","GY":"🇬🇾","HT":"🇭🇹","HN":"🇭🇳","HU":"🇭🇺","IS":"🇮🇸","IN":"🇮🇳","ID":"🇮🇩","IR":"🇮🇷","IQ":"🇮🇶","IE":"🇮🇪","IM":"🇮🇲","IL":"🇮🇱","IT":"🇮🇹","CI":"🇨🇮","JM":"🇯🇲","JO":"🇯🇴","KZ":"🇰🇿","KE":"🇰🇪","KW":"🇰🇼","KG":"🇰🇬","LA":"🇱🇦","LV":"🇱🇻","LB":"🇱🇧","LS":"🇱🇸","LR":"🇱🇷","LY":"🇱🇾","LT":"🇱🇹","LU":"🇱🇺","MK":"🇲🇰","MG":"🇲🇬","MW":"🇲🇼","MY":"🇲🇾","MV":"🇲🇻","ML":"🇲🇱","MT":"🇲🇹","MR":"🇲🇷","MU":"🇲🇺","MX":"🇲🇽","MD":"🇲🇩","MC":"🇲🇨","MN":"🇲🇳","ME":"🇲🇪","MA":"🇲🇦","MZ":"🇲🇿","MM":"🇲🇲","NA":"🇳🇦","NP":"🇳🇵","NL":"🇳🇱","NZ":"🇳🇿","NI":"🇳🇮","NE":"🇳🇪","NG":"🇳🇬","KP":"🇰🇵","NO":"🇳🇴","OM":"🇴🇲","PK":"🇵🇰","PA":"🇵🇦","PY":"🇵🇾","PE":"🇵🇪","PH":"🇵🇭","PT":"🇵🇹","PR":"🇵🇷","QA":"🇶🇦","RO":"🇷🇴","RU":"🇷🇺","RW":"🇷🇼","SM":"🇸🇲","SA":"🇸🇦","SN":"🇸🇳","RS":"🇷🇸","SL":"🇸🇱","SK":"🇸🇰","SI":"🇸🇮","SO":"🇸🇴","ZA":"🇿🇦","ES":"🇪🇸","LK":"🇱🇰","SD":"🇸🇩","SR":"🇸🇷","SZ":"🇸🇿","SE":"🇸🇪","CH":"🇨🇭","SY":"🇸🇾","TJ":"🇹🇯","TZ":"🇹🇿","TH":"🇹🇭","TG":"🇹🇬","TO":"🇹🇴","TT":"🇹🇹","TN":"🇹🇳","TR":"🇹🇷","TM":"🇹🇲","VI":"🇻🇮","UG":"🇺🇬","UA":"🇺🇦","UY":"🇺🇾","UZ":"🇺🇿","VE":"🇻🇪","VN":"🇻🇳","YE":"🇾🇪","ZM":"🇿🇲","ZW":"🇿🇼","AD":"🇦🇩","RE":"🇷🇪","PL":"🇵🇱","GU":"🇬🇺","VA":"🇻🇦","LI":"🇱🇮","CW":"🇨🇼","SC":"🇸🇨","AQ":"🇦🇶","GI":"🇬🇮","CU":"🇨🇺","FO":"🇫🇴","AX":"🇦🇽","BM":"🇧🇲","TL":"🇹🇱"};
 
-let enableFallback = $arguments.fallback || $file.sourceType == 'collection';
-let isMainProxyGroupOnly = /true|1/i.test($arguments.proxy_group_only ?? enableFallback);
+let isCollection = $arguments.fallback || $file.sourceType == 'collection';
+let isMainProxyGroupOnly = /true|1/i.test($arguments.proxy_group_only ?? isCollection);
 
 $options ??= {};
 $options._req ??= {
@@ -95,7 +95,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
 
   // https://github.com/Loyalsoldier/clash-rules
   config['rule-providers'] = [
-    'applications',
+    // 'applications',
     // 'lancidr',
     // 'private',
     // 'reject',
@@ -151,7 +151,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     // 'AND,((NETWORK,UDP),(GEOSITE,youtube)),Auto_UDP',
     // 'AND,((NETWORK,UDP),(PROCESS-NAME-WILDCARD,*youtube*)),REJECT',
 
-    'RULE-SET,applications,DIRECT',
+    // 'RULE-SET,applications,DIRECT',
     // 'RULE-SET,lancidr,DIRECT,no-resolve',
     // 'RULE-SET,private,DIRECT',
     // 'RULE-SET,reject,Reject',
@@ -281,42 +281,21 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
       type: 'select',
       proxies: ['Proxy', 'DIRECT'],
     },
-    // {
-    //   name: 'Auto_HK',
-    //   icon: 'HK.png',
-    //   type: autoType,
-    //   // 'include-all': true,
-    //   filter: '🇭🇰',
-    // },
-    // {
-    //   name: 'Auto_JP',
-    //   icon: 'JP.png',
-    //   type: autoType,
-    //   // 'include-all': true,
-    //   filter: '🇯🇵',
-    // },
-    // {
-    //   name: 'Auto_SG',
-    //   icon: 'SG.png',
-    //   type: autoType,
-    //   // 'include-all': true,
-    //   filter: '🇸🇬',
-    // },
-    // {
-    //   name: 'Auto_TW',
-    //   icon: 'TW.png',
-    //   type: autoType,
-    //   // 'include-all': true,
-    //   filter: '🇹🇼',
-    // },
-    // {
-    //   name: 'Auto_US',
-    //   icon: 'US.png',
-    //   type: autoType,
-    //   // 'include-all': true,
-    //   filter: '🇺🇸',
-    // },
   ];
+
+  if (!isCollection) {
+    let areaGroups = Object.entries({ HK: '🇭🇰', JP: '🇯🇵', SG: '🇸🇬', US: '🇺🇸' }).map(
+      ([code, flag]) => ({
+        name: 'Auto_' + code,
+        icon: code + '.png',
+        type: code == 'HK' ? autoType : 'url-test',
+        'include-all': true,
+        filter: flag,
+      })
+    );
+
+    config['proxy-groups'].unshift(...areaGroups);
+  }
 
   if (regions.length) {
     config.proxies = config.proxies.filter(({ name }) =>
@@ -337,11 +316,11 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
   }
 
   let subs = $substore.read('subs').filter(
-    (sub) => sub.tag.includes(isMobile ? 'Mobile' : 'Primary') || sub.tag.includes('Backup')
+    (sub) => sub.tag.includes('Primary') || sub.tag.includes('Backup')
     // || sub.tag.includes('UDP')
   );
 
-  enableFallback = subs.length > 1;
+  // enableFallback = subs.length > 1;
 
   let mainProxyGroup = {
     name: 'Proxy',
@@ -363,7 +342,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
       'max-failed-times': 1,
     };
 
-  if (enableFallback) {
+  if (isCollection) {
     autoSelectGroup = {
       name: 'Fallback',
       icon: 'Roundrobin.png',
@@ -386,7 +365,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     };
 
     const userInfoMap = getSubUserinfo();
-    if (enableFallback) {
+    if (isCollection) {
       let first = Object.values(userInfoMap)
         .sort((a, b) => {
           const aRemaining = a.total - a.usage.upload - a.usage.download;
@@ -418,7 +397,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
         interval: name === 'Free' ? 3600 : 86400,
         path: `./proxies/${name}.yaml`,
         'health-check': {
-          enable: !isMobile || sub.tag.includes('Primary'),
+          enable: true,
           interval: getInterval(),
           url: healthCheck.url,
         },
@@ -467,19 +446,16 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     ...config['proxy-groups']
       .filter((group) => group.name.includes('Auto'))
       .map((group) => {
-        group.use = autoPrimaryGroup.use;
+        // group.use = autoPrimaryGroup.use;
         return group.name;
       }),
-    // autoSelectGroup.name,
-    // 'Auto_Primary',
-    // 'Auto_Backup',
-    ...(enableFallback ? airportGroupNames : [])
+    ...(isCollection ? [autoSelectGroup.name, 'Auto_Primary', 'Auto_Backup'] : []),
+    ...(isCollection ? airportGroupNames : [])
   );
 
   config['proxy-groups'].unshift(
     mainProxyGroup,
-    // autoSelectGroup,
-    // ...(enableFallback ? [autoPrimaryGroup, autoBackupGroup] : []),
+    ...(isCollection ? [autoSelectGroup, autoPrimaryGroup, autoBackupGroup] : []),
     ...airportGroups
   );
 
@@ -518,10 +494,12 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     }
   });
 
-  $options._res ??= {};
-  $options._res.headers ??= {};
-  $options._res.headers['content-disposition'] =
-    'attachment; filename="Fallback' + (enableSmart ? '-Smart' : '') + '"';
+  if (isCollection) {
+    $options._res ??= {};
+    $options._res.headers ??= {};
+    $options._res.headers['content-disposition'] =
+      'attachment; filename="Fallback' + (enableSmart ? '-Smart' : '') + '"';
+  }
 
   if (isMobile) {
     config.proxies.push({
@@ -531,6 +509,8 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
       udp: true,
     });
     config.rules.unshift('IP-CIDR,100.64.0.0/10,Tailscale,no-resolve');
+  } else {
+    config.rules.unshift('PROCESS-NAME,tailscaled.exe,DIRECT');
   }
 
   return config;
@@ -566,7 +546,6 @@ function getInterval() {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-if (typeof $content === 'string') {
-  // $content = ProxyUtils.yaml.dump(main(ProxyUtils.yaml.load($content)));
+if (typeof $content === 'string' && $content === '') {
   $content = ProxyUtils.yaml.dump(main());
 }
