@@ -165,7 +165,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     'GEOSITE,category-ai-!cn,AI',
     // 'GEOSITE,microsoft@cn,DIRECT',
     // 'GEOSITE,microsoft,Microsoft',
-    'GEOSITE,youtube,Youtube',
+    // 'GEOSITE,youtube,Youtube',
     'GEOSITE,netflix,Netflix',
     'GEOSITE,private,DIRECT',
     'GEOSITE,cn,DIRECT',
@@ -226,14 +226,13 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     //   url: `https://generativelanguage.googleapis.com/v1/models?key=${$arguments.google_ai_key}`,
     //   'expected-status': 200,
     // },
-
-    {
-      name: 'Youtube',
-      icon: 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/youtube.svg',
-      type: 'select',
-      'include-all': true,
-      proxies: ['Proxy'],
-    },
+    // {
+    //   name: 'Youtube',
+    //   icon: 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/youtube.svg',
+    //   type: 'select',
+    //   'include-all': true,
+    //   proxies: ['Proxy'],
+    // },
     {
       name: 'Netflix',
       icon: 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/netflix.svg',
@@ -284,19 +283,16 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     },
   ];
 
-  let autoAreaGroups = [];
-  if (!isCollection) {
-    autoAreaGroups = Object.entries({ HK: '🇭🇰', JP: '🇯🇵', SG: '🇸🇬', TW: '🇹🇼', US: '🇺🇸' }).map(
-      ([code, flag]) => ({
-        name: 'Auto_' + code,
-        icon: code + '.png',
-        type: autoType,
-        interval: getInterval(),
-        'include-all': true,
-        filter: flag,
-      })
-    );
-  }
+  let autoAreaGroups = Object.entries({ HK: '🇭🇰', JP: '🇯🇵', SG: '🇸🇬', TW: '🇹🇼', US: '🇺🇸' }).map(
+    ([code, flag]) => ({
+      name: 'Auto_' + code,
+      icon: code + '.png',
+      type: autoType,
+      interval: getInterval(),
+      'include-all': true,
+      filter: flag,
+    })
+  );
 
   if (regions.length) {
     config.proxies = config.proxies.filter(({ name }) =>
@@ -459,19 +455,19 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
   let airportGroupNames = airportGroups.map((group) => group.name);
 
   mainProxyGroup.proxies.push(
-    ...autoAreaGroups.map((group) => group.name),
     autoSelectGroup.name,
     ...(isCollection ? ['Auto_Primary', 'Auto_Backup'] : []),
-    ...(isCollection ? airportGroupNames : [])
+    ...(isCollection ? airportGroupNames : []),
+    ...autoAreaGroups.map((group) => group.name)
   );
 
   config['proxy-groups'].unshift(
     mainProxyGroup,
-    ...autoAreaGroups,
     autoSelectGroup,
     ...(isCollection ? [autoPrimaryGroup, autoBackupGroup] : []),
     ...airportGroups
   );
+  config['proxy-groups'].push(...autoAreaGroups);
 
   config['proxy-groups'].forEach((group) => {
     if (group.name.includes('Auto')) {
@@ -498,13 +494,12 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
       group['exclude-filter'] = 'Tailscale';
     }
 
-    if (
-      [
-        'FCM',
-        //  'Youtube'
-      ].includes(group.name)
-    ) {
+    if (['FCM'].includes(group.name)) {
       group.proxies.push(...airportGroupNames);
+    }
+
+    if (['Netflix'].includes(group.name)) {
+      group.proxies.push(...autoAreaGroups.map((group) => group.name));
     }
   });
 
