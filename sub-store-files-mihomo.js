@@ -191,6 +191,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     {
       name: 'Auto_AI',
       type: autoType,
+      interval: getInterval(),
       'include-all': true,
       filter: 'AI',
     },
