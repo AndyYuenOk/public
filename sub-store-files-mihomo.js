@@ -286,7 +286,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
 
   let autoAreaGroups = [];
   if (!isCollection) {
-    autoAreaGroups = Object.entries({ HK: '🇭🇰', JP: '🇯🇵', SG: '🇸🇬', US: '🇺🇸' }).map(
+    autoAreaGroups = Object.entries({ HK: '🇭🇰', JP: '🇯🇵', SG: '🇸🇬', TW: '🇹🇼', US: '🇺🇸' }).map(
       ([code, flag]) => ({
         name: 'Auto_' + code,
         icon: code + '.png',
