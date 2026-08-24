@@ -188,19 +188,19 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
   // https://github.com/Orz-3/mini/tree/master/Color
   // https://github.com/lobehub/lobe-icons/tree/master/packages/static-png/light
   config['proxy-groups'] = [
-    // {
-    //   name: 'Auto_AI',
-    //   type: autoType,
-    //   'include-all': true,
-    //   filter: 'AI',
-    // },
+    {
+      name: 'Auto_AI',
+      type: autoType,
+      'include-all': true,
+      filter: 'AI',
+    },
     {
       name: 'AI',
       icon: 'https://img.icons8.com/fluency/256/bot.png',
       type: 'select',
       'include-all': true,
       filter: 'AI',
-      proxies: ['Proxy'],
+      proxies: ['Proxy', 'Auto_AI'],
     },
     // {
     //   name: 'Claude',
