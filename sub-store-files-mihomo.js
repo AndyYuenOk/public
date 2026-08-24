@@ -180,8 +180,8 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     // 'RULE-SET,direct,DIRECT',
     // 'RULE-SET,proxy,Proxy',
 
-    'GEOIP,private,DIRECT,no-resolve',
-    'GEOIP,CN,DIRECT,no-resolve',
+    'GEOIP,private,DIRECT',
+    'GEOIP,CN,DIRECT',
     'MATCH,Final',
   ];
 
