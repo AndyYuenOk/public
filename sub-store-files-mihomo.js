@@ -434,6 +434,20 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
       autoPrimaryGroup.proxies = ['REJECT'];
     }
   } else {
+    config.proxies = [];
+    config['proxy-providers'] = {
+      [$file.name]: {
+        type: 'http',
+        url: `http://${$options._req.headers.host}${process.env.SUB_STORE_FRONTEND_BACKEND_PATH}/download/${$file.sourceName}/ClashMeta`,
+        interval: 86400,
+        'health-check': {
+          enable: true,
+          interval: getInterval(),
+          url: healthCheck.url,
+        },
+      },
+    };
+
     autoSelectGroup = {
       name: 'Auto',
       type: autoType,
