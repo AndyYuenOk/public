@@ -87,7 +87,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
       'MATCH,fake-ip',
     ],
     fallback: [
-      'tcp://8.8.8.8',
+      '8.8.8.8',
       // 'tcp://1.1.1.1'
     ],
     // 'fallback-filter': { geoip: true, 'geoip-code': 'CN' },
