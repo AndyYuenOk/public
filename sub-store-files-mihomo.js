@@ -284,8 +284,9 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     },
   ];
 
+  let autoAreaGroups = [];
   if (!isCollection) {
-    let areaGroups = Object.entries({ HK: '🇭🇰', JP: '🇯🇵', SG: '🇸🇬', US: '🇺🇸' }).map(
+    autoAreaGroups = Object.entries({ HK: '🇭🇰', JP: '🇯🇵', SG: '🇸🇬', US: '🇺🇸' }).map(
       ([code, flag]) => ({
         name: 'Auto_' + code,
         icon: code + '.png',
@@ -295,8 +296,6 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
         filter: flag,
       })
     );
-
-    config['proxy-groups'].unshift(...areaGroups);
   }
 
   if (regions.length) {
@@ -446,12 +445,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
   let airportGroupNames = airportGroups.map((group) => group.name);
 
   mainProxyGroup.proxies.push(
-    ...config['proxy-groups']
-      .filter((group) => group.name.includes('Auto'))
-      .map((group) => {
-        // group.use = autoPrimaryGroup.use;
-        return group.name;
-      }),
+    ...autoAreaGroups.map((group) => group.name),
     autoSelectGroup.name,
     ...(isCollection ? ['Auto_Primary', 'Auto_Backup'] : []),
     ...(isCollection ? airportGroupNames : [])
@@ -459,6 +453,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
 
   config['proxy-groups'].unshift(
     mainProxyGroup,
+    ...autoAreaGroups,
     autoSelectGroup,
     ...(isCollection ? [autoPrimaryGroup, autoBackupGroup] : []),
     ...airportGroups
