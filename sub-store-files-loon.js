@@ -9,19 +9,16 @@ const remoteProxyLines = remoteProxyItems.map(({ subName, remoteName }) => {
   return `${remoteName} = ${subUrl},enabled=true`;
 });
 
-let nextContent = replaceSection($content, "Remote Proxy", remoteProxyLines);
+let nextContent = replaceSection($content, 'Remote Proxy', remoteProxyLines);
 nextContent = replaceAutoProxyGroups(nextContent, remoteProxyItems);
 nextContent = randomizeIntervals(nextContent);
 $content = nextContent;
 
 function randomizeIntervals(text) {
-  return text.replace(
-    /\binterval\s*=\s*\d+/gi,
-    () => `interval=${randomInterval()}`,
-  );
+  return text.replace(/\binterval\s*=\s*\d+/gi, () => `interval=${randomInterval()}`);
 }
 
-function randomInterval(min = 300, max = 360) {
+function randomInterval(min = 300, max = 600) {
   return min + Math.floor(Math.random() * (max - min + 1));
 }
 
@@ -32,7 +29,7 @@ function buildRemoteProxyItems(subscriptions) {
   for (const subInfo of Array.isArray(subscriptions) ? subscriptions : []) {
     const subName = subInfo?.name;
     const displayName = subInfo?.displayName;
-    const baseName = displayName || subName || "Sub";
+    const baseName = displayName || subName || 'Sub';
     const remoteName = makeUniqueName(baseName, usedRemoteNames);
     const autoName = makeUniqueName(`Auto_${baseName}`, usedAutoNames);
     items.push({
@@ -49,10 +46,10 @@ function buildRemoteProxyItems(subscriptions) {
 }
 
 function getRoleFromTaggedSub(subInfo = {}) {
-  if (subInfo?.isPrimary && subInfo?.isBackup) return "primary_backup";
-  if (subInfo?.isPrimary) return "primary";
-  if (subInfo?.isBackup) return "backup";
-  return "";
+  if (subInfo?.isPrimary && subInfo?.isBackup) return 'primary_backup';
+  if (subInfo?.isPrimary) return 'primary';
+  if (subInfo?.isBackup) return 'backup';
+  return '';
 }
 
 function makeUniqueName(base, used) {
@@ -70,25 +67,21 @@ function makeUniqueName(base, used) {
 function replaceAutoProxyGroups(text, items) {
   if (!Array.isArray(items) || items.length === 0) return text;
 
-  const eol = text.includes("\r\n") ? "\r\n" : "\n";
-  const sectionName = "Proxy Group";
-  const escapedHeader = sectionName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const eol = text.includes('\r\n') ? '\r\n' : '\n';
+  const sectionName = 'Proxy Group';
+  const escapedHeader = sectionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const sectionRegex = new RegExp(
     `(\\[${escapedHeader}\\][\\s\\S]*?)(?=\\r?\\n\\[[^\\]]+\\]|$)`,
-    "i",
+    'i'
   );
   const section = text.match(sectionRegex)?.[0];
   if (!section) return text;
 
   const remoteNames = items.map((item) => item.remoteName);
-  const autoPrimaryName = "Auto_Primary";
-  const autoBackupName = "Auto_Backup";
-  const primaryAutoNames = items
-    .filter((item) => item.isPrimary)
-    .map((item) => item.autoName);
-  const backupAutoNames = items
-    .filter((item) => item.isBackup)
-    .map((item) => item.autoName);
+  const autoPrimaryName = 'Auto_Primary';
+  const autoBackupName = 'Auto_Backup';
+  const primaryAutoNames = items.filter((item) => item.isPrimary).map((item) => item.autoName);
+  const backupAutoNames = items.filter((item) => item.isBackup).map((item) => item.autoName);
 
   const rawLines = section.split(/\r?\n/);
   const sectionHeader = rawLines[0];
@@ -97,12 +90,12 @@ function replaceAutoProxyGroups(text, items) {
   const urlTestLineRegex = /^\s*([^=\s][^=]*?)\s*=\s*url-test\s*,/i;
   const templateLine = bodyLines.find((line) => urlTestLineRegex.test(line));
   const templateRhs =
-    templateLine?.split("=").slice(1).join("=") ||
-    "url-test, url=http://www.gstatic.com/generate_204, interval=300, tolerance=200, max-timeout=1500, img-url=https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Auto.png";
+    templateLine?.split('=').slice(1).join('=') ||
+    'url-test, url=http://www.gstatic.com/generate_204, interval=300, tolerance=200, max-timeout=1500, img-url=https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Auto.png';
 
   const keptLines = [];
   for (const line of bodyLines) {
-    const groupName = line.split("=")[0];
+    const groupName = line.split('=')[0];
     if (groupName && /Auto/i.test(groupName)) {
       continue;
     }
@@ -113,7 +106,7 @@ function replaceAutoProxyGroups(text, items) {
     items.map((item) => [
       item.autoName,
       `${item.autoName} = ${buildAutoUrlTestRhs(templateRhs, item.remoteName)}`,
-    ]),
+    ])
   );
   const generatedPrimaryAutoLines = primaryAutoNames
     .map((name) => generatedAutoLineMap.get(name))
@@ -123,9 +116,7 @@ function replaceAutoProxyGroups(text, items) {
     .filter(Boolean);
   const generatedAutoPrimaryLine = `${autoPrimaryName} = ${buildAutoAggregateUrlTestRhs(templateRhs, primaryAutoNames)}`;
   const generatedAutoBackupLine = `${autoBackupName} = ${buildAutoAggregateUrlTestRhs(templateRhs, backupAutoNames)}`;
-  const fallbackLineIndex = keptLines.findIndex((line) =>
-    /^\s*Fallback\s*=/i.test(line),
-  );
+  const fallbackLineIndex = keptLines.findIndex((line) => /^\s*Fallback\s*=/i.test(line));
   const generatedLines = [
     generatedAutoPrimaryLine,
     generatedAutoBackupLine,
@@ -138,24 +129,20 @@ function replaceAutoProxyGroups(text, items) {
     keptLines.push(...generatedLines);
   }
 
-  const fallbackIndex = keptLines.findIndex((line) =>
-    /^\s*Fallback\s*=/i.test(line),
-  );
+  const fallbackIndex = keptLines.findIndex((line) => /^\s*Fallback\s*=/i.test(line));
   if (fallbackIndex >= 0) {
-    keptLines[fallbackIndex] = rewriteFallbackLineWithAutoMembers(
-      keptLines[fallbackIndex],
-      [autoPrimaryName, autoBackupName],
-    );
+    keptLines[fallbackIndex] = rewriteFallbackLineWithAutoMembers(keptLines[fallbackIndex], [
+      autoPrimaryName,
+      autoBackupName,
+    ]);
   }
-  const proxyIndex = keptLines.findIndex((line) =>
-    /^\s*Proxy\s*=\s*select\s*,/i.test(line),
-  );
+  const proxyIndex = keptLines.findIndex((line) => /^\s*Proxy\s*=\s*select\s*,/i.test(line));
   if (proxyIndex >= 0) {
     const proxyAutoMembers = items.map((item) => item.autoName);
     keptLines[proxyIndex] = mergeRemoteIntoProxySelectLine(
       keptLines[proxyIndex],
       remoteNames,
-      proxyAutoMembers,
+      proxyAutoMembers
     );
   }
 
@@ -164,55 +151,39 @@ function replaceAutoProxyGroups(text, items) {
 }
 
 function mergeRemoteIntoProxySelectLine(line, remoteNames, autoMembers) {
-  const eqIndex = line.indexOf("=");
+  const eqIndex = line.indexOf('=');
   if (eqIndex < 0) return line;
   const left = line.slice(0, eqIndex + 1);
   const right = line.slice(eqIndex + 1);
   const parts = right
-    .split(",")
+    .split(',')
     .map((s) => s)
     .filter(Boolean);
   if (!parts.length) return line;
 
   const head = parts.shift();
   const optionsStart = parts.findIndex((p) => /=/.test(p));
-  const policyParts =
-    optionsStart >= 0 ? parts.slice(0, optionsStart) : parts.slice();
+  const policyParts = optionsStart >= 0 ? parts.slice(0, optionsStart) : parts.slice();
   const optionParts = optionsStart >= 0 ? parts.slice(optionsStart) : [];
 
   const remoteMap = new Map(
-    (Array.isArray(remoteNames) ? remoteNames : []).map((n) => [
-      n.toLowerCase(),
-      n,
-    ]),
+    (Array.isArray(remoteNames) ? remoteNames : []).map((n) => [n.toLowerCase(), n])
   );
   const autoMap = new Map(
-    (Array.isArray(autoMembers) ? autoMembers : []).map((n) => [
-      n.toLowerCase(),
-      n,
-    ]),
+    (Array.isArray(autoMembers) ? autoMembers : []).map((n) => [n.toLowerCase(), n])
   );
   const filteredPolicies = policyParts.filter(
-    (p) =>
-      !/^Auto_AI$/i.test(p) &&
-      !remoteMap.has(p.toLowerCase()) &&
-      !autoMap.has(p.toLowerCase()),
+    (p) => !/^Auto_AI$/i.test(p) && !remoteMap.has(p.toLowerCase()) && !autoMap.has(p.toLowerCase())
   );
 
-  const fallbackMemberIndex = filteredPolicies.findIndex((p) =>
-    /^Fallback$/i.test(p),
-  );
+  const fallbackMemberIndex = filteredPolicies.findIndex((p) => /^Fallback$/i.test(p));
   const autoInsertAt =
     fallbackMemberIndex >= 0
       ? fallbackMemberIndex + 1
       : filteredPolicies.findIndex((p) => /^All_Filter$/i.test(p)) >= 0
         ? filteredPolicies.findIndex((p) => /^All_Filter$/i.test(p))
         : filteredPolicies.length;
-  filteredPolicies.splice(
-    autoInsertAt,
-    0,
-    ...(Array.isArray(autoMembers) ? autoMembers : []),
-  );
+  filteredPolicies.splice(autoInsertAt, 0, ...(Array.isArray(autoMembers) ? autoMembers : []));
 
   const dedupedPolicies = [];
   const seen = new Set();
@@ -223,7 +194,7 @@ function mergeRemoteIntoProxySelectLine(line, remoteNames, autoMembers) {
     dedupedPolicies.push(p);
   }
 
-  const rebuilt = [head, ...dedupedPolicies, ...optionParts].join(", ");
+  const rebuilt = [head, ...dedupedPolicies, ...optionParts].join(', ');
   return `${left} ${rebuilt}`;
 }
 
@@ -232,9 +203,7 @@ function buildAutoUrlTestRhs(rhs, alias) {
 }
 
 function buildAutoAggregateUrlTestRhs(rhs, aliases) {
-  const members = Array.isArray(aliases)
-    ? aliases.map((item) => item).filter(Boolean)
-    : [];
+  const members = Array.isArray(aliases) ? aliases.map((item) => item).filter(Boolean) : [];
 
   const urlMatch = rhs.match(/,\s*url\s*=/i);
   if (!urlMatch) return rhs;
@@ -242,31 +211,27 @@ function buildAutoAggregateUrlTestRhs(rhs, aliases) {
   const cutIndex = urlMatch.index;
   const left = rhs.slice(0, cutIndex);
   const right = rhs.slice(cutIndex + 1);
-  const leftPayload = left
-    .replace(/^url-test\s*,?\s*/i, "")
-    .replace(/,\s*$/, "");
+  const leftPayload = left.replace(/^url-test\s*,?\s*/i, '').replace(/,\s*$/, '');
   const leftParts = leftPayload
     ? leftPayload
-        .split(",")
+        .split(',')
         .map((item) => item)
         .filter(Boolean)
     : [];
   const leftOptionParts = leftParts.filter((part) => /=/.test(part));
   const mergedLeftParts = [...members, ...leftOptionParts];
-  const mergedLeft = mergedLeftParts.join(", ");
-  return mergedLeft
-    ? `url-test, ${mergedLeft}, ${right}`
-    : `url-test, ${right}`;
+  const mergedLeft = mergedLeftParts.join(', ');
+  return mergedLeft ? `url-test, ${mergedLeft}, ${right}` : `url-test, ${right}`;
 }
 
 function rewriteFallbackLineWithAutoMembers(line, autoMembers) {
-  const eqIndex = line.indexOf("=");
+  const eqIndex = line.indexOf('=');
   if (eqIndex < 0) return line;
 
-  const name = line.slice(0, eqIndex) || "Fallback";
+  const name = line.slice(0, eqIndex) || 'Fallback';
   const rhs = line.slice(eqIndex + 1);
   const parts = rhs
-    .split(",")
+    .split(',')
     .map((s) => s)
     .filter(Boolean);
   if (!parts.length) return line;
@@ -276,7 +241,7 @@ function rewriteFallbackLineWithAutoMembers(line, autoMembers) {
 
   const optionsStart = parts.findIndex((p) => /=/.test(p));
   const options = (optionsStart >= 0 ? parts.slice(optionsStart) : []).filter(
-    (p) => !/^Auto_AI$/i.test(p),
+    (p) => !/^Auto_AI$/i.test(p)
   );
 
   const dedupedMembers = [];
@@ -288,29 +253,26 @@ function rewriteFallbackLineWithAutoMembers(line, autoMembers) {
     dedupedMembers.push(m);
   }
 
-  const rebuilt = ["fallback", ...dedupedMembers, ...options].join(", ");
+  const rebuilt = ['fallback', ...dedupedMembers, ...options].join(', ');
   return `${name} = ${rebuilt}`;
 }
 
 function loadTaggedSubscriptions() {
-  const allSubscriptions = $substore.read("subs") || [];
+  const allSubscriptions = $substore.read('subs') || [];
 
   const list = [];
   const seen = new Set();
   for (const sub of Array.isArray(allSubscriptions) ? allSubscriptions : []) {
-    const normalized = `${sub?.name ?? ""}`.trim();
+    const normalized = `${sub?.name ?? ''}`.trim();
     if (!normalized || seen.has(normalized)) continue;
-    const tags = Array.isArray(sub?.tag)
-      ? sub.tag.filter((item) => typeof item === "string")
-      : [];
-    const isPrimary = tags.includes("Primary");
-    const isBackup = tags.includes("Backup");
+    const tags = Array.isArray(sub?.tag) ? sub.tag.filter((item) => typeof item === 'string') : [];
+    const isPrimary = tags.includes('Primary');
+    const isBackup = tags.includes('Backup');
     if (!isPrimary && !isBackup) continue;
 
     seen.add(normalized);
-    const displayName =
-      sub?.displayName || sub?.["display-name"] || sub?.name || normalized;
-    const isNoExpiry = tags.includes("NoExpiry");
+    const displayName = sub?.displayName || sub?.['display-name'] || sub?.name || normalized;
+    const isNoExpiry = tags.includes('NoExpiry');
     list.push({
       name: normalized,
       displayName: displayName || normalized,
@@ -321,36 +283,31 @@ function loadTaggedSubscriptions() {
     });
   }
   if (!list.length) {
-    throw new Error(
-      "subs has no Primary/Backup tagged subscriptions for Loon grouping",
-    );
+    throw new Error('subs has no Primary/Backup tagged subscriptions for Loon grouping');
   }
   return list;
 }
 
 function replaceSection(text, sectionName, lines) {
-  const eol = text.includes("\r\n") ? "\r\n" : "\n";
+  const eol = text.includes('\r\n') ? '\r\n' : '\n';
   const safeLines = Array.isArray(lines) ? lines : [];
-  const escapedHeader = sectionName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const escapedHeader = sectionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const sectionHeader = `[${sectionName}]`;
   const sectionRegex = new RegExp(
     `(\\[${escapedHeader}\\][\\s\\S]*?)(?=\\r?\\n\\[[^\\]]+\\]|$)`,
-    "i",
+    'i'
   );
 
   if (!sectionRegex.test(text)) {
-    const appendix = [sectionHeader, ...safeLines, ""].join(eol);
-    return `${text}${text.endsWith(eol) ? "" : eol}${appendix}`;
+    const appendix = [sectionHeader, ...safeLines, ''].join(eol);
+    return `${text}${text.endsWith(eol) ? '' : eol}${appendix}`;
   }
 
-  return text.replace(
-    sectionRegex,
-    `${sectionHeader}${eol}${safeLines.join(eol)}${eol}`,
-  );
+  return text.replace(sectionRegex, `${sectionHeader}${eol}${safeLines.join(eol)}${eol}`);
 }
 
 function setDownloadFilenameHeader() {
-  const rawName = $arguments?.filename ?? "Fallback";
+  const rawName = $arguments?.filename ?? 'Fallback';
   if (!rawName) return;
 
   const safeName = sanitizeHeaderValue(rawName);
@@ -362,25 +319,22 @@ function setDownloadFilenameHeader() {
   $options ??= {};
   $options._res ??= {};
   $options._res.headers ??= {};
-  $options._res.headers["content-disposition"] =
-    'attachment; filename="' +
-    fallbackName +
-    "\"; filename*=UTF-8''" +
-    utf8Name;
+  $options._res.headers['content-disposition'] =
+    'attachment; filename="' + fallbackName + "\"; filename*=UTF-8''" + utf8Name;
 }
 
 function sanitizeHeaderValue(value) {
-  return value.replace(/[\r\n"]/g, " ").replace(/\s+/g, " ");
+  return value.replace(/[\r\n"]/g, ' ').replace(/\s+/g, ' ');
 }
 
 function toAsciiFilename(value) {
-  const ascii = value.replace(/[^\x20-\x7E]/g, "_");
-  return ascii || "loon.conf";
+  const ascii = value.replace(/[^\x20-\x7E]/g, '_');
+  return ascii || 'loon.conf';
 }
 
 function encodeRFC5987ValueChars(value) {
   return encodeURIComponent(value)
     .replace(/[\'()]/g, escape)
-    .replace(/\*/g, "%2A")
+    .replace(/\*/g, '%2A')
     .replace(/%(7C|60|5E)/g, (match) => match.toLowerCase());
 }

@@ -438,6 +438,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     autoSelectGroup = {
       name: 'Auto',
       type: autoType,
+      'include-all': true,
       proxies: [],
     };
   }
@@ -451,13 +452,15 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
         // group.use = autoPrimaryGroup.use;
         return group.name;
       }),
-    ...(isCollection ? [autoSelectGroup.name, 'Auto_Primary', 'Auto_Backup'] : []),
+    autoSelectGroup.name,
+    ...(isCollection ? ['Auto_Primary', 'Auto_Backup'] : []),
     ...(isCollection ? airportGroupNames : [])
   );
 
   config['proxy-groups'].unshift(
     mainProxyGroup,
-    ...(isCollection ? [autoSelectGroup, autoPrimaryGroup, autoBackupGroup] : []),
+    autoSelectGroup,
+    ...(isCollection ? [autoPrimaryGroup, autoBackupGroup] : []),
     ...airportGroups
   );
 
