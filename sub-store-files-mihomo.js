@@ -69,10 +69,10 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     //   //   'tcp://8.8.8.8#AI',
     //   //   // 'tcp://1.1.1.1#AI'
     //   // ],
-    //   'GEOSITE:gfw': [
-    //     'tcp://8.8.8.8',
-    //     // 'tcp://1.1.1.1'
-    //   ],
+    //   // 'GEOSITE:gfw': [
+    //   //   'tcp://8.8.8.8',
+    //   //   // 'tcp://1.1.1.1'
+    //   // ],
     // },
     nameserver: [
       '223.5.5.5',
@@ -87,10 +87,10 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
       'MATCH,fake-ip',
     ],
     fallback: [
-      '8.8.8.8',
+      'tcp://8.8.8.8',
       // 'tcp://1.1.1.1'
     ],
-    // 'fallback-filter': { geoip: true, 'geoip-code': 'CN' },
+    'fallback-filter': { geoip: true, 'geoip-code': 'CN' },
   };
 
   // https://github.com/Loyalsoldier/clash-rules
