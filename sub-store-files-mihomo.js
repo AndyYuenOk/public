@@ -60,23 +60,24 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
       // '119.29.29.29'
     ],
     'direct-nameserver': ['system'],
-    // 'nameserver-policy': {
-    //   'GEOSITE:cn': ['223.5.5.5'],
-    //   // 'GEOSITE:category-ai-!cn': [
-    //   //   'tcp://8.8.8.8#AI',
-    //   //   // 'tcp://1.1.1.1#AI'
-    //   // ],
-    //   // 'GEOSITE:gfw': [
-    //   //   'tcp://8.8.8.8',
-    //   //   // 'tcp://1.1.1.1'
-    //   // ],
-    // },
+    'nameserver-policy': {
+      'GEOSITE:googlefcm': ['system'],
+      // 'GEOSITE:category-ai-!cn': [
+      //   'tcp://8.8.8.8#AI',
+      //   // 'tcp://1.1.1.1#AI'
+      // ],
+      // 'GEOSITE:gfw': [
+      //   'tcp://8.8.8.8',
+      //   // 'tcp://1.1.1.1'
+      // ],
+    },
     nameserver: [
       '223.5.5.5',
       // '119.29.29.29'
     ],
     'fake-ip-filter-mode': 'rule',
     'fake-ip-filter': [
+      // use real-ip mode, must enable nameserver-policy, otherwise it will trigger fallback
       // 'GEOSITE,private,real-ip',
       // 'GEOSITE,cn,real-ip',
       'GEOSITE,googlefcm,real-ip',
