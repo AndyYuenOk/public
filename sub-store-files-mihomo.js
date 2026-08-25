@@ -61,10 +61,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     ],
     'direct-nameserver': ['system'],
     // 'nameserver-policy': {
-    //   // 'GEOSITE:Youtube': [
-    //   //   'tcp://8.8.8.8#Youtube',
-    //   //   // 'tcp://1.1.1.1#FCM'
-    //   // ],
+    //   'GEOSITE:cn': ['223.5.5.5'],
     //   // 'GEOSITE:category-ai-!cn': [
     //   //   'tcp://8.8.8.8#AI',
     //   //   // 'tcp://1.1.1.1#AI'
@@ -80,8 +77,8 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     ],
     'fake-ip-filter-mode': 'rule',
     'fake-ip-filter': [
-      'GEOSITE,private,real-ip',
-      'GEOSITE,cn,real-ip',
+      // 'GEOSITE,private,real-ip',
+      // 'GEOSITE,cn,real-ip',
       'GEOSITE,googlefcm,real-ip',
       // 'GEOSITE,gfw,fake-ip',
       'MATCH,fake-ip',
