@@ -49,6 +49,7 @@ async function operator(proxies = [], targetPlatform, context) {
   let url = "http://ip-api.com/json?lang=en";
   const ippureUrl = $arguments.ippure_api || "https://my.ippure.com/v1/info";
   const ipwhoUrl = $arguments.ipwho_api || "https://ipwho.is/";
+  const ipwhoDirect = String($arguments.ipwho_direct ?? "0").trim() === "1";
   const method = $arguments.method || "get";
 
   let utils;
@@ -69,6 +70,7 @@ async function operator(proxies = [], targetPlatform, context) {
   }
 
   const isIpApiUrl = /^https?:\/\/ip-api\.com\/json(?:\/|\?|$)/i.test(url);
+  const useDirectIpwho = ipwhoDirect && !internal && isIpApiUrl;
   const ipApiInFlight = new Map();
   const ipApiRequestCache = new Map();
   const { sourceName, sourceStore } = getSourceCacheContext(context.source);
@@ -87,11 +89,7 @@ async function operator(proxies = [], targetPlatform, context) {
       applyEgressInfo(proxy, {});
 
       const cachedEntry = getStructuredEgressEntry(proxyKey);
-      const cachedApi = mergeApiResult(
-        cachedEntry?.egress?.["ip-api"],
-        cachedEntry?.egress?.ippure,
-        cachedEntry?.egress?.ipwho,
-      );
+      const cachedApi = getCachedEgressApi(cachedEntry);
       if (hasMergedApiData(cachedApi)) {
         const cacheInfo = internal
           ? formatCountryAsoAsInfo(cachedApi)
@@ -308,11 +306,7 @@ async function operator(proxies = [], targetPlatform, context) {
     try {
       if (useCache) {
         const cachedEntry = getStructuredEgressEntry(proxyKey);
-        const cachedApi = mergeApiResult(
-          cachedEntry?.egress?.["ip-api"],
-          cachedEntry?.egress?.ippure,
-          cachedEntry?.egress?.ipwho,
-        );
+        const cachedApi = getCachedEgressApi(cachedEntry);
         if (hasMergedApiData(cachedApi)) {
           const cacheInfo = internal
             ? formatCountryAsoAsInfo(cachedApi)
@@ -411,6 +405,8 @@ async function operator(proxies = [], targetPlatform, context) {
               ipApi: ipApiResult?.sourceApi?.["ip-api"] ?? {},
               ippure: ipApiResult?.sourceApi?.ippure ?? {},
               ipwho: ipApiResult?.sourceApi?.ipwho ?? {},
+              ipwhoDirect: ipApiResult?.sourceApi?.ipwhoDirect,
+              directOnly: useDirectIpwho,
             });
           }
           applyEgressInfo(targetProxy, api);
@@ -491,9 +487,57 @@ async function operator(proxies = [], targetPlatform, context) {
         "ip-api": {},
         ippure: {},
         ipwho: {},
+        ipwhoDirect: undefined,
       };
 
-      if (isIpApiUrl) {
+      if (useDirectIpwho) {
+        const ipApiPayload = await requestJson({
+          proxy: proxyUrl,
+          method,
+          headers,
+          url: getIpApiUrl(queryServer),
+        });
+        const egressIp = getReturnedIp(ipApiPayload.api);
+
+        if (!ipApiPayload.ok) {
+          enqueueRequestStatusLog(
+            index,
+            `[${proxy.name}] [ip-api] error: ${formatApiErrorDetail(ipApiPayload)}`,
+          );
+        } else if (!ProxyUtils.isIP(egressIp)) {
+          enqueueRequestStatusLog(
+            index,
+            `[${proxy.name}] [ip-api] error: invalid egress ip`,
+          );
+        } else {
+          let ipwhoPayload = await requestJson({
+            method,
+            headers,
+            url: getIpwhoUrl(egressIp),
+          });
+          if (ipwhoPayload.ok) {
+            const normalizedIpwho = normalizeIpwhoApi(ipwhoPayload.api);
+            const normalizedOk = hasMergedApiData(normalizedIpwho);
+            ipwhoPayload = {
+              ...ipwhoPayload,
+              ok: normalizedOk,
+              api: normalizedOk ? normalizedIpwho : {},
+              error: normalizedOk ? ipwhoPayload.error : "empty ipwho payload",
+            };
+          }
+
+          if (!ipwhoPayload.ok) {
+            enqueueRequestStatusLog(
+              index,
+              `[${proxy.name}] [ipwho-direct] error: ${formatApiErrorDetail(ipwhoPayload)}`,
+            );
+          } else {
+            api = ipwhoPayload.api;
+            status = 200;
+            sourceApi.ipwhoDirect = api;
+          }
+        }
+      } else if (isIpApiUrl) {
         const [ipApiSettled, ippureSettled, ipwhoSettled] =
           await Promise.allSettled([
             requestJson({
@@ -733,6 +777,8 @@ async function operator(proxies = [], targetPlatform, context) {
     ipApi = {},
     ippure = {},
     ipwho = {},
+    ipwhoDirect,
+    directOnly = false,
   } = {}) {
     const safeCacheKey = String(cacheKey || "").trim();
     if (!safeCacheKey) return;
@@ -743,9 +789,17 @@ async function operator(proxies = [], targetPlatform, context) {
     sourceStore[safeCacheKey] = {
       ...existingEntry,
       egress: {
-        "ip-api": sanitizeEgressIpApiPayload(ipApi),
-        ippure: sanitizeIppurePayload(ippure),
-        ipwho: sanitizeIpwhoPayload(ipwho),
+        ...(isPlainObject(existingEntry.egress) ? existingEntry.egress : {}),
+        ...(directOnly
+          ? {}
+          : {
+              "ip-api": sanitizeEgressIpApiPayload(ipApi),
+              ippure: sanitizeIppurePayload(ippure),
+              ipwho: sanitizeIpwhoPayload(ipwho),
+            }),
+        ...(ipwhoDirect === undefined
+          ? {}
+          : { "ipwho-direct": sanitizeIpwhoPayload(ipwhoDirect) }),
       },
     };
   }
@@ -754,9 +808,23 @@ async function operator(proxies = [], targetPlatform, context) {
     return "http://ip-api.com/json?lang=en";
   }
 
-  function getIpwhoUrl() {
+  function getIpwhoUrl(ip = "") {
     const normalizedBase = String(ipwhoUrl || "").trim() || "https://ipwho.is/";
-    return normalizedBase;
+    const normalizedIp = String(ip || "").trim();
+    if (!normalizedIp) return normalizedBase;
+    return `${normalizedBase.replace(/\/+$/, "")}/${encodeURIComponent(normalizedIp)}`;
+  }
+
+  function getCachedEgressApi(entry = {}) {
+    if (useDirectIpwho) {
+      const directIpwho = entry?.egress?.["ipwho-direct"];
+      return isPlainObject(directIpwho) ? { ...directIpwho } : {};
+    }
+    return mergeApiResult(
+      entry?.egress?.["ip-api"],
+      entry?.egress?.ippure,
+      entry?.egress?.ipwho,
+    );
   }
 
   function mergeApiResult(ipApi = {}, ippure = {}, ipwho = {}) {
