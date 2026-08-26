@@ -816,10 +816,8 @@ async function operator(proxies = [], targetPlatform, context) {
   }
 
   function getCachedEgressApi(entry = {}) {
-    if (useDirectIpwho) {
-      const directIpwho = entry?.egress?.["ipwho-direct"];
-      return isPlainObject(directIpwho) ? { ...directIpwho } : {};
-    }
+    const directIpwho = entry?.egress?.["ipwho-direct"];
+    if (isPlainObject(directIpwho)) return { ...directIpwho };
     return mergeApiResult(
       entry?.egress?.["ip-api"],
       entry?.egress?.ippure,
