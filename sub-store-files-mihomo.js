@@ -65,7 +65,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
       // '223.5.5.5',
     ],
     'nameserver-policy': {
-      'GEOSITE:googlefcm': [
+      'GEOSITE:private,googlefcm': [
         'system',
         // '223.5.5.5',
       ],
@@ -86,7 +86,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     'fake-ip-filter-mode': 'rule',
     'fake-ip-filter': [
       // use real-ip mode, must enable nameserver-policy, otherwise it will trigger fallback
-      // 'GEOSITE,private,real-ip',
+      'GEOSITE,private,real-ip',
       // 'GEOSITE,cn,real-ip',
       'GEOSITE,googlefcm,real-ip',
       // 'GEOSITE,gfw,fake-ip',
