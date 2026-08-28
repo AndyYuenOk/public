@@ -52,16 +52,23 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
   config['geo-auto-update'] = true;
   config['dns'] = {
     enable: true,
-    ipv6: false,
+    // ipv6: false,
     'enhanced-mode': 'fake-ip',
     'respect-rules': true,
     'proxy-server-nameserver': [
-      '223.5.5.5',
+      'system',
+      // '223.5.5.5',
       // '119.29.29.29'
     ],
-    'direct-nameserver': ['system'],
+    'direct-nameserver': [
+      'system',
+      // '223.5.5.5',
+    ],
     'nameserver-policy': {
-      'GEOSITE:googlefcm': ['system'],
+      'GEOSITE:googlefcm': [
+        'system',
+        // '223.5.5.5',
+      ],
       // 'GEOSITE:category-ai-!cn': [
       //   'tcp://8.8.8.8#AI',
       //   // 'tcp://1.1.1.1#AI'
@@ -72,7 +79,8 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
       // ],
     },
     nameserver: [
-      '223.5.5.5',
+      'system',
+      // '223.5.5.5',
       // '119.29.29.29'
     ],
     'fake-ip-filter-mode': 'rule',
