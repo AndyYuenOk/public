@@ -52,7 +52,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
   config['geo-auto-update'] = true;
   config['dns'] = {
     enable: true,
-    // ipv6: false,
+    ipv6: true,
     'enhanced-mode': 'fake-ip',
     'respect-rules': true,
     'proxy-server-nameserver': [

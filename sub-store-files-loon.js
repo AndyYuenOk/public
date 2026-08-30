@@ -91,7 +91,7 @@ function replaceAutoProxyGroups(text, items) {
   const templateLine = bodyLines.find((line) => urlTestLineRegex.test(line));
   const templateRhs =
     templateLine?.split('=').slice(1).join('=') ||
-    'url-test, url=http://www.gstatic.com/generate_204, interval=300, tolerance=200, max-timeout=1500, img-url=https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Auto.png';
+    'url-test, url=http://www.gstatic.com/generate_204, interval=300, img-url=https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Auto.png';
 
   const keptLines = [];
   for (const line of bodyLines) {
@@ -205,23 +205,17 @@ function buildAutoUrlTestRhs(rhs, alias) {
 function buildAutoAggregateUrlTestRhs(rhs, aliases) {
   const members = Array.isArray(aliases) ? aliases.map((item) => item).filter(Boolean) : [];
 
-  const urlMatch = rhs.match(/,\s*url\s*=/i);
-  if (!urlMatch) return rhs;
+  const parts = rhs
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const type = parts.shift();
+  if (!type || !/^url-test$/i.test(type)) return rhs;
 
-  const cutIndex = urlMatch.index;
-  const left = rhs.slice(0, cutIndex);
-  const right = rhs.slice(cutIndex + 1);
-  const leftPayload = left.replace(/^url-test\s*,?\s*/i, '').replace(/,\s*$/, '');
-  const leftParts = leftPayload
-    ? leftPayload
-        .split(',')
-        .map((item) => item)
-        .filter(Boolean)
-    : [];
-  const leftOptionParts = leftParts.filter((part) => /=/.test(part));
-  const mergedLeftParts = [...members, ...leftOptionParts];
-  const mergedLeft = mergedLeftParts.join(', ');
-  return mergedLeft ? `url-test, ${mergedLeft}, ${right}` : `url-test, ${right}`;
+  // Loon policy-group options all use key=value syntax.  Keeping them after
+  // the generated members also supports minimal templates that only set img-url.
+  const options = parts.filter((part) => part.includes('='));
+  return [type, ...members, ...options].join(', ');
 }
 
 function rewriteFallbackLineWithAutoMembers(line, autoMembers) {
