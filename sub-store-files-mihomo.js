@@ -93,6 +93,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
       'MATCH,fake-ip',
     ],
     fallback: [
+      // '8.8.8.8',
       'tcp://8.8.8.8',
       // 'tcp://1.1.1.1'
     ],
@@ -340,8 +341,8 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
       url: 'http://www.gstatic.com/generate_204',
       // url: "http://www.google.com/generate_204",
       // url: "http://cp.cloudflare.com/generate_204",
-      timeout: 1500,
-      tolerance: 200,
+      // timeout: 1500,
+      // tolerance: 200,
       'max-failed-times': 1,
     };
 
