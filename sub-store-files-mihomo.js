@@ -198,7 +198,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     {
       name: 'Auto_AI',
       type: autoType,
-      interval: getInterval(),
+      // interval: getInterval(),
       'include-all': true,
       filter: 'AI',
     },
@@ -295,7 +295,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
       name: 'Auto_' + code,
       icon: code + '.png',
       type: autoType,
-      interval: getInterval(),
+      // interval: getInterval(),
       'include-all': true,
       filter: flag,
     })
@@ -356,14 +356,14 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     autoPrimaryGroup = {
       name: 'Auto_Primary',
       type: autoType,
-      interval: getInterval(),
+      // interval: getInterval(),
       use: [],
       proxies: [],
     };
     autoBackupGroup = {
       name: 'Auto_Backup',
       type: autoType,
-      interval: getInterval(),
+      // interval: getInterval(),
       use: [],
       proxies: [],
     };
