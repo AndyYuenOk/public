@@ -486,7 +486,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     }
 
     if (group.type === 'fallback') {
-      group.url = healthCheck.url;
+      Object.assign(group, healthCheck);
     }
 
     if (group.type === 'url-test') {
