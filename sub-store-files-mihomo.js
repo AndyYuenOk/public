@@ -164,7 +164,6 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     // 'RULE-SET,reject,Reject',
     'RULE-SET,adblockfilters,Reject',
 
-    // 'GEOSITE,google-play@cn,DIRECT',
     'GEOSITE,googlefcm,FCM',
     // 'GEOSITE,anthropic,Claude',
     // 'GEOSITE,openai,OpenAI',
@@ -175,6 +174,8 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     // 'GEOSITE,youtube,Youtube',
     'GEOSITE,netflix,Netflix',
     'GEOSITE,private,DIRECT',
+    'GEOSITE,category-companies@cn,DIRECT',
+    'GEOSITE,category-entertainment@cn,DIRECT',
     'GEOSITE,cn,DIRECT',
     'GEOSITE,geolocation-!cn,Proxy',
 
