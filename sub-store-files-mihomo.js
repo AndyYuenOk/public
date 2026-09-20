@@ -146,11 +146,12 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
 
   config['geodata-mode'] = true;
 
-  config['geox-url'] = {
-    geoip: 'https://cdn.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geoip.dat',
-    geosite: 'https://cdn.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geosite.dat',
-  };
+  // config['geox-url'] = {
+  //   geoip: 'https://cdn.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geoip.dat',
+  //   geosite: 'https://cdn.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geosite.dat',
+  // };
 
+  // https://github.com/MetaCubeX/meta-rules-dat
   // https://github.com/Loyalsoldier/v2ray-rules-dat
   // https://github.com/v2fly/domain-list-community/tree/master/data
   // Rule order is top-down; earlier entries have higher priority.
@@ -164,6 +165,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     // 'RULE-SET,reject,Reject',
     'RULE-SET,adblockfilters,Reject',
 
+    // 'GEOSITE,category-ads-all,Reject',
     'GEOSITE,googlefcm,FCM',
     // 'GEOSITE,anthropic,Claude',
     // 'GEOSITE,openai,OpenAI',
