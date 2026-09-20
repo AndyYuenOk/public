@@ -174,9 +174,9 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     // 'GEOSITE,youtube,Youtube',
     'GEOSITE,netflix,Netflix',
     'GEOSITE,private,DIRECT',
+    'GEOSITE,cn,DIRECT',
     'GEOSITE,category-companies@cn,DIRECT',
     'GEOSITE,category-entertainment@cn,DIRECT',
-    'GEOSITE,cn,DIRECT',
     'GEOSITE,geolocation-!cn,Proxy',
 
     // 'RULE-SET,google,DIRECT',
