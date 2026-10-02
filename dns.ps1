@@ -6,11 +6,14 @@ $servers = @(
 )
 
 $rounds = 10
-$domain = 'baidu.com'
+$domains = 1..$rounds | ForEach-Object {
+    "$([guid]::NewGuid().ToString('N')).com"
+}
 
 $servers | ForEach-Object {
     $item = $_
-    $results = 1..$rounds | ForEach-Object {
+    $results = for ($i = 0; $i -lt $rounds; $i++) {
+        $domain = $domains[$i]
         if ($item.IP) {
             (Measure-Command { Resolve-DnsName $domain -Server $item.IP -ErrorAction SilentlyContinue }).TotalMilliseconds
         } else {
@@ -20,7 +23,7 @@ $servers | ForEach-Object {
     [PSCustomObject]@{
         DNS  = $item.Name
         Min  = [math]::Round(($results | Measure-Object -Minimum).Minimum, 1)
-        Avg  = [math]::Round(($results | Measure-Object -Average).Average, 1)
         Max  = [math]::Round(($results | Measure-Object -Maximum).Maximum, 1)
+        Avg  = [math]::Round(($results | Measure-Object -Average).Average, 1)
     }
 } | Format-Table -AutoSize

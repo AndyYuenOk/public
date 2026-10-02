@@ -53,50 +53,26 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
   config['dns'] = {
     enable: true,
     ipv6: true,
+    'prefer-h3': true,
     'enhanced-mode': 'fake-ip',
     'respect-rules': true,
-    'proxy-server-nameserver': [
-      'system',
-      // '223.5.5.5',
-      // '119.29.29.29'
-    ],
-    'direct-nameserver': [
-      'system',
-      // '223.5.5.5',
-    ],
+    'proxy-server-nameserver': ['https://223.5.5.5/dns-query'],
     'nameserver-policy': {
-      'GEOSITE:private,googlefcm': [
-        'system',
-        // '223.5.5.5',
-      ],
-      // 'GEOSITE:category-ai-!cn': [
-      //   'tcp://8.8.8.8#AI',
-      //   // 'tcp://1.1.1.1#AI'
-      // ],
-      // 'GEOSITE:gfw': [
-      //   'tcp://8.8.8.8',
-      //   // 'tcp://1.1.1.1'
-      // ],
+      'GEOSITE:private': ['system'],
     },
-    nameserver: [
-      'system',
-      // '223.5.5.5',
-      // '119.29.29.29'
-    ],
+    'direct-nameserver-follow-policy': true,
+    'direct-nameserver': ['https://223.5.5.5/dns-query'],
+    nameserver: ['https://223.5.5.5/dns-query'],
     'fake-ip-filter-mode': 'rule',
     'fake-ip-filter': [
       // use real-ip mode, must enable nameserver-policy, otherwise it will trigger fallback
-      'GEOSITE,private,real-ip',
+      // 'GEOSITE,private,real-ip',
       // 'GEOSITE,cn,real-ip',
-      'GEOSITE,googlefcm,real-ip',
+      // 'GEOSITE,googlefcm,real-ip',
       // 'GEOSITE,gfw,fake-ip',
       'MATCH,fake-ip',
     ],
-    fallback: [
-      // '8.8.8.8',
-      'tcp://8.8.8.8',
-      // 'tcp://1.1.1.1'
-    ],
+    fallback: ['https://8.8.8.8/dns-query'],
     'fallback-filter': { geoip: true, 'geoip-code': 'CN' },
   };
 
@@ -114,9 +90,8 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     // 'direct',
     // 'proxy',
     {
-      adblockfilters: {
+      adBlock: {
         url: 'https://raw.githubusercontent.com/217heidai/adblockfilters/main/rules/adblockmihomo.mrs',
-        format: 'mrs',
       },
     },
   ].reduce((providers, provider) => {
@@ -131,6 +106,10 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
       // 处理已经定义的特殊对象 (如 adblockfilters)
       providerName = Object.keys(provider)[0];
       providers[providerName] = Object.values(provider)[0];
+    }
+
+    if (providers[providerName].url.split('.').pop() === 'mrs') {
+      providers[providerName].format = 'mrs';
     }
 
     providers[providerName].type = 'http';
@@ -162,8 +141,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     // 'RULE-SET,applications,DIRECT',
     // 'RULE-SET,lancidr,DIRECT,no-resolve',
     // 'RULE-SET,private,DIRECT',
-    // 'RULE-SET,reject,Reject',
-    'RULE-SET,adblockfilters,Reject',
+    'RULE-SET,adBlock,Reject',
 
     // 'GEOSITE,category-ads-all,Reject',
     'GEOSITE,googlefcm,FCM',
@@ -361,14 +339,12 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
       type: autoType,
       // interval: getInterval(),
       use: [],
-      proxies: [],
     };
     autoBackupGroup = {
       name: 'Auto_Backup',
       type: autoType,
       // interval: getInterval(),
       use: [],
-      proxies: [],
     };
 
     const userInfoMap = getSubUserinfo();
@@ -433,7 +409,10 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
       Object.entries(flagMap).forEach(([code, flag]) => {
         filter = filter.replace(code, flag);
       });
-      config['proxy-providers'][name].filter = filter;
+
+      if (filter) {
+        config['proxy-providers'][name].filter = filter;
+      }
     });
 
     if (!autoPrimaryGroup.use.length) {
@@ -493,14 +472,15 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     }
 
     if (group.type === 'url-test') {
-      Object.assign(group, healthCheck);
+      const { url, ...rest } = healthCheck;
+      Object.assign(group, rest);
     }
 
     if (group.type === 'smart') {
       group.uselightgbm = true;
     }
 
-    if (group['include-all']) {
+    if (isMobile && group['include-all']) {
       group['exclude-filter'] = 'Tailscale';
     }
 
@@ -524,12 +504,21 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     config.proxies.push({
       name: 'Tailscale',
       type: 'tailscale',
-      hostname: 'mihomo',
       udp: true,
     });
-    config.rules.unshift('IP-CIDR,100.64.0.0/10,Tailscale,no-resolve');
+    config.rules.unshift(
+      'DOMAIN-SUFFIX,ts.net,Tailscale',
+      'IP-CIDR,100.64.0.0/10,Tailscale,no-resolve',
+      'IP-CIDR6,fd7a:115c:a1e0::/48,Tailscale,no-resolve'
+    );
   } else {
-    config.rules.unshift('PROCESS-NAME,tailscaled.exe,DIRECT');
+    config['sub-rules'] ??= {};
+    config['sub-rules'].docker = ['GEOSITE,docker,Proxy', 'GEOSITE,github,Proxy', 'MATCH,DIRECT'];
+
+    config.rules.unshift(
+      'SUB-RULE,(PROCESS-NAME,com.docker.backend.exe),docker',
+      'PROCESS-NAME,tailscaled.exe,DIRECT'
+    );
   }
 
   return config;
