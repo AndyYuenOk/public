@@ -11,7 +11,7 @@ $options._req ??= {
 };
 let query = $options._req.query;
 
-let isMobile = /android/i.test($options._req.headers['user-agent']);
+let isMobile = /Android|iPhone/i.test($options._req.headers['user-agent']);
 
 if (query.mobile) {
   isMobile = /true|1/i.test(query.mobile);
@@ -44,25 +44,29 @@ Object.entries(flagMap).forEach(([code, flag]) => {
   filterAI = filterAI.replace(code, flag);
 });
 
-function main(config = { proxies: [], 'proxy-providers': {} }) {
+function main(subConfig = { proxies: [] }) {
+  config = { proxies: [], 'proxy-providers': {} };
   config['lgbm-auto-update'] = true;
 
   config['unified-delay'] = true;
   config['external-controller'] = '0.0.0.0:9090';
   config['geo-auto-update'] = true;
+
+  const nameserver = ['https://223.5.5.5/dns-query'];
   config['dns'] = {
     enable: true,
     ipv6: true,
     'prefer-h3': true,
     'enhanced-mode': 'fake-ip',
     'respect-rules': true,
-    'proxy-server-nameserver': ['https://223.5.5.5/dns-query'],
+    'proxy-server-nameserver': nameserver,
+    // system doesn't cache ipv6, so DNS queries are sent repeatedly
     'nameserver-policy': {
       'GEOSITE:private': ['system'],
     },
     'direct-nameserver-follow-policy': true,
-    'direct-nameserver': ['https://223.5.5.5/dns-query'],
-    nameserver: ['https://223.5.5.5/dns-query'],
+    'direct-nameserver': nameserver,
+    nameserver: nameserver,
     'fake-ip-filter-mode': 'rule',
     'fake-ip-filter': [
       // use real-ip mode, must enable nameserver-policy, otherwise it will trigger fallback
@@ -75,6 +79,8 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     fallback: ['https://8.8.8.8/dns-query'],
     'fallback-filter': { geoip: true, 'geoip-code': 'CN' },
   };
+
+  const cdn = 'https://gcore.jsdelivr.net/gh/';
 
   // https://github.com/Loyalsoldier/clash-rules
   config['rule-providers'] = [
@@ -90,8 +96,8 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     // 'direct',
     // 'proxy',
     {
-      adBlock: {
-        url: 'https://raw.githubusercontent.com/217heidai/adblockfilters/main/rules/adblockmihomo.mrs',
+      AdBlock: {
+        url: cdn + '217heidai/adblockfilters@main/rules/adblockmihomo.mrs',
       },
     },
   ].reduce((providers, provider) => {
@@ -100,7 +106,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     if (typeof provider === 'string') {
       providerName = provider;
       providers[providerName] = {
-        url: `https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/${providerName}.txt`,
+        url: cdn + `Loyalsoldier/clash-rules@release/${providerName}.txt`,
       };
     } else {
       // 处理已经定义的特殊对象 (如 adblockfilters)
@@ -141,10 +147,10 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     // 'RULE-SET,applications,DIRECT',
     // 'RULE-SET,lancidr,DIRECT,no-resolve',
     // 'RULE-SET,private,DIRECT',
-    'RULE-SET,adBlock,Reject',
+    'RULE-SET,AdBlock,Reject',
 
     // 'GEOSITE,category-ads-all,Reject',
-    'GEOSITE,googlefcm,FCM',
+    'GEOSITE,googlefcm,DIRECT',
     // 'GEOSITE,anthropic,Claude',
     // 'GEOSITE,openai,OpenAI',
     // 'GEOSITE,google-gemini,Gemini'
@@ -152,7 +158,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     // 'GEOSITE,microsoft@cn,DIRECT',
     // 'GEOSITE,microsoft,Microsoft',
     // 'GEOSITE,youtube,Youtube',
-    'GEOSITE,netflix,Netflix',
+    // 'GEOSITE,netflix,Netflix',
     'GEOSITE,private,DIRECT',
     'GEOSITE,cn,DIRECT',
     'GEOSITE,category-companies@cn,DIRECT',
@@ -170,7 +176,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
 
     'GEOIP,private,DIRECT',
     'GEOIP,CN,DIRECT',
-    'MATCH,Final',
+    'MATCH,Proxy',
   ];
 
   // https://github.com/Orz-3/mini/tree/master/Color
@@ -187,7 +193,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
       name: 'AI',
       icon: 'https://img.icons8.com/fluency/256/bot.png',
       type: 'select',
-      'include-all': true,
+      // 'include-all': true,
       proxies: ['Proxy', 'Auto_AI'],
     },
     // {
@@ -221,30 +227,30 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     //   'include-all': true,
     //   proxies: ['Proxy'],
     // },
-    {
-      name: 'Netflix',
-      icon: 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/netflix.svg',
-      type: 'select',
-      'include-all': true,
-      proxies: ['Proxy'],
-    },
+    // {
+    //   name: 'Netflix',
+    //   icon: cdn + 'selfhst/icons/svg/netflix.svg',
+    //   type: 'select',
+    //   'include-all': true,
+    //   proxies: ['Proxy'],
+    // },
     // {
     //   name: 'Microsoft',
-    //   icon: 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/microsoft.svg',
+    //   icon:  cdn + 'selfhst/icons/svg/microsoft.svg',
     //   type: 'select',
     //   // 'include-all': true,
     //   proxies: ['Proxy', 'DIRECT'],
     // },
-    {
-      name: 'FCM',
-      icon: 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/firebase.svg',
-      type: 'select',
-      // 'include-all': true,
-      proxies: ['DIRECT', 'Proxy'],
-    },
+    // {
+    //   name: 'FCM',
+    //   icon: cdn + 'selfhst/icons/svg/firebase.svg',
+    //   type: 'select',
+    //   // 'include-all': true,
+    //   proxies: ['DIRECT', 'Proxy'],
+    // },
     // {
     //   name: 'Apple',
-    //   icon: 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/apple.svg',
+    //   icon:  cdn + 'selfhst/icons/svg/apple.svg',
     //   type: 'select',
     //   'include-all': true,
     //   proxies: ['DIRECT', 'Proxy'],
@@ -263,12 +269,12 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     //   proxies: ["DIRECT"],
     // },
 
-    {
-      name: 'Final',
-      icon: 'Final.png',
-      type: 'select',
-      proxies: ['Proxy', 'DIRECT'],
-    },
+    // {
+    //   name: 'Final',
+    //   icon: 'Final.png',
+    //   type: 'select',
+    //   proxies: ['Proxy', 'DIRECT'],
+    // },
   ];
 
   let autoAreaGroups = Object.entries({ HK: '🇭🇰', JP: '🇯🇵', SG: '🇸🇬', TW: '🇹🇼', US: '🇺🇸' }).map(
@@ -281,6 +287,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
       filter: flag,
     })
   );
+  autoAreaGroups = [];
 
   if (regions.length) {
     config.proxies = config.proxies.filter(({ name }) =>
@@ -464,7 +471,7 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     }
 
     if (!group.icon.startsWith('http')) {
-      group.icon = 'https://raw.githubusercontent.com/Orz-3/mini/master/Color/' + group.icon;
+      group.icon = cdn + 'Orz-3/mini@master/Color/' + group.icon;
     }
 
     if (group.type === 'fallback') {
@@ -498,6 +505,19 @@ function main(config = { proxies: [], 'proxy-providers': {} }) {
     $options._res.headers ??= {};
     $options._res.headers['content-disposition'] =
       'attachment; filename="Fallback' + (enableSmart ? '-Smart' : '') + '"';
+  } else {
+    if (mainProxyGroup.proxies.length === 1) {
+      config['proxy-groups'] = config['proxy-groups'].filter((group) => group.name !== 'Proxy');
+      config['proxy-groups'].find((group) => group.name === 'Auto').name = 'Proxy';
+    }
+
+    if (
+      subConfig.proxies.filter(({ name }) => name.includes('AI')).length ===
+      subConfig.proxies.length
+    ) {
+      config['proxy-groups'] = config['proxy-groups'].filter((group) => !group.name.includes('AI'));
+      config.rules = config.rules.filter((rule) => !rule.endsWith(',AI'));
+    }
   }
 
   if (isMobile) {
@@ -555,5 +575,5 @@ function getInterval() {
 }
 
 if (typeof $content === 'string' && $content === '') {
-  $content = ProxyUtils.yaml.dump(main());
+  $content = ProxyUtils.yaml.dump(main(ProxyUtils.yaml.load($content)));
 }
