@@ -45,237 +45,240 @@ Object.entries(flagMap).forEach(([code, flag]) => {
 });
 
 function main(subConfig = { proxies: [] }) {
-  config = { proxies: [], 'proxy-providers': {} };
-  config['lgbm-auto-update'] = true;
+  const nameserver = ['https://223.5.5.5/dns-query'],
+    cdn = 'https://gcore.jsdelivr.net/gh/';
 
-  config['unified-delay'] = true;
-  config['external-controller'] = '0.0.0.0:9090';
-  config['geo-auto-update'] = true;
-
-  const nameserver = ['https://223.5.5.5/dns-query'];
-  config['dns'] = {
-    enable: true,
-    ipv6: true,
-    'prefer-h3': true,
-    'enhanced-mode': 'fake-ip',
-    'respect-rules': true,
-    'proxy-server-nameserver': nameserver,
-    // system doesn't cache ipv6, so DNS queries are sent repeatedly
-    'nameserver-policy': {
-      'GEOSITE:private': ['system'],
-    },
-    'direct-nameserver-follow-policy': true,
-    'direct-nameserver': nameserver,
-    nameserver: nameserver,
-    'fake-ip-filter-mode': 'rule',
-    'fake-ip-filter': [
-      // use real-ip mode, must enable nameserver-policy, otherwise it will trigger fallback
-      // 'GEOSITE,private,real-ip',
-      // 'GEOSITE,cn,real-ip',
-      // 'GEOSITE,googlefcm,real-ip',
-      // 'GEOSITE,gfw,fake-ip',
-      'MATCH,fake-ip',
-    ],
-    fallback: ['https://8.8.8.8/dns-query'],
-    'fallback-filter': { geoip: true, 'geoip-code': 'CN' },
-  };
-
-  const cdn = 'https://gcore.jsdelivr.net/gh/';
-
-  // https://github.com/Loyalsoldier/clash-rules
-  config['rule-providers'] = [
-    // 'applications',
-    // 'lancidr',
-    // 'private',
-    // 'reject',
-    // 'icloud',
-    // 'apple',
-    // 'google',
-    // 'telegramcidr',
-    // 'cncidr',
-    // 'direct',
-    // 'proxy',
-    {
-      AdBlock: {
-        url: cdn + '217heidai/adblockfilters@main/rules/adblockmihomo.mrs',
+  config = {
+    dns: {
+      enable: true,
+      ipv6: true,
+      'prefer-h3': true,
+      'enhanced-mode': 'fake-ip',
+      'respect-rules': true,
+      'proxy-server-nameserver': nameserver,
+      // system doesn't cache ipv6, so DNS queries are sent repeatedly
+      'nameserver-policy': {
+        'GEOSITE:private': ['system'],
       },
+      'direct-nameserver-follow-policy': true,
+      'direct-nameserver': nameserver,
+      nameserver: nameserver,
+      // 'fake-ip-filter-mode': 'rule',
+      // 'fake-ip-filter': [
+      //   // use real-ip mode, must enable nameserver-policy, otherwise it will trigger fallback
+      //   // 'GEOSITE,private,real-ip',
+      //   // 'GEOSITE,cn,real-ip',
+      //   // 'GEOSITE,googlefcm,real-ip',
+      //   // 'GEOSITE,gfw,fake-ip',
+      //   'MATCH,fake-ip',
+      // ],
+      fallback: ['https://8.8.8.8/dns-query'],
+      // 'fallback-filter': { geoip: true, 'geoip-code': 'CN' },
     },
-  ].reduce((providers, provider) => {
-    let providerName;
 
-    if (typeof provider === 'string') {
-      providerName = provider;
-      providers[providerName] = {
-        url: cdn + `Loyalsoldier/clash-rules@release/${providerName}.txt`,
-      };
-    } else {
-      // 处理已经定义的特殊对象 (如 adblockfilters)
-      providerName = Object.keys(provider)[0];
-      providers[providerName] = Object.values(provider)[0];
-    }
+    proxies: [],
+    'proxy-providers': {},
 
-    if (providers[providerName].url.split('.').pop() === 'mrs') {
-      providers[providerName].format = 'mrs';
-    }
+    // https://github.com/Orz-3/mini/tree/master/Color
+    // https://github.com/lobehub/lobe-icons/tree/master/packages/static-png/light
+    'proxy-groups': [
+      {
+        name: 'Auto_AI',
+        type: autoType,
+        // interval: getInterval(),
+        'include-all': true,
+        filter: 'AI',
+      },
+      {
+        name: 'AI',
+        icon: 'https://img.icons8.com/fluency/256/bot.png',
+        type: 'select',
+        // 'include-all': true,
+        proxies: ['Proxy', 'Auto_AI'],
+      },
+      // {
+      //   name: 'Claude',
+      //   icon: 'https://cdn.jsdelivr.net/gh/lobehub/lobe-icons@master/packages/static-png/light/claude-color.png',
+      //   type: 'url-test',
+      //   'include-all': true,
+      //   url: 'https://claude.ai/api/auth/session',
+      //   'expected-status': 404,
+      // },
+      // {
+      //   name: 'OpenAI',
+      //   icon: cdn + 'lobehub/lobe-icons@master/packages/static-png/light/openai.png',
+      //   type: 'url-test',
+      //   'include-all': true,
+      //   url: 'https://chatgpt.com/api/auth/session',
+      //   'expected-status': 200,
+      // },
+      // {
+      //   name: 'Gemini',
+      //   icon: 'https://cdn.jsdelivr.net/gh/lobehub/lobe-icons@master/packages/static-png/light/gemini-color.png',
+      //   type: 'url-test',
+      //   'include-all': true,
+      //   url: `https://generativelanguage.googleapis.com/v1/models?key=${$arguments.google_ai_key}`,
+      //   'expected-status': 200,
+      // },
+      // {
+      //   name: 'Youtube',
+      //   icon: 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/youtube.svg',
+      //   type: 'select',
+      //   'include-all': true,
+      //   proxies: ['Proxy'],
+      // },
+      // {
+      //   name: 'Netflix',
+      //   icon: cdn + 'selfhst/icons/svg/netflix.svg',
+      //   type: 'select',
+      //   'include-all': true,
+      //   proxies: ['Proxy'],
+      // },
+      // {
+      //   name: 'Microsoft',
+      //   icon:  cdn + 'selfhst/icons/svg/microsoft.svg',
+      //   type: 'select',
+      //   // 'include-all': true,
+      //   proxies: ['Proxy', 'DIRECT'],
+      // },
+      // {
+      //   name: 'FCM',
+      //   icon: cdn + 'selfhst/icons/svg/firebase.svg',
+      //   type: 'select',
+      //   // 'include-all': true,
+      //   proxies: ['DIRECT', 'Proxy'],
+      // },
+      // {
+      //   name: 'Apple',
+      //   icon:  cdn + 'selfhst/icons/svg/apple.svg',
+      //   type: 'select',
+      //   'include-all': true,
+      //   proxies: ['DIRECT', 'Proxy'],
+      // },
+      {
+        name: 'AdBlock',
+        icon: 'Adblock.png',
+        type: 'select',
+        proxies: ['REJECT', 'DIRECT'],
+      },
 
-    providers[providerName].type = 'http';
-    providers[providerName].interval = 86400;
-    if (providerName.includes('applications')) {
-      providers[providerName].behavior = 'classical';
-    } else {
-      providers[providerName].behavior = providerName.includes('idr') ? 'ipcidr' : 'domain';
-    }
+      // {
+      //   name: "Direct",
+      //   icon: "China.png",
+      //   type: "select",
+      //   proxies: ["DIRECT"],
+      // },
 
-    return providers;
-  }, {});
+      // {
+      //   name: 'Final',
+      //   icon: 'Final.png',
+      //   type: 'select',
+      //   proxies: ['Proxy', 'DIRECT'],
+      // },
+    ],
 
-  config['geodata-mode'] = true;
+    // https://github.com/Loyalsoldier/clash-rules
+    'rule-providers': [
+      // 'applications',
+      // 'lancidr',
+      // 'private',
+      // 'reject',
+      // 'icloud',
+      // 'apple',
+      // 'google',
+      // 'telegramcidr',
+      // 'cncidr',
+      // 'direct',
+      // 'proxy',
+      {
+        AdBlock: {
+          url: cdn + '217heidai/adblockfilters@main/rules/adblockmihomo.mrs',
+        },
+      },
+    ].reduce((providers, provider) => {
+      let providerName;
+
+      if (typeof provider === 'string') {
+        providerName = provider;
+        providers[providerName] = {
+          url: cdn + `Loyalsoldier/clash-rules@release/${providerName}.txt`,
+        };
+      } else {
+        // 处理已经定义的特殊对象 (如 adblockfilters)
+        providerName = Object.keys(provider)[0];
+        providers[providerName] = Object.values(provider)[0];
+      }
+
+      if (providers[providerName].url.split('.').pop() === 'mrs') {
+        providers[providerName].format = 'mrs';
+      }
+
+      providers[providerName].type = 'http';
+      providers[providerName].interval = 86400;
+      if (providerName.includes('applications')) {
+        providers[providerName].behavior = 'classical';
+      } else {
+        providers[providerName].behavior = providerName.includes('idr') ? 'ipcidr' : 'domain';
+      }
+
+      return providers;
+    }, {}),
+
+    // https://github.com/MetaCubeX/meta-rules-dat
+    // https://github.com/Loyalsoldier/v2ray-rules-dat
+    // https://github.com/v2fly/domain-list-community/tree/master/data
+    // Rule order is top-down; earlier entries have higher priority.
+    rules: [
+      // 'AND,((NETWORK,UDP),(GEOSITE,youtube)),Auto_UDP',
+      // 'AND,((NETWORK,UDP),(PROCESS-NAME-WILDCARD,*youtube*)),REJECT',
+
+      // 'RULE-SET,applications,DIRECT',
+      // 'RULE-SET,lancidr,DIRECT,no-resolve',
+      // 'RULE-SET,private,DIRECT',
+      'RULE-SET,AdBlock,AdBlock',
+
+      // 'GEOSITE,category-ads-all,Reject',
+      'GEOSITE,googlefcm,DIRECT',
+      // 'GEOSITE,anthropic,Claude',
+      // 'GEOSITE,openai,OpenAI',
+      // 'GEOSITE,google-gemini,Gemini'
+      'GEOSITE,category-ai-!cn,AI',
+      // 'GEOSITE,microsoft@cn,DIRECT',
+      // 'GEOSITE,microsoft,Microsoft',
+      // 'GEOSITE,youtube,Youtube',
+      // 'GEOSITE,netflix,Netflix',
+      'GEOSITE,private,DIRECT',
+      'GEOSITE,cn,DIRECT',
+      'GEOSITE,category-companies@cn,DIRECT',
+      'GEOSITE,category-entertainment@cn,DIRECT',
+      'GEOSITE,geolocation-!cn,Proxy',
+
+      // 'RULE-SET,google,DIRECT',
+      // 'RULE-SET,telegramcidr,Proxy,no-resolve',
+      // 'RULE-SET,apple,Apple',
+      // 'RULE-SET,icloud,DIRECT',
+
+      // 'RULE-SET,cncidr,DIRECT,no-resolve',
+      // 'RULE-SET,direct,DIRECT',
+      // 'RULE-SET,proxy,Proxy',
+
+      'GEOIP,private,DIRECT',
+      'GEOIP,CN,DIRECT',
+      'MATCH,Proxy',
+    ],
+  };
+  // config['lgbm-auto-update'] = true;
+
+  // config['unified-delay'] = true;
+  // config['external-controller'] = '0.0.0.0:9090';
+  // config['geo-auto-update'] = true;
+
+  // config['geodata-mode'] = true;
 
   // config['geox-url'] = {
   //   geoip: 'https://cdn.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geoip.dat',
   //   geosite: 'https://cdn.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geosite.dat',
   // };
-
-  // https://github.com/MetaCubeX/meta-rules-dat
-  // https://github.com/Loyalsoldier/v2ray-rules-dat
-  // https://github.com/v2fly/domain-list-community/tree/master/data
-  // Rule order is top-down; earlier entries have higher priority.
-  config.rules = [
-    // 'AND,((NETWORK,UDP),(GEOSITE,youtube)),Auto_UDP',
-    // 'AND,((NETWORK,UDP),(PROCESS-NAME-WILDCARD,*youtube*)),REJECT',
-
-    // 'RULE-SET,applications,DIRECT',
-    // 'RULE-SET,lancidr,DIRECT,no-resolve',
-    // 'RULE-SET,private,DIRECT',
-    'RULE-SET,AdBlock,Reject',
-
-    // 'GEOSITE,category-ads-all,Reject',
-    'GEOSITE,googlefcm,DIRECT',
-    // 'GEOSITE,anthropic,Claude',
-    // 'GEOSITE,openai,OpenAI',
-    // 'GEOSITE,google-gemini,Gemini'
-    'GEOSITE,category-ai-!cn,AI',
-    // 'GEOSITE,microsoft@cn,DIRECT',
-    // 'GEOSITE,microsoft,Microsoft',
-    // 'GEOSITE,youtube,Youtube',
-    // 'GEOSITE,netflix,Netflix',
-    'GEOSITE,private,DIRECT',
-    'GEOSITE,cn,DIRECT',
-    'GEOSITE,category-companies@cn,DIRECT',
-    'GEOSITE,category-entertainment@cn,DIRECT',
-    'GEOSITE,geolocation-!cn,Proxy',
-
-    // 'RULE-SET,google,DIRECT',
-    // 'RULE-SET,telegramcidr,Proxy,no-resolve',
-    // 'RULE-SET,apple,Apple',
-    // 'RULE-SET,icloud,DIRECT',
-
-    // 'RULE-SET,cncidr,DIRECT,no-resolve',
-    // 'RULE-SET,direct,DIRECT',
-    // 'RULE-SET,proxy,Proxy',
-
-    'GEOIP,private,DIRECT',
-    'GEOIP,CN,DIRECT',
-    'MATCH,Proxy',
-  ];
-
-  // https://github.com/Orz-3/mini/tree/master/Color
-  // https://github.com/lobehub/lobe-icons/tree/master/packages/static-png/light
-  config['proxy-groups'] = [
-    {
-      name: 'Auto_AI',
-      type: autoType,
-      // interval: getInterval(),
-      'include-all': true,
-      filter: 'AI',
-    },
-    {
-      name: 'AI',
-      icon: 'https://img.icons8.com/fluency/256/bot.png',
-      type: 'select',
-      // 'include-all': true,
-      proxies: ['Proxy', 'Auto_AI'],
-    },
-    // {
-    //   name: 'Claude',
-    //   icon: 'https://cdn.jsdelivr.net/gh/lobehub/lobe-icons@master/packages/static-png/light/claude-color.png',
-    //   type: 'url-test',
-    //   'include-all': true,
-    //   url: 'https://claude.ai/api/auth/session',
-    //   'expected-status': 404,
-    // },
-    // {
-    //   name: 'OpenAI',
-    //   icon: 'https://cdn.jsdelivr.net/gh/lobehub/lobe-icons@master/packages/static-png/light/openai.png',
-    //   type: 'url-test',
-    //   'include-all': true,
-    //   url: 'https://chatgpt.com/api/auth/session',
-    //   'expected-status': 200,
-    // },
-    // {
-    //   name: 'Gemini',
-    //   icon: 'https://cdn.jsdelivr.net/gh/lobehub/lobe-icons@master/packages/static-png/light/gemini-color.png',
-    //   type: 'url-test',
-    //   'include-all': true,
-    //   url: `https://generativelanguage.googleapis.com/v1/models?key=${$arguments.google_ai_key}`,
-    //   'expected-status': 200,
-    // },
-    // {
-    //   name: 'Youtube',
-    //   icon: 'https://cdn.jsdelivr.net/gh/selfhst/icons/svg/youtube.svg',
-    //   type: 'select',
-    //   'include-all': true,
-    //   proxies: ['Proxy'],
-    // },
-    // {
-    //   name: 'Netflix',
-    //   icon: cdn + 'selfhst/icons/svg/netflix.svg',
-    //   type: 'select',
-    //   'include-all': true,
-    //   proxies: ['Proxy'],
-    // },
-    // {
-    //   name: 'Microsoft',
-    //   icon:  cdn + 'selfhst/icons/svg/microsoft.svg',
-    //   type: 'select',
-    //   // 'include-all': true,
-    //   proxies: ['Proxy', 'DIRECT'],
-    // },
-    // {
-    //   name: 'FCM',
-    //   icon: cdn + 'selfhst/icons/svg/firebase.svg',
-    //   type: 'select',
-    //   // 'include-all': true,
-    //   proxies: ['DIRECT', 'Proxy'],
-    // },
-    // {
-    //   name: 'Apple',
-    //   icon:  cdn + 'selfhst/icons/svg/apple.svg',
-    //   type: 'select',
-    //   'include-all': true,
-    //   proxies: ['DIRECT', 'Proxy'],
-    // },
-    {
-      name: 'Reject',
-      icon: 'Adblock.png',
-      type: 'select',
-      proxies: ['REJECT', 'DIRECT'],
-    },
-
-    // {
-    //   name: "Direct",
-    //   icon: "China.png",
-    //   type: "select",
-    //   proxies: ["DIRECT"],
-    // },
-
-    // {
-    //   name: 'Final',
-    //   icon: 'Final.png',
-    //   type: 'select',
-    //   proxies: ['Proxy', 'DIRECT'],
-    // },
-  ];
 
   let autoAreaGroups = Object.entries({ HK: '🇭🇰', JP: '🇯🇵', SG: '🇸🇬', TW: '🇹🇼', US: '🇺🇸' }).map(
     ([code, flag]) => ({
@@ -384,12 +387,12 @@ function main(subConfig = { proxies: [] }) {
       config['proxy-providers'][name] = {
         type: 'http',
         url: `http://${$options._req.headers.host}${process.env.SUB_STORE_FRONTEND_BACKEND_PATH}/download/${sub.name}/ClashMeta`,
-        interval: name === 'Free' ? 3600 : 86400,
-        path: `./proxies/${name}.yaml`,
+        interval: 86400,
         'health-check': {
           enable: true,
           interval: getInterval(),
           url: healthCheck.url,
+          lazy: isMobile,
         },
       };
 
@@ -524,6 +527,8 @@ function main(subConfig = { proxies: [] }) {
     config.proxies.push({
       name: 'Tailscale',
       type: 'tailscale',
+      hostname: 'mihomo',
+      'auth-key': $arguments.tskey,
       udp: true,
     });
     config.rules.unshift(
@@ -569,8 +574,8 @@ function getSubUserinfo() {
 }
 
 function getInterval() {
-  let min = isMobile ? 30 * 60 : 300;
-  let max = isMobile ? 60 * 60 : 600;
+  let min = isMobile ? 30 * 60 : 5 * 60;
+  let max = min * 2;
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
