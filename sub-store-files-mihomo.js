@@ -58,6 +58,8 @@ function main(subConfig = { proxies: [] }) {
       'proxy-server-nameserver': nameserver,
       // system doesn't cache ipv6, so DNS queries are sent repeatedly
       'nameserver-policy': {
+        // enable this option when using real-ip mode
+        // 'RULE-SET:AdBlock': ['rcode://success'],
         'GEOSITE:private': ['system'],
       },
       'direct-nameserver-follow-policy': true,
@@ -65,13 +67,16 @@ function main(subConfig = { proxies: [] }) {
       nameserver: nameserver,
       // 'fake-ip-filter-mode': 'rule',
       // 'fake-ip-filter': [
-      //   // use real-ip mode, must enable nameserver-policy, otherwise it will trigger fallback
+      //   // use real-ip mode, must enable nameserver-policy
+      //   // otherwise it will trigger fallback
       //   // 'GEOSITE,private,real-ip',
       //   // 'GEOSITE,cn,real-ip',
       //   // 'GEOSITE,googlefcm,real-ip',
       //   // 'GEOSITE,gfw,fake-ip',
       //   'MATCH,fake-ip',
       // ],
+      // If a foreign domain is not included in any ruleset
+      // a fallback DNS server is required.
       fallback: ['https://8.8.8.8/dns-query'],
       // 'fallback-filter': { geoip: true, 'geoip-code': 'CN' },
     },
@@ -83,15 +88,14 @@ function main(subConfig = { proxies: [] }) {
     // https://github.com/lobehub/lobe-icons/tree/master/packages/static-png/light
     'proxy-groups': [
       {
-        name: 'Auto_AI',
-        type: autoType,
-        // interval: getInterval(),
-        'include-all': true,
-        filter: 'AI',
+        name: 'AdBlock',
+        icon: 'Adblock.png',
+        type: 'select',
+        proxies: ['REJECT', 'DIRECT'],
       },
       {
         name: 'AI',
-        icon: 'https://img.icons8.com/fluency/256/bot.png',
+        icon: cdn + 'selfhst/icons/svg/openai.svg',
         type: 'select',
         // 'include-all': true,
         proxies: ['Proxy', 'Auto_AI'],
@@ -155,12 +159,14 @@ function main(subConfig = { proxies: [] }) {
       //   'include-all': true,
       //   proxies: ['DIRECT', 'Proxy'],
       // },
-      {
-        name: 'AdBlock',
-        icon: 'Adblock.png',
-        type: 'select',
-        proxies: ['REJECT', 'DIRECT'],
-      },
+      // {
+      //   name: 'Telegram',
+      //   icon: cdn + 'selfhst/icons/svg/telegram.svg',
+      //   type: 'select',
+      //   // 'include-all': true,
+      //   proxies: ['Proxy'],
+      //   'default-selected': 'Auto_SG',
+      // },
 
       // {
       //   name: "Direct",
@@ -254,7 +260,8 @@ function main(subConfig = { proxies: [] }) {
       'GEOSITE,geolocation-!cn,Proxy',
 
       // 'RULE-SET,google,DIRECT',
-      // 'RULE-SET,telegramcidr,Proxy,no-resolve',
+      'IP-ASN,59930,Auto_US',
+      'GEOIP,telegram,Auto_SG',
       // 'RULE-SET,apple,Apple',
       // 'RULE-SET,icloud,DIRECT',
 
@@ -286,11 +293,10 @@ function main(subConfig = { proxies: [] }) {
       icon: code + '.png',
       type: autoType,
       // interval: getInterval(),
-      'include-all': true,
+      'include-all-providers': true,
       filter: flag,
     })
   );
-  autoAreaGroups = [];
 
   if (regions.length) {
     config.proxies = config.proxies.filter(({ name }) =>
@@ -446,7 +452,7 @@ function main(subConfig = { proxies: [] }) {
     autoSelectGroup = {
       name: 'Auto',
       type: autoType,
-      'include-all': true,
+      'include-all-providers': true,
       proxies: [],
     };
   }
@@ -460,13 +466,20 @@ function main(subConfig = { proxies: [] }) {
     ...autoAreaGroups.map((group) => group.name)
   );
 
-  config['proxy-groups'].unshift(
+  config['proxy-groups'].push(
     mainProxyGroup,
     autoSelectGroup,
     ...(isCollection ? [autoPrimaryGroup, autoBackupGroup] : []),
-    ...airportGroups
+    ...airportGroups,
+    ...autoAreaGroups,
+    {
+      name: 'Auto_AI',
+      type: autoType,
+      // interval: getInterval(),
+      'include-all-providers': true,
+      filter: 'AI',
+    }
   );
-  config['proxy-groups'].push(...autoAreaGroups);
 
   config['proxy-groups'].forEach((group) => {
     if (group.name.includes('Auto')) {
@@ -490,15 +503,15 @@ function main(subConfig = { proxies: [] }) {
       group.uselightgbm = true;
     }
 
-    if (isMobile && group['include-all']) {
-      group['exclude-filter'] = 'Tailscale';
-    }
+    // if (isMobile && group['include-all']) {
+    //   group['exclude-filter'] = 'Tailscale';
+    // }
 
     if (['FCM'].includes(group.name)) {
       group.proxies.push(...airportGroupNames);
     }
 
-    if (['Netflix'].includes(group.name)) {
+    if (['Netflix', 'Telegram'].includes(group.name)) {
       group.proxies.push(...autoAreaGroups.map((group) => group.name));
     }
   });
