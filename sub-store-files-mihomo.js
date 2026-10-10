@@ -230,6 +230,9 @@ function main(subConfig = { proxies: [] }) {
       // 'AND,((NETWORK,UDP),(GEOSITE,youtube)),Auto_UDP',
       // 'AND,((NETWORK,UDP),(PROCESS-NAME-WILDCARD,*youtube*)),REJECT',
 
+      'DOMAIN-SUFFIX,turn.pairdrop.net,DIRECT',
+      // 'DOMAIN-SUFFIX,pairdrop.net,DIRECT',
+
       // 'RULE-SET,applications,DIRECT',
       // 'RULE-SET,lancidr,DIRECT,no-resolve',
       // 'RULE-SET,private,DIRECT',
