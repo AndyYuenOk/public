@@ -43,7 +43,6 @@ async function operator(proxies = [], targetPlatform, context) {
   const ipinfoUrl = 'https://ipinfo.io';
   const ippureUrl = $arguments.ippure_api || 'https://my.ippure.com/v1/info';
   const ipwhoUrl = $arguments.ipwho_api || 'https://ipwho.is/';
-  const ipwhoDirect = String($arguments.ipwho_direct ?? '0').trim() === '1';
   const method = $arguments.method || 'get';
 
   let utils;
@@ -64,7 +63,6 @@ async function operator(proxies = [], targetPlatform, context) {
   }
 
   const isIpApiUrl = /^https?:\/\/ip-api\.com\/json(?:\/|\?|$)/i.test(url);
-  const useDirectIpwho = ipwhoDirect && !internal && isIpApiUrl;
   const ipApiInFlight = new Map();
   const ipApiRequestCache = new Map();
   const { sourceName, sourceStore } = getSourceCacheContext(context.source);
@@ -381,8 +379,6 @@ async function operator(proxies = [], targetPlatform, context) {
               ipinfo: ipApiResult?.sourceApi?.ipinfo ?? {},
               ippure: ipApiResult?.sourceApi?.ippure ?? {},
               ipwho: ipApiResult?.sourceApi?.ipwho ?? {},
-              ipwhoDirect: ipApiResult?.sourceApi?.ipwhoDirect,
-              directOnly: useDirectIpwho,
             });
           }
           applyEgressInfo(targetProxy, api);
@@ -452,73 +448,9 @@ async function operator(proxies = [], targetPlatform, context) {
         ipinfo: {},
         ippure: {},
         ipwho: {},
-        ipwhoDirect: undefined,
       };
 
-      if (useDirectIpwho) {
-        const ipApiPayload = await requestJson({
-          proxy: proxyUrl,
-          method,
-          headers,
-          url: getIpApiUrl(queryServer),
-        });
-        const ipinfoPayload = await requestIpinfoForEgress(
-          getReturnedIp(ipApiPayload.api),
-          { proxy: proxyUrl, method, headers }
-        );
-        const egressIp = getReturnedIp(ipinfoPayload.api) || getReturnedIp(ipApiPayload.api);
-
-        if (!ipinfoPayload.ok) {
-          enqueueRequestStatusLog(
-            index,
-            `[${proxy.name}] [ipinfo] error: ${formatApiErrorDetail(ipinfoPayload)}`
-          );
-        }
-
-        if (!ipApiPayload.ok) {
-          enqueueRequestStatusLog(
-            index,
-            `[${proxy.name}] [ip-api] error: ${formatApiErrorDetail(ipApiPayload)}`
-          );
-        }
-
-        let ipwhoPayload = { ok: false, api: {} };
-        if (ProxyUtils.isIP(egressIp)) {
-          ipwhoPayload = await requestJson({
-            method,
-            headers,
-            url: getIpwhoUrl(egressIp),
-          });
-          if (ipwhoPayload.ok) {
-            const normalizedIpwho = normalizeIpwhoApi(ipwhoPayload.api);
-            const normalizedOk = hasMergedApiData(normalizedIpwho);
-            ipwhoPayload = {
-              ...ipwhoPayload,
-              ok: normalizedOk,
-              api: normalizedOk ? normalizedIpwho : {},
-              error: normalizedOk ? ipwhoPayload.error : 'empty ipwho payload',
-            };
-          }
-          if (!ipwhoPayload.ok) {
-            enqueueRequestStatusLog(
-              index,
-              `[${proxy.name}] [ipwho-direct] error: ${formatApiErrorDetail(ipwhoPayload)}`
-            );
-          }
-        } else {
-          enqueueRequestStatusLog(index, `[${proxy.name}] invalid egress ip`);
-        }
-
-        api = mergeApiResult(ipApiPayload.api, {}, ipwhoPayload.api, ipinfoPayload.api);
-        status = hasMergedApiData(api) ? 200 : 500;
-        sourceApi = {
-          'ip-api': isPlainObject(ipApiPayload.api) ? ipApiPayload.api : {},
-          ipinfo: ipinfoPayload.api,
-          ippure: {},
-          ipwho: {},
-          ipwhoDirect: isPlainObject(ipwhoPayload.api) ? ipwhoPayload.api : undefined,
-        };
-      } else if (isIpApiUrl) {
+      if (isIpApiUrl) {
         const [ipApiSettled, ippureSettled, ipwhoSettled] = await Promise.allSettled([
           requestJson({
             proxy: proxyUrl,
@@ -553,9 +485,12 @@ async function operator(proxies = [], targetPlatform, context) {
             error: normalizedOk ? ipwhoPayload.error : 'empty ipwho payload',
           };
         }
-        const egressIp = getReturnedIp(ipApiPayload.api) || getReturnedIp(ipwhoPayload.api);
+        const egressIp = getFirstValidReturnedIp(
+          ipApiPayload.api,
+          ippurePayload.api,
+          ipwhoPayload.api
+        );
         const ipinfoPayload = await requestIpinfoForEgress(egressIp, {
-          proxy: proxyUrl,
           method,
           headers,
         });
@@ -598,6 +533,10 @@ async function operator(proxies = [], targetPlatform, context) {
           ipwhoPayload.api,
           ipinfoPayload.api
         );
+        if (ProxyUtils.isIP(egressIp)) {
+          api.query = egressIp;
+          api.ip = egressIp;
+        }
         status =
           ipinfoPayload.ok || ipApiPayload.ok || ippurePayload.ok || ipwhoPayload.ok ? 200 : 500;
         sourceApi = {
@@ -722,6 +661,14 @@ async function operator(proxies = [], targetPlatform, context) {
     return api?.query || api?.ip || '';
   }
 
+  function getFirstValidReturnedIp(...sources) {
+    for (const source of sources) {
+      const ip = String(getReturnedIp(source) || '').trim();
+      if (ProxyUtils.isIP(ip)) return ip;
+    }
+    return '';
+  }
+
   function getServerWithPort(proxy = {}) {
     const server = String(proxy?._origin_server ?? proxy?.server ?? '').trim();
     const port = proxy?._origin_port ?? proxy?.port;
@@ -767,26 +714,21 @@ async function operator(proxies = [], targetPlatform, context) {
     ipinfo = {},
     ippure = {},
     ipwho = {},
-    ipwhoDirect,
-    directOnly = false,
   } = {}) {
     const safeCacheKey = String(cacheKey || '').trim();
     if (!safeCacheKey) return;
     const existingEntry = isPlainObject(sourceStore[safeCacheKey]) ? sourceStore[safeCacheKey] : {};
+    const existingEgress = isPlainObject(existingEntry.egress) ? { ...existingEntry.egress } : {};
+    delete existingEgress['ipwho-direct'];
 
     sourceStore[safeCacheKey] = {
       ...existingEntry,
       egress: {
-        ...(isPlainObject(existingEntry.egress) ? existingEntry.egress : {}),
+        ...existingEgress,
         ...(hasMergedApiData(ipinfo) ? { ipinfo: sanitizeIpinfoPayload(ipinfo) } : {}),
-        ...(directOnly
-          ? {}
-          : {
-              'ip-api': sanitizeEgressIpApiPayload(ipApi),
-              ippure: sanitizeIppurePayload(ippure),
-              ipwho: sanitizeIpwhoPayload(ipwho),
-            }),
-        ...(ipwhoDirect === undefined ? {} : { 'ipwho-direct': sanitizeIpwhoPayload(ipwhoDirect) }),
+        'ip-api': sanitizeEgressIpApiPayload(ipApi),
+        ippure: sanitizeIppurePayload(ippure),
+        ipwho: sanitizeIpwhoPayload(ipwho),
       },
     };
   }
@@ -795,11 +737,8 @@ async function operator(proxies = [], targetPlatform, context) {
     return 'http://ip-api.com/json?lang=en';
   }
 
-  function getIpwhoUrl(ip = '') {
-    const normalizedBase = String(ipwhoUrl || '').trim() || 'https://ipwho.is/';
-    const normalizedIp = String(ip || '').trim();
-    if (!normalizedIp) return normalizedBase;
-    return `${normalizedBase.replace(/\/+$/, '')}/${encodeURIComponent(normalizedIp)}`;
+  function getIpwhoUrl() {
+    return String(ipwhoUrl || '').trim() || 'https://ipwho.is/';
   }
 
   function getIpinfoUrl(ip) {
@@ -807,15 +746,12 @@ async function operator(proxies = [], targetPlatform, context) {
   }
 
   function getCachedEgressApi(entry = {}) {
-    const directIpwho = entry?.egress?.['ipwho-direct'];
-    const merged = isPlainObject(directIpwho)
-      ? mergeApiResult(directIpwho, {}, {}, entry?.egress?.ipinfo)
-      : mergeApiResult(
-          entry?.egress?.['ip-api'],
-          entry?.egress?.ippure,
-          entry?.egress?.ipwho,
-          entry?.egress?.ipinfo
-        );
+    const merged = mergeApiResult(
+      entry?.egress?.['ip-api'],
+      entry?.egress?.ippure,
+      entry?.egress?.ipwho,
+      entry?.egress?.ipinfo
+    );
     return internal ? merged : applyIpinfoOnlyFields(merged, entry?.egress?.ipinfo);
   }
 
@@ -876,6 +812,11 @@ async function operator(proxies = [], targetPlatform, context) {
           merged[key] = value;
         }
       }
+    }
+    const resolvedIp = getFirstValidReturnedIp(ipinfo, ipApi, ippure, ipwho);
+    if (resolvedIp) {
+      merged.query = resolvedIp;
+      merged.ip = resolvedIp;
     }
     delete merged.as;
     return merged;
@@ -1046,8 +987,13 @@ async function operator(proxies = [], targetPlatform, context) {
 
   function sanitizeIppurePayload(source = {}) {
     if (!isPlainObject(source)) return {};
-    if (typeof source.isResidential !== 'boolean') return {};
-    return { isResidential: source.isResidential };
+    const sanitized = {};
+    const ip = String(source.ip || source.query || '').trim();
+    if (ProxyUtils.isIP(ip)) sanitized.ip = ip;
+    if (typeof source.isResidential === 'boolean') {
+      sanitized.isResidential = source.isResidential;
+    }
+    return sanitized;
   }
   function sanitizeIpinfoPayload(source = {}) {
     if (!isPlainObject(source)) return {};
@@ -1119,7 +1065,7 @@ async function operator(proxies = [], targetPlatform, context) {
     }
   }
 
-  async function requestIpinfoForEgress(ip, opt = {}) {
+  async function requestIpinfoForEgress(ip, { method, headers } = {}) {
     const normalizedIp = String(ip || '').trim();
     if (!ProxyUtils.isIP(normalizedIp)) {
       return {
@@ -1132,7 +1078,7 @@ async function operator(proxies = [], targetPlatform, context) {
         bodyPreview: '',
       };
     }
-    return requestIpinfo({ ...opt, url: getIpinfoUrl(normalizedIp) });
+    return requestIpinfo({ method, headers, url: getIpinfoUrl(normalizedIp) });
   }
 
   async function requestJson(opt = {}) {
