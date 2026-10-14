@@ -133,6 +133,8 @@ function normalizedIsp(isp, country, city) {
       .replace(/.*Hong Kong Broadband Network.*/i, 'HKBN')
       .replace(/.*Black Mesa.*/i, 'Black Mesa')
       .replace(/.*1GSERVERS.*/i, '1GSERVERS')
+      .replace(/.*DEBEE.*/i, 'DEBEE')
+      .replace(/.*NTT.*/i, 'NTT')
       // .replace(/.*Microsoft.*/i, 'Microsoft')
       // .replace(/.*Cloudflare.*/i, 'Cloudflare')
       // .replace(/.*Kirino.*/i, 'Kirino')
