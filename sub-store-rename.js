@@ -67,8 +67,14 @@ function operator(proxies = [], targetPlatform, context) {
       '';
     if (multiplier) multiplier = parseFloat(multiplier) + '\u00D7';
 
-    proxy.egressName =
-      (egressCountryCode || 'ERR') + ' ' + normalizedIsp(egressIsp, egressCountry, egressCity);
+    proxy.egressName = [
+      egressCountryCode || 'ERR',
+      normalizedIsp(egressIsp, egressCountry, egressCity),
+      egressIsResidential ? 'Resi' : '',
+    ]
+      .join(' ')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
 
     proxy.name = [
       flagMap[egressCountryCode],
