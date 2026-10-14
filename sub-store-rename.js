@@ -105,7 +105,8 @@ function operator(proxies = [], targetPlatform, context) {
 
 function normalizedIsp(isp, country, city) {
   return isp
-    .replace(/.*Tencent.*/i, 'Tencent')
+    .replace(/.*腾讯.*/, 'Tencent')
+    .replace(/(?=.*移动)(?=.*联通)(?=.*电信).*/, 'BGP')
     .replace(/.*Amazon.*/i, 'Amazon')
     .replace(/.*Cloudflare.*/i, 'Cloudflare')
     .replace(/.*Data Communication Business Group.*/i, 'HiNet')

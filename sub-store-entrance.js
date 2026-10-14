@@ -236,12 +236,14 @@ async function operator(proxies = [], targetPlatform, context) {
         const cachedIpApi = sanitizeEntranceIpApiPayload(cachedEntry?.entrance?.['ip-api'] || {});
         const cachedIpwho = sanitizeIpwhoPayload(cachedEntry?.entrance?.ipwho || {});
         const cachedIpinfoPayload = internal ? {} : cachedEntry?.entrance?.ipinfo || {};
+        const cachedIp138 = sanitizeIp138Payload(cachedEntry?.entrance?.ip138 || {});
         const cachedIpinfo = isPlainObject(cachedIpinfoPayload)
           ? { ...cachedIpinfoPayload, isp: getIpinfoIsp(cachedIpinfoPayload) }
           : {};
         let cachedApi = mergeApiResult(cachedIpinfo, mergeApiResult(cachedIpApi, cachedIpwho));
         if (!internal) {
           cachedApi = applyIpinfoOnlyFields(cachedApi, cachedIpinfo);
+          cachedApi = applyIp138Isp(cachedApi, cachedIpinfo, cachedIp138);
         }
         if (hasUsableApiPayload(cachedApi)) {
           const cacheInfo = internal
@@ -335,6 +337,7 @@ async function operator(proxies = [], targetPlatform, context) {
               ipinfo: ipApiResult.ipinfo,
               ipApi: ipApiResult.ipApi,
               ipwho: ipApiResult.ipwho,
+              ip138: ipApiResult.ip138,
             });
           }
         }
@@ -437,6 +440,7 @@ async function operator(proxies = [], targetPlatform, context) {
     const useIpinfo = !internal && isIpApiUrl;
     let ipinfo = {};
     let ipinfoStatus = 0;
+    let ip138 = { isp: '' };
     let ipApi = {};
     let ipApiStatus = 0;
     let ipApiError = null;
@@ -486,6 +490,27 @@ async function operator(proxies = [], targetPlatform, context) {
       }
     }
 
+    if (useIpinfo && ipinfo.countryCode === 'CN') {
+      const ip138Ip = String(ipinfo.ip || '').trim();
+      if (ProxyUtils.isIP(ip138Ip)) {
+        try {
+          const ip138Response = await requestJson({
+            method,
+            headers: { ...headers, accept: 'text/html' },
+            url: getIp138Url(ip138Ip),
+          });
+          if (ip138Response.status >= 200 && ip138Response.status < 300) {
+            ip138 = { isp: parseIp138Operator(ip138Response.payload) };
+          }
+          if (!ip138.isp) {
+            info(`[${proxy.name}] [ip138] operator not found (HTTP ${ip138Response.status})`);
+          }
+        } catch (e) {
+          info(`[${proxy.name}] [ip138] error: ${e?.message ?? e}`);
+        }
+      }
+    }
+
     let ipwho = {};
     let ipwhoStatus = 0;
     const shouldFallbackToIpwho =
@@ -504,7 +529,9 @@ async function operator(proxies = [], targetPlatform, context) {
 
     const fallbackApi = mergeApiResult(ipApi, ipwho);
     const mergedApi = useIpinfo ? mergeApiResult(ipinfo, fallbackApi) : fallbackApi;
-    const api = internal ? mergedApi : applyIpinfoOnlyFields(mergedApi, ipinfo);
+    const api = internal
+      ? mergedApi
+      : applyIp138Isp(applyIpinfoOnlyFields(mergedApi, ipinfo), ipinfo, ip138);
     if (!hasUsableApiPayload(api) && ipApiError) {
       throw ipApiError;
     }
@@ -519,6 +546,7 @@ async function operator(proxies = [], targetPlatform, context) {
     return {
       api,
       ipinfo: useIpinfo ? ipinfo : undefined,
+      ip138: useIpinfo ? ip138 : undefined,
       ipApi,
       ipwho,
       status,
@@ -755,6 +783,38 @@ async function operator(proxies = [], targetPlatform, context) {
     merged.aso = ipinfo?.asn || '';
     return merged;
   }
+  function applyIp138Isp(api = {}, ipinfo = {}, ip138 = {}) {
+    const merged = isPlainObject(api) ? { ...api } : {};
+    if (String(ipinfo?.countryCode || '').trim().toUpperCase() === 'CN') {
+      merged.isp = String(ip138?.isp || '').trim();
+    }
+    return merged;
+  }
+  function getIp138Url(ip = '') {
+    return `https://www.ip138.com/iplookup.php?ip=${encodeURIComponent(ip)}&action=2`;
+  }
+  function parseIp138Operator(html = '') {
+    const rows = String(html ?? '').matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi);
+    for (const row of rows) {
+      const cells = [...row[1].matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/gi)];
+      if (cells.length < 2) continue;
+      const label = normalizeHtmlText(cells[0][1]).replace(/[：:]\s*$/, '');
+      if (label === '运营商') return normalizeHtmlText(cells[1][1]);
+    }
+    return '';
+  }
+  function normalizeHtmlText(value = '') {
+    return String(value ?? '')
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/&nbsp;|&#160;|&#xA0;/gi, ' ')
+      .replace(/&amp;/gi, '&')
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;|&apos;/gi, "'")
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
   function hasUsableApiPayload(source = {}) {
     if (!isPlainObject(source)) return false;
     return [
@@ -855,7 +915,7 @@ async function operator(proxies = [], targetPlatform, context) {
     const entry = sourceStore[safeCacheKey];
     return isPlainObject(entry) ? entry : null;
   }
-  function setStructuredEntranceEntry({ cacheKey = '', ipinfo, ipApi, ipwho } = {}) {
+  function setStructuredEntranceEntry({ cacheKey = '', ipinfo, ipApi, ipwho, ip138 } = {}) {
     const safeCacheKey = String(cacheKey || '').trim();
     if (!safeCacheKey) return;
     const existingEntry = isPlainObject(sourceStore[safeCacheKey]) ? sourceStore[safeCacheKey] : {};
@@ -867,8 +927,13 @@ async function operator(proxies = [], targetPlatform, context) {
         ...(ipinfo !== undefined ? { ipinfo: sanitizeEntranceIpApiPayload(ipinfo) } : {}),
         ...(ipApi !== undefined ? { 'ip-api': sanitizeEntranceIpApiPayload(ipApi) } : {}),
         ...(ipwho !== undefined ? { ipwho: sanitizeIpwhoPayload(ipwho) } : {}),
+        ...(ip138 !== undefined ? { ip138: sanitizeIp138Payload(ip138) } : {}),
       },
     };
+  }
+  function sanitizeIp138Payload(source = {}) {
+    if (!isPlainObject(source)) return {};
+    return { isp: String(source.isp || '').trim() };
   }
   function sanitizeEntranceIpApiPayload(source = {}) {
     if (!isPlainObject(source)) return {};
