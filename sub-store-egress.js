@@ -40,6 +40,7 @@ async function operator(proxies = [], targetPlatform, context) {
   const shouldRename = Boolean($arguments.format);
   let format = $arguments.format || '';
   let url = 'http://ip-api.com/json?lang=en';
+  const ipinfoUrl = 'https://ipinfo.io/what-is-my-ip';
   const ippureUrl = $arguments.ippure_api || 'https://my.ippure.com/v1/info';
   const ipwhoUrl = $arguments.ipwho_api || 'https://ipwho.is/';
   const ipwhoDirect = String($arguments.ipwho_direct ?? '0').trim() === '1';
@@ -377,6 +378,7 @@ async function operator(proxies = [], targetPlatform, context) {
             setStructuredEgressEntry({
               cacheKey: proxyKey,
               ipApi: ipApiResult?.sourceApi?.['ip-api'] ?? {},
+              ipinfo: ipApiResult?.sourceApi?.ipinfo ?? {},
               ippure: ipApiResult?.sourceApi?.ippure ?? {},
               ipwho: ipApiResult?.sourceApi?.ipwho ?? {},
               ipwhoDirect: ipApiResult?.sourceApi?.ipwhoDirect,
@@ -447,29 +449,43 @@ async function operator(proxies = [], targetPlatform, context) {
       let status = 500;
       let sourceApi = {
         'ip-api': {},
+        ipinfo: {},
         ippure: {},
         ipwho: {},
         ipwhoDirect: undefined,
       };
 
       if (useDirectIpwho) {
-        const ipApiPayload = await requestJson({
-          proxy: proxyUrl,
-          method,
-          headers,
-          url: getIpApiUrl(queryServer),
-        });
-        const egressIp = getReturnedIp(ipApiPayload.api);
+        const [ipinfoSettled, ipApiSettled] = await Promise.allSettled([
+          requestIpinfo({ proxy: proxyUrl, method, headers, url: ipinfoUrl }),
+          requestJson({
+            proxy: proxyUrl,
+            method,
+            headers,
+            url: getIpApiUrl(queryServer),
+          }),
+        ]);
+        const ipinfoPayload = getSettledPayload(ipinfoSettled);
+        const ipApiPayload = getSettledPayload(ipApiSettled);
+        const egressIp = getReturnedIp(ipinfoPayload.api) || getReturnedIp(ipApiPayload.api);
+
+        if (!ipinfoPayload.ok) {
+          enqueueRequestStatusLog(
+            index,
+            `[${proxy.name}] [ipinfo] error: ${formatApiErrorDetail(ipinfoPayload)}`
+          );
+        }
 
         if (!ipApiPayload.ok) {
           enqueueRequestStatusLog(
             index,
             `[${proxy.name}] [ip-api] error: ${formatApiErrorDetail(ipApiPayload)}`
           );
-        } else if (!ProxyUtils.isIP(egressIp)) {
-          enqueueRequestStatusLog(index, `[${proxy.name}] [ip-api] error: invalid egress ip`);
-        } else {
-          let ipwhoPayload = await requestJson({
+        }
+
+        let ipwhoPayload = { ok: false, api: {} };
+        if (ProxyUtils.isIP(egressIp)) {
+          ipwhoPayload = await requestJson({
             method,
             headers,
             url: getIpwhoUrl(egressIp),
@@ -484,40 +500,51 @@ async function operator(proxies = [], targetPlatform, context) {
               error: normalizedOk ? ipwhoPayload.error : 'empty ipwho payload',
             };
           }
-
           if (!ipwhoPayload.ok) {
             enqueueRequestStatusLog(
               index,
               `[${proxy.name}] [ipwho-direct] error: ${formatApiErrorDetail(ipwhoPayload)}`
             );
-          } else {
-            api = ipwhoPayload.api;
-            status = 200;
-            sourceApi.ipwhoDirect = api;
           }
+        } else {
+          enqueueRequestStatusLog(index, `[${proxy.name}] invalid egress ip`);
         }
-      } else if (isIpApiUrl) {
-        const [ipApiSettled, ippureSettled, ipwhoSettled] = await Promise.allSettled([
-          requestJson({
-            proxy: proxyUrl,
-            method,
-            headers,
-            url: getIpApiUrl(queryServer),
-          }),
-          requestJson({
-            proxy: proxyUrl,
-            method,
-            headers,
-            url: ippureUrl,
-          }),
-          requestJson({
-            proxy: proxyUrl,
-            method,
-            headers,
-            url: getIpwhoUrl(),
-          }),
-        ]);
 
+        api = mergeApiResult(ipApiPayload.api, {}, ipwhoPayload.api, ipinfoPayload.api);
+        status = hasMergedApiData(api) ? 200 : 500;
+        sourceApi = {
+          'ip-api': isPlainObject(ipApiPayload.api) ? ipApiPayload.api : {},
+          ipinfo: ipinfoPayload.api,
+          ippure: {},
+          ipwho: {},
+          ipwhoDirect: isPlainObject(ipwhoPayload.api) ? ipwhoPayload.api : undefined,
+        };
+      } else if (isIpApiUrl) {
+        const [ipinfoSettled, ipApiSettled, ippureSettled, ipwhoSettled] = await Promise.allSettled(
+          [
+            requestIpinfo({ proxy: proxyUrl, method, headers, url: ipinfoUrl }),
+            requestJson({
+              proxy: proxyUrl,
+              method,
+              headers,
+              url: getIpApiUrl(queryServer),
+            }),
+            requestJson({
+              proxy: proxyUrl,
+              method,
+              headers,
+              url: ippureUrl,
+            }),
+            requestJson({
+              proxy: proxyUrl,
+              method,
+              headers,
+              url: getIpwhoUrl(),
+            }),
+          ]
+        );
+
+        const ipinfoPayload = getSettledPayload(ipinfoSettled);
         const ipApiPayload = getSettledPayload(ipApiSettled);
         const ippurePayload = getSettledPayload(ippureSettled);
         let ipwhoPayload = getSettledPayload(ipwhoSettled);
@@ -532,6 +559,12 @@ async function operator(proxies = [], targetPlatform, context) {
           };
         }
 
+        if (!ipinfoPayload.ok) {
+          enqueueRequestStatusLog(
+            index,
+            `[${proxy.name}] [ipinfo] error: ${formatApiErrorDetail(ipinfoPayload)}`
+          );
+        }
         if (!ipApiPayload.ok) {
           if (isRequestTimeoutError(ipApiPayload)) {
             enqueueRequestStatusLog(
@@ -558,10 +591,17 @@ async function operator(proxies = [], targetPlatform, context) {
           );
         }
 
-        api = mergeApiResult(ipApiPayload.api, ippurePayload.api, ipwhoPayload.api);
-        status = ipApiPayload.ok || ippurePayload.ok || ipwhoPayload.ok ? 200 : 500;
+        api = mergeApiResult(
+          ipApiPayload.api,
+          ippurePayload.api,
+          ipwhoPayload.api,
+          ipinfoPayload.api
+        );
+        status =
+          ipinfoPayload.ok || ipApiPayload.ok || ippurePayload.ok || ipwhoPayload.ok ? 200 : 500;
         sourceApi = {
           'ip-api': isPlainObject(ipApiPayload.api) ? ipApiPayload.api : {},
+          ipinfo: ipinfoPayload.api,
           ippure: sanitizeIppurePayload(ippurePayload.api),
           ipwho: isPlainObject(ipwhoPayload.api) ? ipwhoPayload.api : {},
         };
@@ -719,6 +759,7 @@ async function operator(proxies = [], targetPlatform, context) {
   function setStructuredEgressEntry({
     cacheKey = '',
     ipApi = {},
+    ipinfo = {},
     ippure = {},
     ipwho = {},
     ipwhoDirect,
@@ -732,6 +773,7 @@ async function operator(proxies = [], targetPlatform, context) {
       ...existingEntry,
       egress: {
         ...(isPlainObject(existingEntry.egress) ? existingEntry.egress : {}),
+        ...(hasMergedApiData(ipinfo) ? { ipinfo: sanitizeIpinfoPayload(ipinfo) } : {}),
         ...(directOnly
           ? {}
           : {
@@ -757,11 +799,18 @@ async function operator(proxies = [], targetPlatform, context) {
 
   function getCachedEgressApi(entry = {}) {
     const directIpwho = entry?.egress?.['ipwho-direct'];
-    if (isPlainObject(directIpwho)) return { ...directIpwho };
-    return mergeApiResult(entry?.egress?.['ip-api'], entry?.egress?.ippure, entry?.egress?.ipwho);
+    if (isPlainObject(directIpwho)) {
+      return mergeApiResult(directIpwho, {}, {}, entry?.egress?.ipinfo);
+    }
+    return mergeApiResult(
+      entry?.egress?.['ip-api'],
+      entry?.egress?.ippure,
+      entry?.egress?.ipwho,
+      entry?.egress?.ipinfo
+    );
   }
 
-  function mergeApiResult(ipApi = {}, ippure = {}, ipwho = {}) {
+  function mergeApiResult(ipApi = {}, ippure = {}, ipwho = {}, ipinfo = {}) {
     const merged = isPlainObject(ipApi) ? { ...ipApi } : {};
     merged.asn = extractAsnCode(merged.asn || merged.as || '');
     const sanitizedIppure = sanitizeIppurePayload(ippure);
@@ -800,6 +849,25 @@ async function operator(proxies = [], targetPlatform, context) {
         merged.asn = ipwho.asn;
       }
     }
+    if (isPlainObject(ipinfo)) {
+      for (const key of [
+        'query',
+        'ip',
+        'country',
+        'countryCode',
+        'region',
+        'regionName',
+        'city',
+        'isp',
+        'org',
+        'asn',
+      ]) {
+        const value = ipinfo[key];
+        if (value !== undefined && value !== null && String(value).trim()) {
+          merged[key] = value;
+        }
+      }
+    }
     delete merged.as;
     return merged;
   }
@@ -827,6 +895,52 @@ async function operator(proxies = [], targetPlatform, context) {
     };
   }
 
+  function parseIpinfoPage(html = '') {
+    const source = String(html ?? '');
+    const heading = source.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i)?.[1];
+    const query = normalizeHtmlText(heading);
+    if (!ProxyUtils.isIP(query)) return {};
+
+    const fields = {};
+    const rowRegex = /<tr\b[^>]*>([\s\S]*?)<\/tr>/gi;
+    let rowMatch;
+    while ((rowMatch = rowRegex.exec(source))) {
+      const cells = [...rowMatch[1].matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)];
+      if (cells.length < 2) continue;
+      const label = normalizeHtmlText(cells[0][1]).toLowerCase();
+      if (label) fields[label] = normalizeHtmlText(cells[1][1]);
+    }
+
+    const locationParts = (fields.location || '').split(',').map((part) => part.trim());
+    const countryCode = locationParts[locationParts.length - 1] || '';
+    const state = fields.state || fields.region || '';
+    const company = fields.company || '';
+    const asn = extractAsnCode(source);
+    const api = { query, ip: query };
+    const hasLocationValue = (value) => Boolean(value && !/^[-\u2013\u2014]$/.test(value));
+
+    if (/^[A-Z]{2}$/i.test(countryCode)) api.countryCode = countryCode.toUpperCase();
+    if (hasLocationValue(fields.country)) api.country = fields.country;
+    if (hasLocationValue(state)) api.regionName = state;
+    if (hasLocationValue(fields.city)) api.city = fields.city;
+    if (hasLocationValue(company)) api.org = company;
+    if (asn) api.asn = asn;
+
+    return api;
+  }
+
+  function normalizeHtmlText(value = '') {
+    return normalizeWhitespace(
+      stripHtmlTags(String(value ?? ''))
+        .replace(/&nbsp;|&#160;|&#xA0;/gi, ' ')
+        .replace(/&amp;/gi, '&')
+        .replace(/&quot;/gi, '"')
+        .replace(/&#39;|&apos;/gi, "'")
+        .replace(/&lt;/gi, '<')
+        .replace(/&gt;/gi, '>')
+    );
+  }
+
   function extractAsnCode(value = '') {
     const text = String(value || '').toUpperCase();
     const matched = text.match(/\bAS\d+\b/);
@@ -842,6 +956,11 @@ async function operator(proxies = [], targetPlatform, context) {
     if (!isPlainObject(source)) return {};
     if (typeof source.isResidential !== 'boolean') return {};
     return { isResidential: source.isResidential };
+  }
+  function sanitizeIpinfoPayload(source = {}) {
+    if (!isPlainObject(source)) return {};
+    const fields = ['query', 'ip', 'country', 'countryCode', 'regionName', 'city', 'org', 'asn'];
+    return Object.fromEntries(fields.filter((key) => source[key]).map((key) => [key, source[key]]));
   }
   function sanitizeEgressIpApiPayload(source = {}) {
     if (!isPlainObject(source)) return {};
@@ -861,6 +980,40 @@ async function operator(proxies = [], targetPlatform, context) {
 
   function isPlainObject(value) {
     return value && typeof value === 'object' && !Array.isArray(value);
+  }
+
+  async function requestIpinfo(opt = {}) {
+    try {
+      const res = await http(opt);
+      const rawBody = String(lodash_get(res, 'body', ''));
+      const status = parseInt(res.status || res.statusCode || 200, 10);
+      const api = status >= 200 && status < 300 ? parseIpinfoPage(rawBody) : {};
+      const ok = ProxyUtils.isIP(getReturnedIp(api));
+      const previews = ok ? { titlePreview: '', bodyPreview: '' } : extractTitleAndBody(rawBody);
+      return {
+        ok,
+        status,
+        api: ok ? api : {},
+        error: ok
+          ? ''
+          : status < 200 || status >= 300
+            ? `HTTP ${status}`
+            : 'invalid IPinfo page response',
+        rawBody: ok ? '' : rawBody,
+        titlePreview: previews.titlePreview,
+        bodyPreview: previews.bodyPreview,
+      };
+    } catch (e) {
+      return {
+        ok: false,
+        status: 0,
+        api: {},
+        error: e?.message ?? String(e),
+        rawBody: '',
+        titlePreview: '',
+        bodyPreview: '',
+      };
+    }
   }
 
   async function requestJson(opt = {}) {

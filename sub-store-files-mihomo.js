@@ -57,16 +57,16 @@ function main(subConfig = { proxies: [] }) {
       'direct-nameserver-follow-policy': true,
       'direct-nameserver': nameserver,
       nameserver: nameserver,
-      // 'fake-ip-filter-mode': 'rule',
-      // 'fake-ip-filter': [
-      //   // use real-ip mode, must enable nameserver-policy
-      //   // otherwise it will trigger fallback
-      //   // 'GEOSITE,private,real-ip',
-      //   // 'GEOSITE,cn,real-ip',
-      //   // 'GEOSITE,googlefcm,real-ip',
-      //   // 'GEOSITE,gfw,fake-ip',
-      //   'MATCH,fake-ip',
-      // ],
+      'fake-ip-filter-mode': 'rule',
+      'fake-ip-filter': [
+        // use real-ip mode, must enable nameserver-policy
+        // otherwise it will trigger fallback
+        'GEOSITE,private,real-ip',
+        // 'GEOSITE,cn,real-ip',
+        // 'GEOSITE,googlefcm,real-ip',
+        // 'GEOSITE,gfw,fake-ip',
+        'MATCH,fake-ip',
+      ],
       // If a foreign domain is not included in any ruleset
       // a fallback DNS server is required.
       fallback: ['https://8.8.8.8/dns-query'],
@@ -282,16 +282,21 @@ function main(subConfig = { proxies: [] }) {
   //   geosite: 'https://cdn.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geosite.dat',
   // };
 
-  let autoAreaGroups = Object.entries({ HK: '🇭🇰', JP: '🇯🇵', SG: '🇸🇬', TW: '🇹🇼', US: '🇺🇸' }).map(
-    ([code, flag]) => ({
-      name: 'Auto_' + code,
-      icon: code + '.png',
-      type: autoType,
-      // interval: getInterval(),
-      'include-all-providers': true,
-      filter: flag,
-    })
-  );
+  let autoAreaGroups = [
+    ['HK', '🇭🇰'],
+    ['JP', '🇯🇵'],
+    ['SG', '🇸🇬'],
+    ['TW', '🇹🇼'],
+    ['US', '🇺🇸'],
+  ].map(([code, flag, url]) => ({
+    name: 'Auto_' + code,
+    icon: code + '.png',
+    type: autoType,
+    // interval: getInterval(),
+    'include-all-providers': true,
+    filter: flag,
+    // url,
+  }));
 
   if (regions.length) {
     config.proxies = config.proxies.filter(({ name }) =>
@@ -335,7 +340,7 @@ function main(subConfig = { proxies: [] }) {
       // url: "http://cp.cloudflare.com/generate_204",
       // timeout: 1500,
       // tolerance: 200,
-      'max-failed-times': 1,
+      // 'max-failed-times': 1,
     };
 
   if (isCollection) {

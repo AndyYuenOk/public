@@ -24,13 +24,11 @@ async function operator(proxies = [], targetPlatform, context) {
 
   const shouldWriteCache = true;
   const $ = $substore;
-  const info = (msg = "") => console.log(`[entrance] ${msg}`);
-  const error = (msg = "") => console.log(`[entrance] ${msg}`);
-  const logBoundary = (phase = "") =>
-    info(
-      `==================== [SUB-STORE-ENTRANCE ${phase}] ====================`,
-    );
-  logBoundary("START");
+  const info = (msg = '') => console.log(`[entrance] ${msg}`);
+  const error = (msg = '') => console.log(`[entrance] ${msg}`);
+  const logBoundary = (phase = '') =>
+    info(`==================== [SUB-STORE-ENTRANCE ${phase}] ====================`);
+  logBoundary('START');
   const { isNode } = $.env;
   const internal = /true|1/.test($arguments.internal ?? 0);
   const mmdb_country_path = $arguments.mmdb_country_path;
@@ -39,13 +37,13 @@ async function operator(proxies = [], targetPlatform, context) {
   const regex = $arguments.regex;
   const shouldRename = Boolean($arguments.format);
   let valid = $arguments.valid || `ProxyUtils.isIP('{{api.ip || api.query}}')`;
-  let format = $arguments.format || "";
+  let format = $arguments.format || '';
   let utils;
   // DoH endpoint used to resolve proxy server hostnames. Plain UDP DNS gets
   // hijacked by TUN dns-hijack and returns fake-ip, which poisons the GeoIP
   // and ASN lookups below. DoH travels over HTTPS to a literal IP, so there is
   // no hostname for the hijacker to intercept.
-  const dohUrl = $arguments.doh || "https://223.5.5.5/resolve";
+  const dohUrl = $arguments.doh || 'https://223.5.5.5/resolve';
   if (internal) {
     if (isNode) {
       utils = new ProxyUtils.MMDB({
@@ -53,39 +51,69 @@ async function operator(proxies = [], targetPlatform, context) {
         asn: mmdb_asn_path,
       });
       info(
-        `[MMDB] GeoLite2 Country database path: ${mmdb_country_path || eval("process.env.SUB_STORE_MMDB_COUNTRY_PATH")}`,
+        `[MMDB] GeoLite2 Country database path: ${mmdb_country_path || eval('process.env.SUB_STORE_MMDB_COUNTRY_PATH')}`
       );
       info(
-        `[MMDB] GeoLite2 ASN database path: ${mmdb_asn_path || eval("process.env.SUB_STORE_MMDB_ASN_PATH")}`,
+        `[MMDB] GeoLite2 ASN database path: ${mmdb_asn_path || eval('process.env.SUB_STORE_MMDB_ASN_PATH')}`
       );
     } else {
       // Non-Node runtime fallback requires platform utilities ($utils).
       if (
-        typeof $utils === "undefined" ||
-        typeof $utils.geoip === "undefined" ||
-        typeof $utils.ipaso === "undefined"
+        typeof $utils === 'undefined' ||
+        typeof $utils.geoip === 'undefined' ||
+        typeof $utils.ipaso === 'undefined'
       ) {
         error(
-          `Only Surge/Loon (build >= 692) apps with $utils.ipaso and $utils.geoip are supported`,
+          `Only Surge/Loon (build >= 692) apps with $utils.ipaso and $utils.geoip are supported`
         );
-        logBoundary("END");
-        throw new Error(
-          "Unsupported internal IP lookup in current environment, check logs",
-        );
+        logBoundary('END');
+        throw new Error('Unsupported internal IP lookup in current environment, check logs');
       }
       utils = $utils;
     }
-    format =
-      $arguments.format || `{{api.countryCode}} {{api.aso}} - {{proxy.name}}`;
+    format = $arguments.format || `{{api.countryCode}} {{api.aso}} - {{proxy.name}}`;
     valid = $arguments.valid || `"{{api.countryCode || api.aso}}".length > 0`;
   }
-  const disableFailedCache =
-    $arguments.disable_failed_cache || $arguments.ignore_failed_error;
+  const disableFailedCache = $arguments.disable_failed_cache || $arguments.ignore_failed_error;
   const remove_failed = $arguments.remove_failed;
   const entranceEnabled = $arguments.entrance;
-  const method = $arguments.method || "get";
-  const url =
-    $arguments.api || `http://ip-api.com/json/{{proxy.server}}?lang=en`;
+  const method = $arguments.method || 'get';
+  const url = $arguments.api || `http://ip-api.com/json/{{proxy.server}}?lang=en`;
+  const ipinfoApiUrl = 'https://ipinfo.io';
+  const chinaRegionShortCodes = {
+    anhui: 'AH',
+    beijing: 'BJ',
+    chongqing: 'CQ',
+    fujian: 'FJ',
+    gansu: 'GS',
+    guangdong: 'GD',
+    guangxi: 'GX',
+    guizhou: 'GZ',
+    hainan: 'HI',
+    hebei: 'HE',
+    heilongjiang: 'HL',
+    henan: 'HA',
+    hubei: 'HB',
+    hunan: 'HN',
+    jiangsu: 'JS',
+    jiangxi: 'JX',
+    jilin: 'JL',
+    liaoning: 'LN',
+    'inner mongolia': 'NM',
+    ningxia: 'NX',
+    qinghai: 'QH',
+    shaanxi: 'SN',
+    shandong: 'SD',
+    shanghai: 'SH',
+    shanxi: 'SX',
+    sichuan: 'SC',
+    taiwan: 'TW',
+    tianjin: 'TJ',
+    tibet: 'XZ',
+    xinjiang: 'XJ',
+    yunnan: 'YN',
+    zhejiang: 'ZJ',
+  };
   const ipwhoApiUrl = $arguments.ipwho_api || `https://ipwho.is/`;
   const isIpApiUrl = /^https?:\/\/ip-api\.com\/json\//i.test(url);
   const { sourceName, sourceStore } = getSourceCacheContext(context.source);
@@ -96,21 +124,21 @@ async function operator(proxies = [], targetPlatform, context) {
     !useCache &&
     resolveDomain &&
     proxies.some((proxy) => {
-      const server = String(proxy?.server || "").trim();
+      const server = String(proxy?.server || '').trim();
       return server && !ProxyUtils.isIP(server);
     });
   if (shouldLogResolveDns) {
-    info("Resolve DNS locally");
+    info('Resolve DNS locally');
   }
   const proxyContexts = new Array(proxies.length);
   await executeAsyncTasks(
     proxies.map((proxy, index) => async () => {
       proxyContexts[index] = await buildProxyContext(proxy);
     }),
-    { concurrency },
+    { concurrency }
   );
   if (shouldLogResolveDns) {
-    info("Resolve DNS locally completed");
+    info('Resolve DNS locally completed');
   }
 
   const groupedByQueryServer = new Map();
@@ -120,7 +148,7 @@ async function operator(proxies = [], targetPlatform, context) {
       handleContextFailure(context, context.resolveError);
       continue;
     }
-    const key = String(context.queryServer || "");
+    const key = String(context.queryServer || '');
     if (!groupedByQueryServer.has(key)) {
       groupedByQueryServer.set(key, []);
     }
@@ -129,9 +157,9 @@ async function operator(proxies = [], targetPlatform, context) {
 
   await executeAsyncTasks(
     Array.from(groupedByQueryServer.values()).map(
-      (groupContexts) => async () => processQueryServerGroup(groupContexts),
+      (groupContexts) => async () => processQueryServerGroup(groupContexts)
     ),
-    { concurrency },
+    { concurrency }
   );
 
   if (remove_failed) {
@@ -153,19 +181,17 @@ async function operator(proxies = [], targetPlatform, context) {
   }
 
   const uniqueEntranceIpCount = new Set(
-    proxies
-      .map((proxy) => String(proxy?.entrance?.ip ?? "").trim())
-      .filter(Boolean),
+    proxies.map((proxy) => String(proxy?.entrance?.ip ?? '').trim()).filter(Boolean)
   ).size;
   info(
-    `[stats] nodes: ${nodeCount}, ip-api requests: ${ipApiRequestCount}, unique entrance ip: ${uniqueEntranceIpCount}`,
+    `[stats] nodes: ${nodeCount}, ip-api requests: ${ipApiRequestCount}, unique entrance ip: ${uniqueEntranceIpCount}`
   );
 
-  logBoundary("END");
+  logBoundary('END');
   return finalize(proxies);
 
   async function buildProxyContext(proxy = {}) {
-    let queryServer = String(proxy.server || "").trim();
+    let queryServer = String(proxy.server || '').trim();
     const serverWithPort = getServerWithPort(proxy);
     const originalServer = queryServer;
     if (useCache) {
@@ -199,7 +225,7 @@ async function operator(proxies = [], targetPlatform, context) {
 
   async function processQueryServerGroup(groupContexts = []) {
     if (!groupContexts.length) return;
-    const queryServer = groupContexts[0]?.queryServer ?? "";
+    const queryServer = groupContexts[0]?.queryServer ?? '';
     const pendingContexts = [];
 
     for (const context of groupContexts) {
@@ -207,19 +233,16 @@ async function operator(proxies = [], targetPlatform, context) {
       const proxyKey = getProxyCacheKey(proxy);
       if (useCache) {
         const cachedEntry = getStructuredEntranceEntry(proxyKey);
-        const cachedIpApi = sanitizeEntranceIpApiPayload(
-          cachedEntry?.entrance?.["ip-api"] || {},
-        );
-        const cachedIpwho = sanitizeIpwhoPayload(
-          cachedEntry?.entrance?.ipwho || {},
-        );
-        const cachedApi = mergeApiResult(cachedIpApi, cachedIpwho);
+        const cachedIpApi = sanitizeEntranceIpApiPayload(cachedEntry?.entrance?.['ip-api'] || {});
+        const cachedIpwho = sanitizeIpwhoPayload(cachedEntry?.entrance?.ipwho || {});
+        const cachedIpinfo = internal ? {} : cachedEntry?.entrance?.ipinfo || {};
+        const cachedApi = mergeApiResult(cachedIpinfo, mergeApiResult(cachedIpApi, cachedIpwho));
         if (hasUsableApiPayload(cachedApi)) {
           const cacheInfo = internal
             ? formatCountryAsoAsInfo(cachedApi)
             : formatIpApiInfo(cachedApi);
           info(
-            `USE CACHE, [${proxy.name}] ${formatServerWithIp(serverWithPort, cachedApi, queryServer)}, ${cacheInfo}`,
+            `USE CACHE, [${proxy.name}] ${formatServerWithIp(serverWithPort, cachedApi, queryServer)}, ${cacheInfo}`
           );
           applyEntranceInfo(proxy, cachedApi);
           if (shouldRename) {
@@ -246,12 +269,11 @@ async function operator(proxies = [], targetPlatform, context) {
 
     if (internal) {
       const api = {
-        countryCode: utils.geoip(queryServer) || "",
-        aso: utils.ipaso(queryServer) || "",
+        countryCode: utils.geoip(queryServer) || '',
+        aso: utils.ipaso(queryServer) || '',
       };
       const validApi =
-        (api.countryCode || api.aso) &&
-        eval(formatter({ api, format: valid, regex }));
+        (api.countryCode || api.aso) && eval(formatter({ api, format: valid, regex }));
       for (const context of pendingContexts) {
         const { proxy, originalServer, serverWithPort } = context;
         const proxyKey = getProxyCacheKey(proxy);
@@ -266,7 +288,7 @@ async function operator(proxies = [], targetPlatform, context) {
           }
           proxy._entrance = api;
           info(
-            `[${proxy.name}] ${formatServerWithIp(serverWithPort, api, queryText)}, ${formatCountryAsoAsInfo(api)}`,
+            `[${proxy.name}] ${formatServerWithIp(serverWithPort, api, queryText)}, ${formatCountryAsoAsInfo(api)}`
           );
           if (shouldWriteCache) {
             setStructuredEntranceEntry({ cacheKey: proxyKey, ipApi: api });
@@ -277,11 +299,7 @@ async function operator(proxies = [], targetPlatform, context) {
     }
 
     try {
-      const ipApiResult = await getIpApiResult(
-        groupContexts[0].proxy,
-        queryServer,
-        Date.now(),
-      );
+      const ipApiResult = await getIpApiResult(groupContexts[0].proxy, queryServer, Date.now());
       const api = ipApiResult.api;
       const status = ipApiResult.status;
       const validApi = eval(formatter({ api, format: valid, regex }));
@@ -298,16 +316,17 @@ async function operator(proxies = [], targetPlatform, context) {
           proxy._entrance = api;
           if (deduplicatedByGroup) {
             info(
-              `[${proxy.name}] ${formatServerWithIp(serverWithPort, api, queryServer)}, ${formatIpApiInfo(api)}, deduplicated`,
+              `[${proxy.name}] ${formatServerWithIp(serverWithPort, api, queryServer)}, ${formatIpApiInfo(api)}, deduplicated`
             );
           } else {
             info(
-              `[${proxy.name}] ${formatServerWithIp(serverWithPort, api, queryServer)}, ${formatIpApiInfo(api)}`,
+              `[${proxy.name}] ${formatServerWithIp(serverWithPort, api, queryServer)}, ${formatIpApiInfo(api)}`
             );
           }
           if (shouldWriteCache) {
             setStructuredEntranceEntry({
               cacheKey: proxyKey,
+              ipinfo: ipApiResult.ipinfo,
               ipApi: ipApiResult.ipApi,
               ipwho: ipApiResult.ipwho,
             });
@@ -338,12 +357,10 @@ async function operator(proxies = [], targetPlatform, context) {
   }
   // HTTP request helper
   async function http(opt = {}) {
-    const METHOD = opt.method || "get";
+    const METHOD = opt.method || 'get';
     const TIMEOUT = parseFloat(opt.timeout || $arguments.timeout || 5000);
     const RETRIES = parseFloat(opt.retries ?? $arguments.retries ?? 1);
-    const RETRY_DELAY = parseFloat(
-      opt.retry_delay ?? $arguments.retry_delay ?? 1000,
-    );
+    const RETRY_DELAY = parseFloat(opt.retry_delay ?? $arguments.retry_delay ?? 1000);
 
     let count = 0;
     const fn = async () => {
@@ -365,13 +382,13 @@ async function operator(proxies = [], targetPlatform, context) {
     return await fn();
   }
   function getIpApiUrl(ip) {
-    const query = String(url).split("?")[1];
-    return `http://ip-api.com/json/${encodeURIComponent(ip)}${query ? `?${query}` : ""}`;
+    const query = String(url).split('?')[1];
+    return `http://ip-api.com/json/${encodeURIComponent(ip)}${query ? `?${query}` : ''}`;
   }
-  function getIpwhoApiUrl(proxy = {}, queryServer = "") {
-    const raw = String(ipwhoApiUrl || "").trim();
-    if (!raw) return "";
-    if (raw.includes("{{")) {
+  function getIpwhoApiUrl(proxy = {}, queryServer = '') {
+    const raw = String(ipwhoApiUrl || '').trim();
+    if (!raw) return '';
+    if (raw.includes('{{')) {
       return formatter({
         proxy: { ...proxy, server: queryServer },
         format: raw,
@@ -384,18 +401,18 @@ async function operator(proxies = [], targetPlatform, context) {
       if (/[?&]ip=/.test(raw)) {
         return raw;
       }
-      if (raw.includes("?")) {
+      if (raw.includes('?')) {
         return `${raw}&ip=${encodeURIComponent(queryServer)}`;
       }
-      const normalizedBase = raw.endsWith("/") ? raw : `${raw}/`;
+      const normalizedBase = raw.endsWith('/') ? raw : `${raw}/`;
       return `${normalizedBase}${encodeURIComponent(queryServer)}`;
     }
     return raw;
   }
   async function requestJson(opt = {}) {
     const res = await http(opt);
-    let payload = lodash_get(res, "body");
-    if (typeof payload === "string") {
+    let payload = lodash_get(res, 'body');
+    if (typeof payload === 'string') {
       try {
         payload = JSON.parse(payload);
       } catch (e) {}
@@ -408,14 +425,18 @@ async function operator(proxies = [], targetPlatform, context) {
   async function getIpApiResult(proxy, queryServer, startedAt) {
     ipApiRequestCount += 1;
     const headers = {
-      "User-Agent":
-        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Mobile/15E148 Safari/604.1",
+      'User-Agent':
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Mobile/15E148 Safari/604.1',
     };
+    const useIpinfo = !internal && isIpApiUrl;
+    let ipinfo = {};
+    let ipinfoStatus = 0;
     let ipApi = {};
     let ipApiStatus = 0;
     let ipApiError = null;
-    try {
-      const ipApiResponse = await requestJson({
+
+    const ipApiRequest = () =>
+      requestJson({
         method,
         headers,
         url: isIpApiUrl
@@ -425,18 +446,44 @@ async function operator(proxies = [], targetPlatform, context) {
               format: url,
             }),
       });
-      ipApiStatus = ipApiResponse.status;
-      ipApi = sanitizeEntranceIpApiPayload(ipApiResponse.payload);
-    } catch (e) {
-      ipApiError = e;
+
+    if (useIpinfo) {
+      const [ipinfoResult, ipApiResult] = await Promise.allSettled([
+        requestJson({
+          method,
+          headers: { ...headers, accept: 'application/json' },
+          url: `${ipinfoApiUrl}/${encodeURIComponent(queryServer)}`,
+        }),
+        ipApiRequest(),
+      ]);
+
+      if (ipinfoResult.status === 'fulfilled') {
+        ipinfoStatus = ipinfoResult.value.status;
+        if (ipinfoStatus >= 200 && ipinfoStatus < 300) {
+          ipinfo = normalizeIpinfoApi(ipinfoResult.value.payload);
+        }
+      }
+
+      if (ipApiResult.status === 'fulfilled') {
+        ipApiStatus = ipApiResult.value.status;
+        ipApi = sanitizeEntranceIpApiPayload(ipApiResult.value.payload);
+      } else {
+        ipApiError = ipApiResult.reason;
+      }
+    } else {
+      try {
+        const ipApiResponse = await ipApiRequest();
+        ipApiStatus = ipApiResponse.status;
+        ipApi = sanitizeEntranceIpApiPayload(ipApiResponse.payload);
+      } catch (e) {
+        ipApiError = e;
+      }
     }
 
     let ipwho = {};
     let ipwhoStatus = 0;
     const shouldFallbackToIpwho =
-      !internal &&
-      isIpApiUrl &&
-      (ipApiError || ipApiStatus !== 200 || !hasUsableApiPayload(ipApi));
+      !internal && isIpApiUrl && (ipApiError || ipApiStatus !== 200 || !hasUsableApiPayload(ipApi));
     if (shouldFallbackToIpwho) {
       try {
         const ipwhoResponse = await requestJson({
@@ -449,18 +496,22 @@ async function operator(proxies = [], targetPlatform, context) {
       } catch (e) {}
     }
 
-    const api = mergeApiResult(ipApi, ipwho);
+    const fallbackApi = mergeApiResult(ipApi, ipwho);
+    const api = useIpinfo ? mergeApiResult(ipinfo, fallbackApi) : fallbackApi;
     if (!hasUsableApiPayload(api) && ipApiError) {
       throw ipApiError;
     }
     const status =
-      ipApiStatus === 200
+      useIpinfo && hasUsableApiPayload(ipinfo)
         ? 200
-        : ipwhoStatus === 200 && hasUsableApiPayload(ipwho)
+        : ipApiStatus === 200
           ? 200
-          : ipApiStatus || ipwhoStatus || 0;
+          : ipwhoStatus === 200 && hasUsableApiPayload(ipwho)
+            ? 200
+            : ipApiStatus || ipwhoStatus || 0;
     return {
       api,
+      ipinfo: useIpinfo ? ipinfo : undefined,
       ipApi,
       ipwho,
       status,
@@ -468,26 +519,22 @@ async function operator(proxies = [], targetPlatform, context) {
     };
   }
   function formatIpApiInfo(api = {}) {
-    const asnCode = extractAsnCode(api.asn || api.as || api.aso || "");
+    const asnCode = extractAsnCode(api.asn || api.as || api.aso || '');
     const parts = [
-      api.country || "",
-      api.regionName || "",
-      api.city || "",
-      api.isp || "",
-      asnCode || api.aso || "",
-    ].filter((v) => String(v).trim() !== "");
-    return parts.join(", ");
+      api.country || '',
+      api.regionName || '',
+      api.city || '',
+      api.isp || '',
+      asnCode || api.aso || '',
+    ].filter((v) => String(v).trim() !== '');
+    return parts.join(', ');
   }
   function formatCountryAsoAsInfo(api = {}) {
-    const asnCode = extractAsnCode(api.asn || api.as || api.aso || "");
-    const parts = [
-      api.countryCode || "",
-      api.aso || "",
-      asnCode || api.aso || "",
-    ]
+    const asnCode = extractAsnCode(api.asn || api.as || api.aso || '');
+    const parts = [api.countryCode || '', api.aso || '', asnCode || api.aso || '']
       .map((v) => String(v).trim())
       .filter(Boolean);
-    return parts.join(", ");
+    return parts.join(', ');
   }
   function applyEntranceInfo(proxy = {}, api = {}) {
     proxy.entrance = {
@@ -498,12 +545,12 @@ async function operator(proxies = [], targetPlatform, context) {
       city: api.city,
       region: api.regionName,
       isp: api.isp,
-      org: api.org || "",
-      asn: extractAsnCode(api.asn || api.as || api.aso || ""),
+      org: api.org || '',
+      asn: extractAsnCode(api.asn || api.as || api.aso || ''),
     };
   }
   async function getQueryServer(proxy) {
-    const server = String(proxy.server || "").trim();
+    const server = String(proxy.server || '').trim();
     if (!resolveDomain || !server || ProxyUtils.isIP(server)) {
       return server;
     }
@@ -515,35 +562,35 @@ async function operator(proxies = [], targetPlatform, context) {
     const url = `${dohUrl}?name=${encodeURIComponent(server)}&type=${type}`;
     const { payload, status } = await requestJson({
       url,
-      headers: { accept: "application/dns-json" },
+      headers: { accept: 'application/dns-json' },
     });
     if (status !== 200) {
       throw new Error(`HTTP ${status}`);
     }
-    if (!payload || typeof payload !== "object") {
-      throw new Error("Malformed DoH response");
+    if (!payload || typeof payload !== 'object') {
+      throw new Error('Malformed DoH response');
     }
     // Status is the DNS RCODE: 0 means success, 3 means NXDOMAIN.
     if (payload.Status !== 0) {
       throw new Error(`DNS status ${payload.Status}`);
     }
-    const wanted = type === "AAAA" ? 28 : 1;
+    const wanted = type === 'AAAA' ? 28 : 1;
     return (Array.isArray(payload.Answer) ? payload.Answer : [])
       .filter((rec) => rec && rec.type === wanted)
-      .map((rec) => String(rec.data || "").trim())
+      .map((rec) => String(rec.data || '').trim())
       .filter((ip) => ip && ProxyUtils.isIP(ip));
   }
   async function resolveServer(server) {
     try {
       const [ipv4Records, ipv6Records] = await Promise.all([
-        dohQuery(server, "A").catch(() => []),
-        dohQuery(server, "AAAA").catch(() => []),
+        dohQuery(server, 'A').catch(() => []),
+        dohQuery(server, 'AAAA').catch(() => []),
       ]);
-      const ipv4 = ipv4Records.find((ip) => typeof ip === "string" && ip);
-      const fallback = ipv6Records.find((ip) => typeof ip === "string" && ip);
+      const ipv4 = ipv4Records.find((ip) => typeof ip === 'string' && ip);
+      const fallback = ipv6Records.find((ip) => typeof ip === 'string' && ip);
       const resolved = ipv4 || fallback;
       if (!resolved) {
-        throw new Error("No usable IP returned");
+        throw new Error('No usable IP returned');
       }
       return resolved;
     } catch (e) {
@@ -551,7 +598,7 @@ async function operator(proxies = [], targetPlatform, context) {
     }
   }
   function lodash_get(source, path, defaultValue = undefined) {
-    const paths = path.replace(/\[(\d+)\]/g, ".$1").split(".");
+    const paths = path.replace(/\[(\d+)\]/g, '.$1').split('.');
     let result = source;
     for (const p of paths) {
       result = Object(result)[p];
@@ -561,8 +608,8 @@ async function operator(proxies = [], targetPlatform, context) {
     }
     return result;
   }
-  function getReturnedIp(api = {}, fallback = "") {
-    return api?.query || api?.ip || fallback || "";
+  function getReturnedIp(api = {}, fallback = '') {
+    return api?.query || api?.ip || fallback || '';
   }
   function normalizeIpwhoApi(source = {}) {
     const sanitized = sanitizeIpwhoPayload(source);
@@ -571,24 +618,51 @@ async function operator(proxies = [], targetPlatform, context) {
     }
     return sanitized;
   }
+  function normalizeIpinfoApi(source = {}) {
+    const ip = String(source.ip || '').trim();
+    if (!ProxyUtils.isIP(ip)) return {};
+
+    const countryCode = String(source.country || '')
+      .trim()
+      .toUpperCase();
+    const regionName = String(source.region || '').trim();
+    const regionKey = regionName
+      .toLowerCase()
+      .replace(/\s+(province|sheng|shi|municipality|autonomous region)$/i, '')
+      .replace(/\s+(zhuang|hui|uyghur)$/i, '')
+      .trim();
+    const provinceCode = countryCode === 'CN' ? chinaRegionShortCodes[regionKey] || '' : '';
+    const org = String(source.org || '').trim();
+
+    return {
+      query: ip,
+      ip,
+      countryCode: /^[A-Z]{2}$/.test(countryCode) ? countryCode : '',
+      region: provinceCode,
+      regionName,
+      city: String(source.city || '').trim(),
+      org,
+      asn: extractAsnCode(org),
+    };
+  }
   function mergeApiResult(primary = {}, fallback = {}) {
     const merged = isPlainObject(primary) ? { ...primary } : {};
     if (!isPlainObject(fallback)) {
       return merged;
     }
     const fillableFields = [
-      "query",
-      "ip",
-      "country",
-      "countryCode",
-      "region",
-      "regionName",
-      "city",
-      "isp",
-      "org",
-      "asn",
-      "as",
-      "aso",
+      'query',
+      'ip',
+      'country',
+      'countryCode',
+      'region',
+      'regionName',
+      'city',
+      'isp',
+      'org',
+      'asn',
+      'as',
+      'aso',
     ];
     for (const field of fillableFields) {
       if (!hasValue(merged[field]) && hasValue(fallback[field])) {
@@ -615,27 +689,27 @@ async function operator(proxies = [], targetPlatform, context) {
     ].some((value) => hasValue(value));
   }
   function hasValue(value) {
-    return value !== undefined && value !== null && String(value).trim() !== "";
+    return value !== undefined && value !== null && String(value).trim() !== '';
   }
-  function extractAsnCode(value = "") {
-    const text = String(value || "").toUpperCase();
+  function extractAsnCode(value = '') {
+    const text = String(value || '').toUpperCase();
     const matched = text.match(/\bAS\d+\b/);
-    return matched ? matched[0] : "";
+    return matched ? matched[0] : '';
   }
   function getServerWithPort(proxy = {}) {
-    const server = String(proxy?.server ?? "").trim();
+    const server = String(proxy?.server ?? '').trim();
     const port = proxy?.port;
-    const hasPort = port !== undefined && port !== null && String(port) !== "";
+    const hasPort = port !== undefined && port !== null && String(port) !== '';
     return hasPort ? `${server}:${port}` : server;
   }
   function getProxyCacheKey(proxy = {}) {
-    return String(proxy?.name || "").trim();
+    return String(proxy?.name || '').trim();
   }
-  function formatServerWithIp(serverWithPort = "", api = {}, fallbackIp = "") {
+  function formatServerWithIp(serverWithPort = '', api = {}, fallbackIp = '') {
     const ip = getReturnedIp(api, fallbackIp);
     return ip ? `${serverWithPort}, ${ip}` : serverWithPort;
   }
-  function formatter({ proxy = {}, api = {}, format = "", regex = "" }) {
+  function formatter({ proxy = {}, api = {}, format = '', regex = '' }) {
     if (regex) {
       const regexPairs = regex.split(/\s*;\s*/g).filter(Boolean);
       const extracted = {};
@@ -644,9 +718,7 @@ async function operator(proxies = [], targetPlatform, context) {
         if (key && pattern) {
           try {
             const reg = new RegExp(pattern);
-            extracted[key] = (
-              typeof api === "string" ? api : JSON.stringify(api)
-            )
+            extracted[key] = (typeof api === 'string' ? api : JSON.stringify(api))
               .match(reg)?.[1]
               ?.trim();
           } catch (e) {
@@ -659,22 +731,22 @@ async function operator(proxies = [], targetPlatform, context) {
 
     api = normalizeCountryPlaceholders(api);
 
-    let f = format.replace(/\{\{(.*?)\}\}/g, "${$1}");
+    let f = format.replace(/\{\{(.*?)\}\}/g, '${$1}');
     return eval(`\`${f}\``);
   }
   function normalizeCountryPlaceholders(api) {
-    if (!api || typeof api !== "object" || Array.isArray(api)) {
+    if (!api || typeof api !== 'object' || Array.isArray(api)) {
       return api;
     }
 
     const normalized = { ...api };
-    for (const key of ["countryCode", "country"]) {
+    for (const key of ['countryCode', 'country']) {
       if (
         normalized[key] === undefined ||
         normalized[key] === null ||
-        String(normalized[key]).trim() === ""
+        String(normalized[key]).trim() === ''
       ) {
-        normalized[key] = "??";
+        normalized[key] = '??';
       }
     }
     return normalized;
@@ -693,32 +765,23 @@ async function operator(proxies = [], targetPlatform, context) {
     $.write(sourceStore, `#${sourceName}`);
     return result;
   }
-  function getStructuredEntranceEntry(cacheKey = "") {
-    const safeCacheKey = String(cacheKey || "").trim();
+  function getStructuredEntranceEntry(cacheKey = '') {
+    const safeCacheKey = String(cacheKey || '').trim();
     if (!safeCacheKey) return null;
     const entry = sourceStore[safeCacheKey];
     return isPlainObject(entry) ? entry : null;
   }
-  function setStructuredEntranceEntry({
-    cacheKey = "",
-    ipApi,
-    ipwho,
-  } = {}) {
-    const safeCacheKey = String(cacheKey || "").trim();
+  function setStructuredEntranceEntry({ cacheKey = '', ipinfo, ipApi, ipwho } = {}) {
+    const safeCacheKey = String(cacheKey || '').trim();
     if (!safeCacheKey) return;
-    const existingEntry = isPlainObject(sourceStore[safeCacheKey])
-      ? sourceStore[safeCacheKey]
-      : {};
-    const existingEntrance = isPlainObject(existingEntry.entrance)
-      ? existingEntry.entrance
-      : {};
+    const existingEntry = isPlainObject(sourceStore[safeCacheKey]) ? sourceStore[safeCacheKey] : {};
+    const existingEntrance = isPlainObject(existingEntry.entrance) ? existingEntry.entrance : {};
     sourceStore[safeCacheKey] = {
       ...existingEntry,
       entrance: {
         ...existingEntrance,
-        ...(ipApi !== undefined
-          ? { "ip-api": sanitizeEntranceIpApiPayload(ipApi) }
-          : {}),
+        ...(ipinfo !== undefined ? { ipinfo: sanitizeEntranceIpApiPayload(ipinfo) } : {}),
+        ...(ipApi !== undefined ? { 'ip-api': sanitizeEntranceIpApiPayload(ipApi) } : {}),
         ...(ipwho !== undefined ? { ipwho: sanitizeIpwhoPayload(ipwho) } : {}),
       },
     };
@@ -737,30 +800,30 @@ async function operator(proxies = [], targetPlatform, context) {
     if (!isPlainObject(source)) return {};
     if (source.success === false) return {};
     const connection = isPlainObject(source.connection) ? source.connection : {};
-    const asnRaw = connection.asn ?? source.asn ?? "";
-    const asnText = String(asnRaw || "").trim();
+    const asnRaw = connection.asn ?? source.asn ?? '';
+    const asnText = String(asnRaw || '').trim();
     const normalizedAsn = asnText
       ? /^AS/i.test(asnText)
         ? asnText.toUpperCase()
         : /^\d+$/.test(asnText)
           ? `AS${asnText}`
           : asnText
-      : "";
+      : '';
     return {
-      query: String(source.ip || source.query || "").trim(),
-      ip: String(source.ip || "").trim(),
-      country: String(source.country || "").trim(),
-      countryCode: String(source.country_code || source.countryCode || "").trim(),
-      region: String(source.region_code || source.region || "").trim(),
-      regionName: String(source.region || source.regionName || "").trim(),
-      city: String(source.city || "").trim(),
-      isp: String(connection.isp || source.isp || "").trim(),
-      org: String(connection.org || source.org || "").trim(),
+      query: String(source.ip || source.query || '').trim(),
+      ip: String(source.ip || '').trim(),
+      country: String(source.country || '').trim(),
+      countryCode: String(source.country_code || source.countryCode || '').trim(),
+      region: String(source.region_code || source.region || '').trim(),
+      regionName: String(source.region || source.regionName || '').trim(),
+      city: String(source.city || '').trim(),
+      isp: String(connection.isp || source.isp || '').trim(),
+      org: String(connection.org || source.org || '').trim(),
       asn: normalizedAsn,
     };
   }
   function isPlainObject(value) {
-    return value && typeof value === "object" && !Array.isArray(value);
+    return value && typeof value === 'object' && !Array.isArray(value);
   }
   function executeAsyncTasks(tasks, { wrap, result, concurrency = 1 } = {}) {
     return new Promise(async (resolve, reject) => {
