@@ -235,7 +235,10 @@ async function operator(proxies = [], targetPlatform, context) {
         const cachedEntry = getStructuredEntranceEntry(proxyKey);
         const cachedIpApi = sanitizeEntranceIpApiPayload(cachedEntry?.entrance?.['ip-api'] || {});
         const cachedIpwho = sanitizeIpwhoPayload(cachedEntry?.entrance?.ipwho || {});
-        const cachedIpinfo = internal ? {} : cachedEntry?.entrance?.ipinfo || {};
+        const cachedIpinfoPayload = internal ? {} : cachedEntry?.entrance?.ipinfo || {};
+        const cachedIpinfo = isPlainObject(cachedIpinfoPayload)
+          ? { ...cachedIpinfoPayload, isp: getIpinfoIsp(cachedIpinfoPayload) }
+          : {};
         const cachedApi = mergeApiResult(cachedIpinfo, mergeApiResult(cachedIpApi, cachedIpwho));
         if (hasUsableApiPayload(cachedApi)) {
           const cacheInfo = internal
@@ -632,7 +635,8 @@ async function operator(proxies = [], targetPlatform, context) {
       .replace(/\s+(zhuang|hui|uyghur)$/i, '')
       .trim();
     const provinceCode = countryCode === 'CN' ? chinaRegionShortCodes[regionKey] || '' : '';
-    const org = String(source.org || '').trim();
+    const asn = getIpinfoAsn(source);
+    const org = getIpinfoCompany(source);
 
     return {
       query: ip,
@@ -641,9 +645,49 @@ async function operator(proxies = [], targetPlatform, context) {
       region: provinceCode,
       regionName,
       city: String(source.city || '').trim(),
+      isp: getIpinfoIsp(source, asn),
       org,
-      asn: extractAsnCode(org),
+      asn,
     };
+  }
+  function getIpinfoAsn(source = {}) {
+    const asData = isPlainObject(source.as) ? source.as : {};
+    const directAsn = String(source.asn || asData.asn || '').trim();
+    const value = directAsn || extractAsnCode(source.org || source.isp || '');
+    if (/^\d+$/.test(value)) return `AS${value}`;
+    return extractAsnCode(value);
+  }
+  function getIpinfoAsName(source = {}, asn = getIpinfoAsn(source)) {
+    const asData = isPlainObject(source.as) ? source.as : {};
+    const asName = String(source.as_name || asData.name || '').trim();
+    if (asName) return asName;
+
+    const org = String(source.org || '').trim();
+    if (extractAsnCode(org)) {
+      return org.replace(/^AS\d+\s*/i, '').trim();
+    }
+
+    const cachedIsp = String(source.isp || '').trim();
+    if (cachedIsp && asn) {
+      if (cachedIsp.toUpperCase() === asn) return '';
+      if (cachedIsp.toUpperCase().startsWith(`${asn} `)) {
+        return cachedIsp.slice(asn.length).trim();
+      }
+    }
+    return cachedIsp || org;
+  }
+  function getIpinfoIsp(source = {}, asn = getIpinfoAsn(source)) {
+    const asName = getIpinfoAsName(source, asn);
+    if (!asn) return asName;
+    if (asName.toUpperCase() === asn) return '';
+    return asName.toUpperCase().startsWith(`${asn} `)
+      ? asName.slice(asn.length).trim()
+      : asName;
+  }
+  function getIpinfoCompany(source = {}) {
+    const company = source.company;
+    const companyName = isPlainObject(company) ? company.name : company;
+    return String(companyName || source.company_name || '').trim();
   }
   function mergeApiResult(primary = {}, fallback = {}) {
     const merged = isPlainObject(primary) ? { ...primary } : {};

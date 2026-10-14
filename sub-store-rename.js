@@ -106,29 +106,47 @@ function operator(proxies = [], targetPlatform, context) {
 function normalizedIsp(isp, country, city) {
   return (
     isp
-      .replace(/.*China Mobile.*/i, '_CM_')
-      .replace(/.*(China Unicom|CHINA169).*/i, '_CU_')
-      .replace(/.*(Chinanet|China\sTelecom).*/i, '_CT_')
-      .replace(/.*Alibaba.*/i, 'Alibaba')
+      // .replace(/.*China Mobile.*/i, '_CM_')
+      // .replace(/.*(China Unicom|CHINA169).*/i, '_CU_')
+      // .replace(/.*(Chinanet|China\sTelecom).*/i, '_CT_')
+      // .replace(/.*Alibaba.*/i, 'Alibaba')
       .replace(/.*Tencent.*/i, 'Tencent')
       .replace(/.*Amazon.*/i, 'Amazon')
-      .replace(/.*Microsoft.*/i, 'Microsoft')
-      .replace(/.*Cloudflare.*/i, 'Cloudflare')
+      .replace(/.*Data Communication Business Group.*/i, 'HiNet')
       .replace(/.*LocLix.*/i, 'LocLix')
-      .replace(/.*Kirino.*/i, 'Kirino')
-      .replace(/.*STACKS.*/i, 'STACKS')
+      .replace(/.*Optimal Link.*/i, 'Oplink')
+      .replace(/.*Hytron.*/i, 'Hytron')
+      .replace(/.*GSL.*/i, 'GSL')
+      .replace(/.*FDCservers.*/i, 'FDCservers')
+      .replace(/.*Akari.*/i, 'Akari')
+      .replace(/.*Eons.*/i, 'Eons')
+      .replace(/.*Akile.*/i, 'Akile')
+      .replace(/.*Catixs.*/i, 'Catixs')
+      .replace(/.*G-Core.*/i, 'G-Core')
+      .replace(/.*OVH.*/i, 'OVH')
+      .replace(/.*MULTACOM.*/i, 'MULTACOM')
+      .replace(/.*HGC.*/i, 'HGC')
+      .replace(/.*SiteHUB.*/i, 'SiteHUB')
+      // .replace(/.*Microsoft.*/i, 'Microsoft')
+      // .replace(/.*Cloudflare.*/i, 'Cloudflare')
+      // .replace(/.*Kirino.*/i, 'Kirino')
+      // .replace(/.*STACKS.*/i, 'STACKS')
       // .replace(/.*NetLab.*/i, "NetLab")
       // .replace(/.*Hong Kong Telecommunications.*/i, "HKT")
-      .replace(/[,.]/g, '')
+      // .replace(/[,.]/g, '')
       // .replace(/Telecommunications/i, "Telecom")
       // .replace(/\bTelevision\b/i, 'TV')
       // .replace(/\band\b/i, '&')
-      .replace(
-        /\b(?:networks?|technolog(?:y|ies)|tech|centers?|hosting|data|global|telecom|tele?communications|mass|internet|shared|cloud|servers|services|group|company|co|ltd|inc|pte|kk|sa|llc|pty|information|corporation|data|communications|limited|labs|the|link|europe|srl|sas|servers|enterprises)\b/gi,
-        ''
-      )
-      .replace(RegExp(country + '|' + city, 'i'), '')
-      .replace(/[()_]/g, '')
+      // .replace(
+      //   /\b(?:llc|inc|networks?|ltd|data|communications|limited|labs|global|corporation|agency|sas?)\b/gi,
+      //   ''
+      // )
+      // .replace(
+      //   /\b(?:networks?|technolog(?:y|ies)|tech|centers?|hosting|data|global|telecom|tele?communications|mass|internet|shared|cloud|servers|services|group|company|co|ltd|inc|pte|kk|sa|llc|pty|information|corporation|data|communications|limited|labs|the|link|europe|srl|sas|servers|enterprises)\b/gi,
+      //   ''
+      // )
+      // .replace(RegExp(country + '|' + city, 'i'), '')
+      // .replace(/[()_]/g, '')
       .trim()
   );
   // .split(" ")

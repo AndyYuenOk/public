@@ -40,7 +40,7 @@ async function operator(proxies = [], targetPlatform, context) {
   const shouldRename = Boolean($arguments.format);
   let format = $arguments.format || '';
   let url = 'http://ip-api.com/json?lang=en';
-  const ipinfoUrl = 'https://ipinfo.io/what-is-my-ip';
+  const ipinfoUrl = 'https://ipinfo.io';
   const ippureUrl = $arguments.ippure_api || 'https://my.ippure.com/v1/info';
   const ipwhoUrl = $arguments.ipwho_api || 'https://ipwho.is/';
   const ipwhoDirect = String($arguments.ipwho_direct ?? '0').trim() === '1';
@@ -456,17 +456,16 @@ async function operator(proxies = [], targetPlatform, context) {
       };
 
       if (useDirectIpwho) {
-        const [ipinfoSettled, ipApiSettled] = await Promise.allSettled([
-          requestIpinfo({ proxy: proxyUrl, method, headers, url: ipinfoUrl }),
-          requestJson({
-            proxy: proxyUrl,
-            method,
-            headers,
-            url: getIpApiUrl(queryServer),
-          }),
-        ]);
-        const ipinfoPayload = getSettledPayload(ipinfoSettled);
-        const ipApiPayload = getSettledPayload(ipApiSettled);
+        const ipApiPayload = await requestJson({
+          proxy: proxyUrl,
+          method,
+          headers,
+          url: getIpApiUrl(queryServer),
+        });
+        const ipinfoPayload = await requestIpinfoForEgress(
+          getReturnedIp(ipApiPayload.api),
+          { proxy: proxyUrl, method, headers }
+        );
         const egressIp = getReturnedIp(ipinfoPayload.api) || getReturnedIp(ipApiPayload.api);
 
         if (!ipinfoPayload.ok) {
@@ -520,31 +519,27 @@ async function operator(proxies = [], targetPlatform, context) {
           ipwhoDirect: isPlainObject(ipwhoPayload.api) ? ipwhoPayload.api : undefined,
         };
       } else if (isIpApiUrl) {
-        const [ipinfoSettled, ipApiSettled, ippureSettled, ipwhoSettled] = await Promise.allSettled(
-          [
-            requestIpinfo({ proxy: proxyUrl, method, headers, url: ipinfoUrl }),
-            requestJson({
-              proxy: proxyUrl,
-              method,
-              headers,
-              url: getIpApiUrl(queryServer),
-            }),
-            requestJson({
-              proxy: proxyUrl,
-              method,
-              headers,
-              url: ippureUrl,
-            }),
-            requestJson({
-              proxy: proxyUrl,
-              method,
-              headers,
-              url: getIpwhoUrl(),
-            }),
-          ]
-        );
+        const [ipApiSettled, ippureSettled, ipwhoSettled] = await Promise.allSettled([
+          requestJson({
+            proxy: proxyUrl,
+            method,
+            headers,
+            url: getIpApiUrl(queryServer),
+          }),
+          requestJson({
+            proxy: proxyUrl,
+            method,
+            headers,
+            url: ippureUrl,
+          }),
+          requestJson({
+            proxy: proxyUrl,
+            method,
+            headers,
+            url: getIpwhoUrl(),
+          }),
+        ]);
 
-        const ipinfoPayload = getSettledPayload(ipinfoSettled);
         const ipApiPayload = getSettledPayload(ipApiSettled);
         const ippurePayload = getSettledPayload(ippureSettled);
         let ipwhoPayload = getSettledPayload(ipwhoSettled);
@@ -558,6 +553,12 @@ async function operator(proxies = [], targetPlatform, context) {
             error: normalizedOk ? ipwhoPayload.error : 'empty ipwho payload',
           };
         }
+        const egressIp = getReturnedIp(ipApiPayload.api) || getReturnedIp(ipwhoPayload.api);
+        const ipinfoPayload = await requestIpinfoForEgress(egressIp, {
+          proxy: proxyUrl,
+          method,
+          headers,
+        });
 
         if (!ipinfoPayload.ok) {
           enqueueRequestStatusLog(
@@ -797,6 +798,10 @@ async function operator(proxies = [], targetPlatform, context) {
     return `${normalizedBase.replace(/\/+$/, '')}/${encodeURIComponent(normalizedIp)}`;
   }
 
+  function getIpinfoUrl(ip) {
+    return `${ipinfoUrl.replace(/\/+$/, '')}/${encodeURIComponent(ip)}`;
+  }
+
   function getCachedEgressApi(entry = {}) {
     const directIpwho = entry?.egress?.['ipwho-direct'];
     if (isPlainObject(directIpwho)) {
@@ -915,7 +920,18 @@ async function operator(proxies = [], targetPlatform, context) {
     const countryCode = locationParts[locationParts.length - 1] || '';
     const state = fields.state || fields.region || '';
     const company = fields.company || '';
-    const asn = extractAsnCode(source);
+    const asnValue = String(fields.asn || '').split(/\balso announced by\b/i)[0].trim();
+    const asn = extractAsnCode(asnValue) || extractAsnCode(source);
+    const asNameValue = String(fields['as name'] || asnValue).trim();
+    const asName = asNameValue.replace(/^AS\d+\s*(?:[—–-]\s*)?/i, '').trim();
+    const ipinfoSource = {
+      asn,
+      as_name: asName,
+      org: asnValue,
+      company,
+    };
+    const isp = getIpinfoIsp(ipinfoSource, asn);
+    const org = getIpinfoCompany(ipinfoSource);
     const api = { query, ip: query };
     const hasLocationValue = (value) => Boolean(value && !/^[-\u2013\u2014]$/.test(value));
 
@@ -923,10 +939,54 @@ async function operator(proxies = [], targetPlatform, context) {
     if (hasLocationValue(fields.country)) api.country = fields.country;
     if (hasLocationValue(state)) api.regionName = state;
     if (hasLocationValue(fields.city)) api.city = fields.city;
-    if (hasLocationValue(company)) api.org = company;
+    if (hasLocationValue(isp)) api.isp = isp;
+    if (hasLocationValue(org)) api.org = org;
     if (asn) api.asn = asn;
 
     return api;
+  }
+
+  function getIpinfoAsn(source = {}) {
+    const asData = isPlainObject(source.as) ? source.as : {};
+    const directAsn = String(source.asn || asData.asn || '').trim();
+    const value = directAsn || extractAsnCode(source.org || source.isp || '');
+    if (/^\d+$/.test(value)) return `AS${value}`;
+    return extractAsnCode(value);
+  }
+
+  function getIpinfoAsName(source = {}, asn = getIpinfoAsn(source)) {
+    const asData = isPlainObject(source.as) ? source.as : {};
+    const asName = String(source.as_name || asData.name || '').trim();
+    if (asName) return asName;
+
+    const org = String(source.org || '').trim();
+    if (extractAsnCode(org)) {
+      return org.replace(/^AS\d+\s*/i, '').trim();
+    }
+
+    const cachedIsp = String(source.isp || '').trim();
+    if (cachedIsp && asn) {
+      if (cachedIsp.toUpperCase() === asn) return '';
+      if (cachedIsp.toUpperCase().startsWith(`${asn} `)) {
+        return cachedIsp.slice(asn.length).trim();
+      }
+    }
+    return cachedIsp || org;
+  }
+
+  function getIpinfoIsp(source = {}, asn = getIpinfoAsn(source)) {
+    let asName = getIpinfoAsName(source, asn);
+    if (asn && asName.toUpperCase() === asn) return '';
+    if (asn && asName.toUpperCase().startsWith(`${asn} `)) {
+      asName = asName.slice(asn.length).trim();
+    }
+    return asName.replace(/\s+#\s*[\d,]+$/, '').trim();
+  }
+
+  function getIpinfoCompany(source = {}) {
+    const company = source.company;
+    const companyName = isPlainObject(company) ? company.name : company;
+    return String(companyName || source.company_name || '').trim();
   }
 
   function normalizeHtmlText(value = '') {
@@ -959,7 +1019,7 @@ async function operator(proxies = [], targetPlatform, context) {
   }
   function sanitizeIpinfoPayload(source = {}) {
     if (!isPlainObject(source)) return {};
-    const fields = ['query', 'ip', 'country', 'countryCode', 'regionName', 'city', 'org', 'asn'];
+    const fields = ['query', 'ip', 'country', 'countryCode', 'regionName', 'city', 'isp', 'org', 'asn'];
     return Object.fromEntries(fields.filter((key) => source[key]).map((key) => [key, source[key]]));
   }
   function sanitizeEgressIpApiPayload(source = {}) {
@@ -1014,6 +1074,22 @@ async function operator(proxies = [], targetPlatform, context) {
         bodyPreview: '',
       };
     }
+  }
+
+  async function requestIpinfoForEgress(ip, opt = {}) {
+    const normalizedIp = String(ip || '').trim();
+    if (!ProxyUtils.isIP(normalizedIp)) {
+      return {
+        ok: false,
+        status: 0,
+        api: {},
+        error: 'invalid egress ip',
+        rawBody: '',
+        titlePreview: '',
+        bodyPreview: '',
+      };
+    }
+    return requestIpinfo({ ...opt, url: getIpinfoUrl(normalizedIp) });
   }
 
   async function requestJson(opt = {}) {
