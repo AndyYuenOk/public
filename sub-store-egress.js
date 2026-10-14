@@ -628,6 +628,10 @@ async function operator(proxies = [], targetPlatform, context) {
         };
       }
 
+      if (!internal) {
+        api = applyIpinfoOnlyFields(api, sourceApi.ipinfo);
+      }
+
       const payload = {
         api,
         status,
@@ -804,15 +808,15 @@ async function operator(proxies = [], targetPlatform, context) {
 
   function getCachedEgressApi(entry = {}) {
     const directIpwho = entry?.egress?.['ipwho-direct'];
-    if (isPlainObject(directIpwho)) {
-      return mergeApiResult(directIpwho, {}, {}, entry?.egress?.ipinfo);
-    }
-    return mergeApiResult(
-      entry?.egress?.['ip-api'],
-      entry?.egress?.ippure,
-      entry?.egress?.ipwho,
-      entry?.egress?.ipinfo
-    );
+    const merged = isPlainObject(directIpwho)
+      ? mergeApiResult(directIpwho, {}, {}, entry?.egress?.ipinfo)
+      : mergeApiResult(
+          entry?.egress?.['ip-api'],
+          entry?.egress?.ippure,
+          entry?.egress?.ipwho,
+          entry?.egress?.ipinfo
+        );
+    return internal ? merged : applyIpinfoOnlyFields(merged, entry?.egress?.ipinfo);
   }
 
   function mergeApiResult(ipApi = {}, ippure = {}, ipwho = {}, ipinfo = {}) {
@@ -877,6 +881,26 @@ async function operator(proxies = [], targetPlatform, context) {
     return merged;
   }
 
+  function applyIpinfoOnlyFields(api = {}, ipinfo = {}) {
+    const merged = isPlainObject(api) ? { ...api } : {};
+    for (const key of [
+      'countryCode',
+      'country',
+      'region',
+      'regionName',
+      'city',
+      'isp',
+      'org',
+      'asn',
+    ]) {
+      const value = ipinfo?.[key];
+      merged[key] = value !== undefined && value !== null && String(value).trim() ? value : '';
+    }
+    merged.as = '';
+    merged.aso = ipinfo?.asn || '';
+    return merged;
+  }
+
   function normalizeIpwhoApi(source = {}) {
     if (!isPlainObject(source)) {
       return {};
@@ -917,8 +941,15 @@ async function operator(proxies = [], targetPlatform, context) {
     }
 
     const locationParts = (fields.location || '').split(',').map((part) => part.trim());
-    const countryCode = locationParts[locationParts.length - 1] || '';
+    const countryCode =
+      fields.country_code || fields['country code'] || locationParts[locationParts.length - 1] || '';
     const state = fields.state || fields.region || '';
+    const regionCode = String(
+      fields.region_code || fields['region code'] || fields.state_code || fields['state code'] || ''
+    )
+      .trim()
+      .toUpperCase();
+    const country = String(fields.country_name || fields['country name'] || fields.country || '').trim();
     const company = fields.company || '';
     const asnValue = String(fields.asn || '').split(/\balso announced by\b/i)[0].trim();
     const asn = extractAsnCode(asnValue) || extractAsnCode(source);
@@ -936,7 +967,8 @@ async function operator(proxies = [], targetPlatform, context) {
     const hasLocationValue = (value) => Boolean(value && !/^[-\u2013\u2014]$/.test(value));
 
     if (/^[A-Z]{2}$/i.test(countryCode)) api.countryCode = countryCode.toUpperCase();
-    if (hasLocationValue(fields.country)) api.country = fields.country;
+    if (hasLocationValue(country) && !/^[A-Z]{2}$/i.test(country)) api.country = country;
+    if (hasLocationValue(regionCode)) api.region = regionCode;
     if (hasLocationValue(state)) api.regionName = state;
     if (hasLocationValue(fields.city)) api.city = fields.city;
     if (hasLocationValue(isp)) api.isp = isp;
@@ -1019,7 +1051,18 @@ async function operator(proxies = [], targetPlatform, context) {
   }
   function sanitizeIpinfoPayload(source = {}) {
     if (!isPlainObject(source)) return {};
-    const fields = ['query', 'ip', 'country', 'countryCode', 'regionName', 'city', 'isp', 'org', 'asn'];
+    const fields = [
+      'query',
+      'ip',
+      'country',
+      'countryCode',
+      'region',
+      'regionName',
+      'city',
+      'isp',
+      'org',
+      'asn',
+    ];
     return Object.fromEntries(fields.filter((key) => source[key]).map((key) => [key, source[key]]));
   }
   function sanitizeEgressIpApiPayload(source = {}) {

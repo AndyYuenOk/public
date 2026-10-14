@@ -239,7 +239,10 @@ async function operator(proxies = [], targetPlatform, context) {
         const cachedIpinfo = isPlainObject(cachedIpinfoPayload)
           ? { ...cachedIpinfoPayload, isp: getIpinfoIsp(cachedIpinfoPayload) }
           : {};
-        const cachedApi = mergeApiResult(cachedIpinfo, mergeApiResult(cachedIpApi, cachedIpwho));
+        let cachedApi = mergeApiResult(cachedIpinfo, mergeApiResult(cachedIpApi, cachedIpwho));
+        if (!internal) {
+          cachedApi = applyIpinfoOnlyFields(cachedApi, cachedIpinfo);
+        }
         if (hasUsableApiPayload(cachedApi)) {
           const cacheInfo = internal
             ? formatCountryAsoAsInfo(cachedApi)
@@ -500,7 +503,8 @@ async function operator(proxies = [], targetPlatform, context) {
     }
 
     const fallbackApi = mergeApiResult(ipApi, ipwho);
-    const api = useIpinfo ? mergeApiResult(ipinfo, fallbackApi) : fallbackApi;
+    const mergedApi = useIpinfo ? mergeApiResult(ipinfo, fallbackApi) : fallbackApi;
+    const api = internal ? mergedApi : applyIpinfoOnlyFields(mergedApi, ipinfo);
     if (!hasUsableApiPayload(api) && ipApiError) {
       throw ipApiError;
     }
@@ -625,26 +629,43 @@ async function operator(proxies = [], targetPlatform, context) {
     const ip = String(source.ip || '').trim();
     if (!ProxyUtils.isIP(ip)) return {};
 
-    const countryCode = String(source.country || '')
+    const geo = isPlainObject(source.geo) ? source.geo : {};
+    const countryValue = String(
+      source.country_name || source.countryName || geo.country || source.country || ''
+    ).trim();
+    const countryCode = String(
+      source.country_code ||
+        source.countryCode ||
+        geo.country_code ||
+        (/^[A-Z]{2}$/i.test(source.country || '') ? source.country : '') ||
+        ''
+    )
       .trim()
       .toUpperCase();
-    const regionName = String(source.region || '').trim();
+    const country = /^[A-Z]{2}$/i.test(countryValue) ? '' : countryValue;
+    const regionName = String(
+      source.region_name || source.regionName || geo.region || source.region || ''
+    ).trim();
     const regionKey = regionName
       .toLowerCase()
       .replace(/\s+(province|sheng|shi|municipality|autonomous region)$/i, '')
       .replace(/\s+(zhuang|hui|uyghur)$/i, '')
       .trim();
     const provinceCode = countryCode === 'CN' ? chinaRegionShortCodes[regionKey] || '' : '';
+    const regionCode = String(source.region_code || source.regionCode || geo.region_code || provinceCode)
+      .trim()
+      .toUpperCase();
     const asn = getIpinfoAsn(source);
     const org = getIpinfoCompany(source);
 
     return {
       query: ip,
       ip,
+      country,
       countryCode: /^[A-Z]{2}$/.test(countryCode) ? countryCode : '',
-      region: provinceCode,
+      region: regionCode,
       regionName,
-      city: String(source.city || '').trim(),
+      city: String(source.city || geo.city || '').trim(),
       isp: getIpinfoIsp(source, asn),
       org,
       asn,
@@ -713,6 +734,25 @@ async function operator(proxies = [], targetPlatform, context) {
         merged[field] = fallback[field];
       }
     }
+    return merged;
+  }
+  function applyIpinfoOnlyFields(api = {}, ipinfo = {}) {
+    const merged = isPlainObject(api) ? { ...api } : {};
+    for (const key of [
+      'countryCode',
+      'country',
+      'region',
+      'regionName',
+      'city',
+      'isp',
+      'org',
+      'asn',
+    ]) {
+      const value = ipinfo?.[key];
+      merged[key] = value !== undefined && value !== null && String(value).trim() ? value : '';
+    }
+    merged.as = '';
+    merged.aso = ipinfo?.asn || '';
     return merged;
   }
   function hasUsableApiPayload(source = {}) {

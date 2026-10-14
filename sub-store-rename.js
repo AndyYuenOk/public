@@ -62,8 +62,8 @@ function operator(proxies = [], targetPlatform, context) {
     }
 
     let multiplier =
-      proxy.name.match(/(\d(?:\.\d)?)[x倍]/i)?.[1] ||
-      proxy.name.match(/x(\d(?:\.\d)?)/i)?.[1] ||
+      proxy.name.match(/(\d(?:\.\d+)?)[x倍]/i)?.[1] ||
+      proxy.name.match(/x(\d(?:\.\d+)?)/i)?.[1] ||
       '';
     if (multiplier) multiplier = parseFloat(multiplier) + '\u00D7';
 
@@ -75,10 +75,10 @@ function operator(proxies = [], targetPlatform, context) {
       proxy._subName,
       proxy.entranceName,
       proxy.egressName,
-      multiplier,
       proxy?.measuredSpeed ?? '',
       proxy?.guaranteedSpeed ?? '',
       proxy?.ai?.tag ?? '',
+      multiplier,
     ]
       .join(' ')
       .replace(/\s{2,}/g, ' ')
@@ -135,6 +135,7 @@ function normalizedIsp(isp, country, city) {
       .replace(/.*1GSERVERS.*/i, '1GSERVERS')
       .replace(/.*DEBEE.*/i, 'DEBEE')
       .replace(/.*NTT.*/i, 'NTT')
+      .replace(/.*Psychz.*/i, 'Psychz')
       // .replace(/.*Microsoft.*/i, 'Microsoft')
       // .replace(/.*Cloudflare.*/i, 'Cloudflare')
       // .replace(/.*Kirino.*/i, 'Kirino')
