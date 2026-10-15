@@ -3,23 +3,12 @@ function operator(proxies, targetPlatform, context) {
   proxies.forEach((proxy) => {
     let key = proxy.name;
 
-    if (
-      proxy.entrance.ip &&
-      proxy.entrance.asn &&
-      proxy.egress.ip &&
-      proxy.egress.asn
-    ) {
+    if (proxy.entrance.ip && proxy.entrance.asn && proxy.egress.ip && proxy.egress.asn) {
       let octets = $arguments.octets ?? 4;
-      key =
-        proxy.entrance.ip +
-        proxy.egress.ip.split(".").slice(0, octets).join(".");
+      key = proxy.entrance.ip + proxy.egress.ip.split('.').slice(0, octets).join('.');
 
       if ($arguments.geo == 1) {
-        key =
-          proxy.entrance.asn +
-          proxy.entrance.country +
-          proxy.egress.asn +
-          proxy.egress.country;
+        key = proxy.entrance.asn + proxy.entrance.country + proxy.egress.asn + proxy.egress.country;
       }
 
       if ($arguments.geo == 2) {
@@ -33,6 +22,12 @@ function operator(proxies, targetPlatform, context) {
           proxy.egress.region +
           proxy.egress.city;
       }
+
+      let multiplier =
+        proxy.name.match(/(\d(?:\.\d+)?)[x倍]/i)?.[1] ||
+        proxy.name.match(/x(\d(?:\.\d+)?)/i)?.[1] ||
+        '';
+      key += multiplier;
     }
 
     proxyMap.set(key + proxy.type, proxy);
