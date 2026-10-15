@@ -174,6 +174,7 @@ async function operator(proxies = [], targetPlatform, context) {
 
   const http_meta_timeout =
     http_meta_start_delay + internalProxies.length * http_meta_proxy_timeout;
+  const dns = ProxyUtils.yaml.load(context.raw[0]).dns;
 
   let http_meta_pid;
   let http_meta_ports = [];
@@ -189,6 +190,7 @@ async function operator(proxies = [], targetPlatform, context) {
     body: JSON.stringify({
       proxies: internalProxies,
       timeout: http_meta_timeout,
+      dns,
     }),
   });
 

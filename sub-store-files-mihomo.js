@@ -47,6 +47,7 @@ function main(subConfig = { proxies: [] }) {
       'prefer-h3': true,
       'enhanced-mode': 'fake-ip',
       'respect-rules': true,
+      'proxy-server-nameserver-policy': $substore.read('proxy-server-nameserver-policy') ?? {},
       'proxy-server-nameserver': nameserver,
       // system doesn't cache ipv6, so DNS queries are sent repeatedly
       'nameserver-policy': {
