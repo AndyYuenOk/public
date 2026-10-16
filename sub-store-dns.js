@@ -7,11 +7,16 @@ async function operator(proxies, targetPlatform, context) {
       })
     ),
   ].join(',');
-  const nameserver = config.dns['proxy-server-nameserver'][0];
 
-  const proxyServerNameserverPolicy = $substore.read('proxy-server-nameserver-policy') ?? {};
-  proxyServerNameserverPolicy ??= {};
-  proxyServerNameserverPolicy[domains] = nameserver;
+  const nameserver = config.dns['proxy-server-nameserver'];
+  if (domains && nameserver.length) {
+    const policy = $substore.read('proxy-server-nameserver-policy') ?? {};
 
-  $substore.write(proxyServerNameserverPolicy, 'proxy-server-nameserver-policy');
+    const name = Object.values(context.source)[0].name;
+
+    policy[name] = {};
+    policy[name][domains] = nameserver;
+
+    $substore.write(policy, 'proxy-server-nameserver-policy');
+  }
 }

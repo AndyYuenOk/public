@@ -47,13 +47,16 @@ function main(subConfig = { proxies: [] }) {
       'prefer-h3': true,
       'enhanced-mode': 'fake-ip',
       'respect-rules': true,
-      'proxy-server-nameserver-policy': $substore.read('proxy-server-nameserver-policy') ?? {},
+      'proxy-server-nameserver-policy': Object.assign(
+        {},
+        ...Object.values($substore.read('proxy-server-nameserver-policy') ?? {})
+      ),
       'proxy-server-nameserver': nameserver,
       // system doesn't cache ipv6, so DNS queries are sent repeatedly
       'nameserver-policy': {
         // enable this option when using real-ip mode
-        // 'RULE-SET:AdBlock': ['rcode://success'],
-        'GEOSITE:private': ['system'],
+        // 'RULE-SET:AdBlock': 'rcode://success',
+        'GEOSITE:private': 'system',
       },
       'direct-nameserver-follow-policy': true,
       'direct-nameserver': nameserver,
@@ -256,8 +259,8 @@ function main(subConfig = { proxies: [] }) {
       'GEOSITE,geolocation-!cn,Proxy',
 
       // 'RULE-SET,google,DIRECT',
-      'IP-ASN,59930,Auto_US',
-      'GEOIP,telegram,Auto_SG',
+      'AND,((GEOIP,telegram),(GEOIP,sg)),Auto_SG',
+      'GEOIP,telegram,Auto_US',
       // 'RULE-SET,apple,Apple',
       // 'RULE-SET,icloud,DIRECT',
 
