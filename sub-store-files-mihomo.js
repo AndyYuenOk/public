@@ -41,6 +41,8 @@ function main(subConfig = { proxies: [] }) {
     cdn = 'https://gcore.jsdelivr.net/gh/';
 
   config = {
+    'unified-delay': true,
+    'geodata-mode': true,
     dns: {
       enable: true,
       ipv6: true,
@@ -234,8 +236,7 @@ function main(subConfig = { proxies: [] }) {
       // 'AND,((NETWORK,UDP),(GEOSITE,youtube)),Auto_UDP',
       // 'AND,((NETWORK,UDP),(PROCESS-NAME-WILDCARD,*youtube*)),REJECT',
 
-      'DOMAIN-SUFFIX,turn.pairdrop.net,DIRECT',
-      // 'DOMAIN-SUFFIX,pairdrop.net,DIRECT',
+      'DOMAIN-SUFFIX,pairdrop.net,DIRECT',
 
       // 'RULE-SET,applications,DIRECT',
       // 'RULE-SET,lancidr,DIRECT,no-resolve',
